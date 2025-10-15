@@ -12,13 +12,15 @@
 A modern Elixir client for [Weaviate](https://weaviate.io) vector database (v2.0).
 
 WeaviateEx provides a clean, idiomatic Elixir interface with:
-- ✅ **Auto Health Checks** - Validates connection on startup
+- ✅ **Full Test Coverage** - 50+ tests with Mox-based mocking (mock by default, real with `--include integration`)
+- ✅ **Mix Tasks** - Manage Weaviate with `mix weaviate.start/stop/status/logs`
+- ✅ **Auto Health Checks** - Validates connection on startup with strict mode
 - ✅ **Friendly Error Messages** - Helpful guidance for missing configuration
 - ✅ **Easy Setup** - One-command Docker installation
-- 🚧 **Collections API** - Create and manage vector collections (coming soon)
-- 🚧 **Objects API** - CRUD operations with vectors (coming soon)
-- 🚧 **Batch Operations** - Efficient bulk imports (coming soon)
-- 🚧 **GraphQL Queries** - Complex searches and filters (coming soon)
+- ✅ **Collections API** - Create and manage vector collections
+- ✅ **Objects API** - CRUD operations with vectors
+- ✅ **Batch Operations** - Efficient bulk imports
+- ✅ **GraphQL Queries** - Complex searches with near_text, hybrid, BM25
 
 ## Quick Start
 
@@ -71,8 +73,11 @@ Alternatively, configure in `config/config.exs`:
 ```elixir
 config :weaviate_ex,
   url: "http://localhost:8080",
-  api_key: nil  # Optional
+  api_key: nil,    # Optional
+  strict: true     # Default: true - fails fast if Weaviate is unreachable
 ```
+
+**Strict Mode**: By default, WeaviateEx will raise an error on startup if it cannot connect to Weaviate. Set `strict: false` to allow the application to start anyway (useful for development when Weaviate might not always be running).
 
 ### 4. Test the Connection
 
@@ -115,39 +120,216 @@ If configuration is missing, you'll get friendly error messages:
 {:ok, true} = WeaviateEx.alive?()
 ```
 
-### Collections (Coming Soon)
+### Collections
 
 ```elixir
 # Create a collection
 {:ok, collection} = WeaviateEx.Collections.create("Article", %{
+  description: "News articles",
   properties: [
     %{name: "title", dataType: ["text"]},
-    %{name: "content", dataType: ["text"]}
-  ]
+    %{name: "content", dataType: ["text"]},
+    %{name: "publishedAt", dataType: ["date"]}
+  ],
+  vectorizer: "text2vec-openai"  # or "none" for custom vectors
 })
 
 # List all collections
-{:ok, collections} = WeaviateEx.Collections.list()
+{:ok, schema} = WeaviateEx.Collections.list()
+
+# Get a specific collection
+{:ok, collection} = WeaviateEx.Collections.get("Article")
+
+# Add a property to existing collection
+{:ok, property} = WeaviateEx.Collections.add_property("Article", %{
+  name: "author",
+  dataType: ["text"]
+})
+
+# Delete a collection
+{:ok, _} = WeaviateEx.Collections.delete("Article")
 ```
 
-### Objects (Coming Soon)
+### Objects
 
 ```elixir
 # Create an object
 {:ok, object} = WeaviateEx.Objects.create("Article", %{
   properties: %{
     title: "Hello Weaviate",
-    content: "This is a test article"
+    content: "This is a test article",
+    publishedAt: "2025-01-15T10:00:00Z"
   },
-  vector: [0.1, 0.2, 0.3, ...]  # Optional
+  vector: [0.1, 0.2, 0.3, ...]  # Optional, if not using auto-vectorization
 })
 
 # Get an object
 {:ok, object} = WeaviateEx.Objects.get("Article", uuid)
 
-# List objects
-{:ok, objects} = WeaviateEx.Objects.list("Article", limit: 10)
+# List objects with pagination
+{:ok, result} = WeaviateEx.Objects.list("Article", limit: 10, offset: 0)
+
+# Update object (full replacement)
+{:ok, updated} = WeaviateEx.Objects.update("Article", uuid, %{
+  properties: %{title: "Updated Title"}
+})
+
+# Patch object (partial update)
+{:ok, patched} = WeaviateEx.Objects.patch("Article", uuid, %{
+  properties: %{title: "New Title"}
+})
+
+# Delete an object
+{:ok, _} = WeaviateEx.Objects.delete("Article", uuid)
+
+# Check if object exists
+{:ok, true} = WeaviateEx.Objects.exists?("Article", uuid)
 ```
+
+### Batch Operations
+
+```elixir
+# Batch create (efficient for large imports)
+objects = [
+  %{class: "Article", properties: %{title: "Article 1"}},
+  %{class: "Article", properties: %{title: "Article 2"}},
+  %{class: "Article", properties: %{title: "Article 3"}}
+]
+
+{:ok, result} = WeaviateEx.Batch.create_objects(objects)
+
+# Batch delete with criteria
+{:ok, result} = WeaviateEx.Batch.delete_objects(%{
+  class: "Article",
+  where: %{
+    path: ["status"],
+    operator: "Equal",
+    valueText: "draft"
+  }
+})
+```
+
+### GraphQL Queries & Vector Search
+
+```elixir
+alias WeaviateEx.Query
+
+# Simple query
+query = Query.get("Article")
+  |> Query.fields(["title", "content"])
+  |> Query.limit(10)
+
+{:ok, results} = Query.execute(query)
+
+# Semantic search with near_text
+query = Query.get("Article")
+  |> Query.near_text("artificial intelligence", certainty: 0.7)
+  |> Query.fields(["title", "content"])
+  |> Query.additional(["certainty", "distance"])
+  |> Query.limit(5)
+
+{:ok, results} = Query.execute(query)
+
+# Vector search
+query = Query.get("Article")
+  |> Query.near_vector([0.1, 0.2, 0.3, ...], certainty: 0.8)
+  |> Query.fields(["title"])
+
+{:ok, results} = Query.execute(query)
+
+# Hybrid search (combines keyword + vector)
+query = Query.get("Article")
+  |> Query.hybrid("machine learning", alpha: 0.5)
+  |> Query.fields(["title"])
+
+{:ok, results} = Query.execute(query)
+
+# BM25 keyword search
+query = Query.get("Article")
+  |> Query.bm25("elixir programming")
+  |> Query.fields(["title"])
+
+{:ok, results} = Query.execute(query)
+
+# With filters
+query = Query.get("Article")
+  |> Query.where(%{
+    path: ["publishedAt"],
+    operator: "GreaterThan",
+    valueDate: "2025-01-01T00:00:00Z"
+  })
+  |> Query.fields(["title", "publishedAt"])
+
+{:ok, results} = Query.execute(query)
+```
+
+## Testing
+
+WeaviateEx uses **Mox** for clean, idiomatic testing:
+
+```bash
+# Run all tests with mocks (default - no Weaviate needed)
+mix test
+
+# Run integration tests against real Weaviate
+mix test --include integration
+
+# Or set environment variable
+WEAVIATE_INTEGRATION=true mix test
+```
+
+### Test Modes
+
+**Mock Mode (Default)**:
+- Uses Mox to mock HTTP responses
+- No Weaviate instance required
+- Fast and isolated
+- All 50+ tests run with mocks
+
+**Integration Mode**:
+- Tests against real Weaviate instance
+- Requires Weaviate running locally
+- Validates actual API behavior
+- Run with `--include integration` flag
+
+## Authentication
+
+For **authenticated Weaviate instances** (production/cloud):
+
+### Option 1: Environment Variable
+
+```bash
+# Add to .env file (not committed to git)
+WEAVIATE_API_KEY=your-api-key-here
+
+# Or add to ~/.bash_secrets (sourced by ~/.bashrc)
+export WEAVIATE_API_KEY=your-api-key-here
+```
+
+### Option 2: Application Config
+
+```elixir
+# config/runtime.exs (recommended for production)
+config :weaviate_ex,
+  url: System.fetch_env!("WEAVIATE_URL"),
+  api_key: System.fetch_env!("WEAVIATE_API_KEY")
+```
+
+### Option 3: Config File (Development Only)
+
+```elixir
+# config/dev.exs (never commit production keys!)
+config :weaviate_ex,
+  url: "http://localhost:8080",
+  api_key: "dev-key-here"  # Only for local development
+```
+
+**Security Notes:**
+- Never commit API keys to version control
+- Use environment variables for production
+- Add `.env` to `.gitignore` (already done)
+- Consider using `~/.bash_secrets` for persistent local keys
+- Use `System.fetch_env!/1` in production to fail fast on missing keys
 
 ## Development
 
@@ -158,8 +340,11 @@ mix deps.get
 # Compile
 mix compile
 
-# Run tests
+# Run tests (mocked - no Weaviate needed)
 mix test
+
+# Run integration tests (requires live Weaviate)
+mix test --include integration
 
 # Generate documentation
 mix docs
@@ -169,6 +354,30 @@ mix credo
 ```
 
 ## Managing Weaviate
+
+WeaviateEx provides convenient Mix tasks for managing your local Weaviate instance:
+
+```bash
+# Start Weaviate
+mix weaviate.start
+
+# Stop Weaviate
+mix weaviate.stop
+
+# Check status
+mix weaviate.status
+
+# View logs
+mix weaviate.logs
+
+# Follow logs in real-time
+mix weaviate.logs --follow
+
+# Stop and remove all data (WARNING: deletes everything)
+mix weaviate.stop --remove-volumes
+```
+
+You can also use Docker Compose directly:
 
 ```bash
 # Start Weaviate
@@ -182,10 +391,6 @@ docker compose logs -f weaviate
 
 # Check status
 docker compose ps
-
-# Fresh start (removes all data)
-docker compose down -v
-docker compose up -d
 ```
 
 ## Environment Variables

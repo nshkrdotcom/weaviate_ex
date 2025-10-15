@@ -15,9 +15,13 @@ defmodule WeaviateEx.MixProject do
       package: package(),
       docs: docs(),
       name: "WeaviateEx",
-      source_url: @source_url
+      source_url: @source_url,
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   def application do
     [
@@ -40,7 +44,9 @@ defmodule WeaviateEx.MixProject do
       # Development and testing
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:mox, "~> 1.1", only: :test},
+      {:bypass, "~> 2.1", only: :test}
     ]
   end
 

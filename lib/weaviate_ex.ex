@@ -135,16 +135,11 @@ defmodule WeaviateEx do
     headers = build_headers()
     encoded_body = if body, do: Jason.encode!(body), else: nil
 
-    request =
-      method
-      |> Finch.build(url, headers, encoded_body)
-
-    case Finch.request(request, WeaviateEx.Finch, opts) do
-      {:ok, %Finch.Response{status: status, body: response_body}}
-      when status in 200..299 ->
+    case WeaviateEx.HTTPClient.request(method, url, headers, encoded_body, opts) do
+      {:ok, %{status: status, body: response_body}} when status in 200..299 ->
         parse_response(response_body)
 
-      {:ok, %Finch.Response{status: status, body: response_body}} ->
+      {:ok, %{status: status, body: response_body}} ->
         {:error, %{status: status, body: parse_error_response(response_body)}}
 
       {:error, reason} ->

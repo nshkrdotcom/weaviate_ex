@@ -4,6 +4,27 @@ defmodule WeaviateEx.Application do
 
   Starts the Finch HTTP client pool and performs startup health checks
   to ensure Weaviate is properly configured and accessible.
+
+  ## Configuration
+
+  You can configure the strictness of health checks:
+
+      config :weaviate_ex,
+        url: "http://localhost:8080",
+        strict: true  # Default: true
+
+  When `strict: true`, the application will raise an error if it cannot
+  connect to Weaviate on startup. Set to `false` to allow the application
+  to start even if Weaviate is unreachable (useful for development).
+
+  ## Mix Tasks
+
+  WeaviateEx provides Mix tasks for managing local Weaviate instances:
+
+    * `mix weaviate.start` - Start Weaviate Docker container
+    * `mix weaviate.stop` - Stop Weaviate Docker container
+    * `mix weaviate.status` - Show Weaviate status
+    * `mix weaviate.logs` - View Weaviate logs
   """
 
   use Application
@@ -38,7 +59,8 @@ defmodule WeaviateEx.Application do
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
         # Perform health check after supervisor starts
-        Task.start(fn -> perform_health_check() end)
+        strict = Application.get_env(:weaviate_ex, :strict, true)
+        Task.start(fn -> perform_health_check(strict) end)
         {:ok, pid}
 
       error ->
@@ -67,22 +89,12 @@ defmodule WeaviateEx.Application do
   @doc """
   Performs a health check against the Weaviate instance.
   Returns :ok if healthy, {:error, reason} otherwise.
+
+  If `strict` is true (default), raises an error on connection failure.
+  If `strict` is false, logs a warning and continues.
   """
-  def perform_health_check do
-    case WeaviateEx.health_check() do
-      {:ok, _meta} ->
-        Logger.info("""
-        [WeaviateEx] Successfully connected to Weaviate
-          URL: #{weaviate_url()}
-          Version: #{get_version_from_meta()}
-        """)
-
-        :ok
-
-      {:error, reason} ->
-        log_health_check_error(reason)
-        {:error, reason}
-    end
+  def perform_health_check(strict \\ true) do
+    WeaviateEx.Health.validate_connection!(strict: strict)
   end
 
   # Configuration helpers
@@ -92,34 +104,9 @@ defmodule WeaviateEx.Application do
       Application.get_env(:weaviate_ex, :url)
   end
 
-  defp weaviate_host do
-    System.get_env("WEAVIATE_HOST") ||
-      Application.get_env(:weaviate_ex, :host) ||
-      "localhost"
-  end
-
-  defp weaviate_port do
-    port =
-      System.get_env("WEAVIATE_PORT") ||
-        Application.get_env(:weaviate_ex, :port) ||
-        "8080"
-
-    case Integer.parse(to_string(port)) do
-      {port_int, _} -> port_int
-      :error -> 8080
-    end
-  end
-
   defp valid_url?(url) do
     uri = URI.parse(url)
     uri.scheme in ["http", "https"] and not is_nil(uri.host)
-  end
-
-  defp get_version_from_meta do
-    case WeaviateEx.health_check() do
-      {:ok, %{"version" => version}} -> version
-      _ -> "unknown"
-    end
   end
 
   # Error logging with helpful messages
@@ -148,7 +135,7 @@ defmodule WeaviateEx.Application do
     ║                                                                  ║
     ╠════════════════════════════════════════════════════════════════╣
     ║  Need help setting up Weaviate?                                  ║
-    ║  See INSTALL.md for installation instructions                    ║
+    ║  Run: mix weaviate.start                                         ║
     ╚════════════════════════════════════════════════════════════════╝
 
     """)
@@ -170,41 +157,6 @@ defmodule WeaviateEx.Application do
     ║    - https://my-cluster.weaviate.network                        ║
     ║    - http://192.168.1.100:8080                                  ║
     ║                                                                  ║
-    ╚════════════════════════════════════════════════════════════════╝
-
-    """)
-  end
-
-  defp log_health_check_error(reason) do
-    Logger.warning("""
-
-    ╔════════════════════════════════════════════════════════════════╗
-    ║              WeaviateEx Health Check Failed                      ║
-    ╠════════════════════════════════════════════════════════════════╣
-    ║                                                                  ║
-    ║  Could not connect to Weaviate instance                          ║
-    ║  URL: #{weaviate_url()}
-    ║  Error: #{inspect(reason)}
-    ║                                                                  ║
-    ║  Troubleshooting steps:                                          ║
-    ║                                                                  ║
-    ║  1. Verify Weaviate is running:                                  ║
-    ║     docker compose ps                                            ║
-    ║                                                                  ║
-    ║  2. Check if Weaviate is accessible:                             ║
-    ║     curl #{weaviate_url()}/v1/meta
-    ║                                                                  ║
-    ║  3. Start Weaviate if not running:                               ║
-    ║     docker compose up -d                                         ║
-    ║                                                                  ║
-    ║  4. Check Weaviate logs:                                         ║
-    ║     docker compose logs -f weaviate                              ║
-    ║                                                                  ║
-    ║  5. Verify WEAVIATE_URL matches your setup:                      ║
-    ║     echo $WEAVIATE_URL                                           ║
-    ║                                                                  ║
-    ╠════════════════════════════════════════════════════════════════╣
-    ║  For installation help, see: INSTALL.md                          ║
     ╚════════════════════════════════════════════════════════════════╝
 
     """)
