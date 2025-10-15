@@ -54,21 +54,79 @@ defmodule WeaviateEx.MixProject do
 
   defp package do
     [
-      licenses: ["Apache-2.0"],
+      name: "weaviate_ex",
+      description: description(),
+      files: ~w(lib mix.exs README.md INSTALL.md LICENSE assets),
+      licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
+        "Online documentation" => "https://hexdocs.pm/weaviate_ex",
         "Weaviate" => "https://weaviate.io"
       },
-      maintainers: ["Your Name"]
+      maintainers: ["nshkrdotcom"],
+      exclude_patterns: [
+        "priv/plts",
+        ".DS_Store"
+      ]
     ]
   end
 
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "INSTALL.md"],
+      name: "WeaviateEx",
       source_ref: "v#{@version}",
-      source_url: @source_url
+      source_url: @source_url,
+      homepage_url: @source_url,
+      assets: %{"assets" => "assets"},
+      logo: "assets/weaviate_ex.svg",
+      extras: [
+        "README.md",
+        "INSTALL.md"
+      ],
+      groups_for_extras: [
+        Guides: ["README.md", "INSTALL.md"]
+      ],
+      groups_for_modules: [
+        "Core API": [WeaviateEx],
+        Application: [WeaviateEx.Application]
+      ],
+      before_closing_head_tag: fn
+        :html ->
+          """
+          <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.2.3/dist/mermaid.min.js"></script>
+          <script>
+            let initialized = false;
+
+            window.addEventListener("exdoc:loaded", () => {
+              if (!initialized) {
+                mermaid.initialize({
+                  startOnLoad: false,
+                  theme: document.body.className.includes("dark") ? "dark" : "default"
+                });
+                initialized = true;
+              }
+
+              let id = 0;
+              for (const codeEl of document.querySelectorAll("pre code.mermaid")) {
+                const preEl = codeEl.parentElement;
+                const graphDefinition = codeEl.textContent;
+                const graphEl = document.createElement("div");
+                const graphId = "mermaid-graph-" + id++;
+                mermaid.render(graphId, graphDefinition).then(({svg, bindFunctions}) => {
+                  graphEl.innerHTML = svg;
+                  bindFunctions?.(graphEl);
+                  preEl.insertAdjacentElement("afterend", graphEl);
+                  preEl.remove();
+                });
+              }
+            });
+          </script>
+          """
+
+        _ ->
+          ""
+      end
     ]
   end
 end

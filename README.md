@@ -1,4 +1,13 @@
+<p align="center">
+  <img src="assets/weaviate_ex.svg" alt="WeaviateEx Logo" width="200" height="200">
+</p>
+
 # WeaviateEx
+
+[![Elixir](https://img.shields.io/badge/elixir-1.18-purple.svg)](https://elixir-lang.org)
+[![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/yourusername/weaviate_ex/blob/master/LICENSE)
 
 A modern Elixir client for [Weaviate](https://weaviate.io) vector database (v2.0).
 
@@ -198,7 +207,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-Apache 2.0 License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
