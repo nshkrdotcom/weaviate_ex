@@ -152,15 +152,32 @@ defmodule WeaviateEx.Objects do
   @spec update(collection_name(), object_id(), object_data(), Keyword.t()) ::
           WeaviateEx.api_response()
   def update(collection_name, id, data, opts \\ []) do
-    body = Map.put(data, :class, collection_name)
+    # For PUT, Weaviate requires id in the body
+    # Clean the data and add id and class back
+    body =
+      data
+      |> Map.drop([:id, :class, "id", "class"])
+      |> clean_properties_for_update()
+      |> Map.put(:id, id)
+      |> Map.put(:class, collection_name)
+
     query_string = build_query_string(opts, [:consistency_level])
     request(:put, "/v1/objects/#{collection_name}/#{id}#{query_string}", body, opts)
   end
+
+  # Clean properties map to remove id field if it exists
+  defp clean_properties_for_update(%{properties: props} = data) when is_map(props) do
+    cleaned_props = Map.drop(props, [:id, "id"])
+    Map.put(data, :properties, cleaned_props)
+  end
+
+  defp clean_properties_for_update(data), do: data
 
   @doc """
   Patches an object (partial update).
 
   This performs a PATCH request which merges changes with existing data.
+  After patching, the updated object is fetched and returned.
 
   ## Examples
 
@@ -171,8 +188,16 @@ defmodule WeaviateEx.Objects do
   @spec patch(collection_name(), object_id(), object_data(), Keyword.t()) ::
           WeaviateEx.api_response()
   def patch(collection_name, id, data, opts \\ []) do
+    # Drop immutable fields and class (not needed for patch)
+    body = Map.drop(data, [:id, :class, "id", "class"])
+
     query_string = build_query_string(opts, [:consistency_level])
-    request(:patch, "/v1/objects/#{collection_name}/#{id}#{query_string}", data, opts)
+
+    # Weaviate returns 204 No Content on successful PATCH, so we need to fetch the updated object
+    case request(:patch, "/v1/objects/#{collection_name}/#{id}#{query_string}", body, opts) do
+      {:ok, _} -> get(collection_name, id, opts)
+      error -> error
+    end
   end
 
   @doc """
@@ -225,7 +250,18 @@ defmodule WeaviateEx.Objects do
   """
   @spec validate(collection_name(), object_data(), Keyword.t()) :: WeaviateEx.api_response()
   def validate(collection_name, data, opts \\ []) do
-    body = Map.put(data, :class, collection_name)
+    # Validate endpoint requires an ID - generate dummy UUID if not provided
+    body =
+      data
+      |> Map.put(:class, collection_name)
+      |> then(fn map ->
+        if Map.has_key?(map, :id) or Map.has_key?(map, "id") do
+          map
+        else
+          Map.put(map, :id, "00000000-0000-0000-0000-000000000000")
+        end
+      end)
+
     query_string = build_query_string(opts, [:consistency_level])
     request(:post, "/v1/objects/validate#{query_string}", body, opts)
   end

@@ -1,0 +1,668 @@
+
+19:39:51.465 [warning] 
+╔════════════════════════════════════════════════════════════════╗
+║                  WeaviateEx Configuration Error                 ║
+╠════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  Missing required configuration: WEAVIATE_URL                    ║
+║                                                                  ║
+║  Please set the Weaviate URL using one of these methods:        ║
+║                                                                  ║
+║  1. Environment variable:                                        ║
+║     export WEAVIATE_URL=http://localhost:8080                   ║
+║                                                                  ║
+║  2. Application configuration (config/config.exs):               ║
+║     config :weaviate_ex,                                        ║
+║       url: "http://localhost:8080"                              ║
+║                                                                  ║
+║  3. Runtime configuration (config/runtime.exs):                  ║
+║     config :weaviate_ex,                                        ║
+║       url: System.get_env("WEAVIATE_URL")                       ║
+║                                                                  ║
+╠════════════════════════════════════════════════════════════════╣
+║  Need help setting up Weaviate?                                  ║
+║  Run: mix weaviate.start                                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+
+
+19:39:51.514 [info] [WeaviateEx] Successfully connected to Weaviate
+  URL: http://localhost:8080
+  Version: 1.28.1
+
+Running ExUnit with seed: 514089, max_cases: 48
+Including tags: [:integration]
+
+.....................................................
+
+  1) test Collections.create/3 (live) returns error for duplicate collection (WeaviateEx.Integration.CollectionsTest)
+     test/integration/collections_integration_test.exs:57
+     match (=) failed
+     code:  assert {:error, error} =
+              Collections.create(@test_collection, %{properties: [%{name: "field", dataType: ["text"]}]})
+     left:  {:error, error}
+     right: {:ok,
+             %{
+               "class" => "WeaviateExTestCollection1760506791546",
+               "invertedIndexConfig" => %{
+                 "bm25" => %{"b" => 0.75, "k1" => 1.2},
+                 "cleanupIntervalSeconds" => 60,
+                 "stopwords" => %{
+                   "additions" => nil,
+                   "preset" => "en",
+                   "removals" => nil
+                 }
+               },
+               "multiTenancyConfig" => %{
+                 "autoTenantActivation" => false,
+                 "autoTenantCreation" => false,
+                 "enabled" => false
+               },
+               "properties" => [
+                 %{
+                   "dataType" => ["text"],
+                   "indexFilterable" => true,
+                   "indexRangeFilters" => false,
+                   "indexSearchable" => true,
+                   "name" => "field",
+                   "tokenization" => "word"
+                 }
+               ],
+               "replicationConfig" => %{
+                 "asyncEnabled" => false,
+                 "deletionStrategy" => "NoAutomatedResolution",
+                 "factor" => 1
+               },
+               "shardingConfig" => %{
+                 "actualCount" => 1,
+                 "actualVirtualCount" => 128,
+                 "desiredCount" => 1,
+                 "desiredVirtualCount" => 128,
+                 "function" => "murmur3",
+                 "key" => "_id",
+                 "strategy" => "hash",
+                 "virtualPerPhysical" => 128
+               },
+               "vectorIndexConfig" => %{
+                 "bq" => %{"enabled" => false},
+                 "cleanupIntervalSeconds" => 300,
+                 "distance" => "cosine",
+                 "dynamicEfFactor" => 8,
+                 "dynamicEfMax" => 500,
+                 "dynamicEfMin" => 100,
+                 "ef" => -1,
+                 "efConstruction" => 128,
+                 "filterStrategy" => "sweeping",
+                 "flatSearchCutoff" => 40000,
+                 "maxConnections" => 32,
+                 "pq" => %{
+                   "bitCompression" => false,
+                   "centroids" => 256,
+                   "enabled" => false,
+                   "encoder" => %{
+                     "distribution" => "log-normal",
+                     "type" => "kmeans"
+                   },
+                   "segments" => 0,
+                   "trainingLimit" => 100000
+                 },
+                 "skip" => false,
+                 "sq" => %{
+                   "enabled" => false,
+                   "rescoreLimit" => 20,
+                   "trainingLimit" => 100000
+                 },
+                 "vectorCacheMaxObjects" => 1000000000000
+               },
+               "vectorIndexType" => "hnsw",
+               "vectorizer" => "none"
+             }}
+     stacktrace:
+       test/integration/collections_integration_test.exs:59: (test)
+
+...
+
+  2) test Collections.delete/2 (live) returns error when deleting non-existent collection (WeaviateEx.Integration.CollectionsTest)
+     test/integration/collections_integration_test.exs:125
+     match (=) failed
+     code:  assert {:error, %{status: 404}} = Collections.delete("NonExistent999")
+     left:  {:error, %{status: 404}}
+     right: {:ok, %{}}
+     stacktrace:
+       test/integration/collections_integration_test.exs:126: (test)
+
+......
+
+  3) test Batch.create_objects/2 (live) handles partial failures gracefully (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:90
+     ** (ArgumentError) the Access module supports only keyword lists (with atom keys), got: "results"
+
+     If you want to search lists of tuples, use List.keyfind/3
+     code: assert length(result["results"]) == 3
+     stacktrace:
+       (elixir 1.18.4) lib/access.ex:358: Access.get/3
+       test/integration/batch_integration_test.exs:110: (test)
+
+
+
+  4) test Batch.delete_objects/2 (live) returns appropriate result for no matches (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:172
+     match (=) failed
+     code:  assert {:ok, res} = result
+     left:  {:ok, res}
+     right: {:error,
+             %{
+               status: 500,
+               body: %{
+                 "error" => [
+                   %{"message" => "validate: empty match clause"}
+                 ]
+               }
+             }}
+     stacktrace:
+       test/integration/batch_integration_test.exs:183: (test)
+
+
+
+  5) test Batch.delete_objects/2 (live) deletes with complex where clause (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:158
+     match (=) failed
+     code:  assert {:ok, result} =
+              Batch.delete_objects(%{
+                class: @test_collection,
+                where: %{path: ["title"], operator: "Like", valueText: "Delete Test*"}
+              })
+     left:  {:ok, result}
+     right: {:error,
+             %{
+               status: 500,
+               body: %{
+                 "error" => [
+                   %{"message" => "validate: empty match clause"}
+                 ]
+               }
+             }}
+     stacktrace:
+       test/integration/batch_integration_test.exs:160: (test)
+
+
+
+  6) test Batch.add_references/2 (live) adds cross-references in batch (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:189
+     Expected truthy, got false
+     code: assert is_map(result)
+     arguments:
+
+         # 1
+         [
+           %{
+             "from" => "weaviate://localhost/RefTest1760506794483/a5bd4ff2-0dcc-4037-aa4f-846d8b3e9f8f/articles",
+             "result" => %{"status" => "SUCCESS"},
+             "to" => "weaviate://localhost/BatchIntegrationTest1760506791545/2461b129-ed6c-4607-ac47-c42557ffdc09"
+           }
+         ]
+
+     stacktrace:
+       test/integration/batch_integration_test.exs:219: (test)
+
+
+
+  7) test Batch.create_objects/2 (live) handles objects with custom IDs (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:60
+     ** (ArgumentError) the Access module supports only keyword lists (with atom keys), got: "results"
+
+     If you want to search lists of tuples, use List.keyfind/3
+     code: assert length(result["results"]) == 3
+     stacktrace:
+       (elixir 1.18.4) lib/access.ex:358: Access.get/3
+       test/integration/batch_integration_test.exs:75: (test)
+
+
+
+  8) test Batch.delete_objects/2 (live) deletes objects matching criteria (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:143
+     match (=) failed
+     code:  assert {:ok, result} =
+              Batch.delete_objects(%{
+                class: @test_collection,
+                where: %{path: ["category"], operator: "Equal", valueText: "delete_test_0"}
+              })
+     left:  {:ok, result}
+     right: {:error,
+             %{
+               status: 500,
+               body: %{
+                 "error" => [
+                   %{"message" => "validate: empty match clause"}
+                 ]
+               }
+             }}
+     stacktrace:
+       test/integration/batch_integration_test.exs:144: (test)
+
+
+
+  9) test Batch.create_objects/2 (live) creates multiple objects in batch (WeaviateEx.Integration.BatchTest)
+     test/integration/batch_integration_test.exs:32
+     Expected truthy, got false
+     code: assert is_map(result)
+     arguments:
+
+         # 1
+         [
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "28cca2ec-a843-4032-b32a-66425110d038",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 1",
+               "title" => "Batch Article 1"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [0.41433844, -0.06480688, -0.115304455,
+              -0.60462976, -0.6620168, -0.0638686, -0.37227413,
+              0.28335017, 0.7824438, 0.9331419, -0.06034829,
+              0.99753535, 0.14408153, -0.90736, -0.12889154,
+              0.56951374, -0.022706749, 0.41174895, 0.8436763,
+              -0.06578021, 0.49739546, -0.16267674, -0.2722397,
+              -0.34977245, -0.16531244, -0.30764022, -0.9221469,
+              -0.33635432, 0.11158954, 0.99495447, -0.7449895,
+              0.18634893, 0.059937824, 0.52300537, -0.22428931,
+              0.13272807, -0.49750876, -0.32592717, -0.96278673,
+              0.5856222, 0.8859233, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "4c154184-074a-401e-b674-ad0325ddefaa",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 2",
+               "title" => "Batch Article 2"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [-0.0720312, -0.7609481, -0.49666867,
+              0.41144243, 0.80129796, -0.73010284, 0.90741783,
+              0.43100262, 0.66609895, 0.45715305, -0.89212966,
+              0.25233757, 0.30162877, 0.5172305, -0.9638353,
+              -0.46296152, 0.9777237, 0.3658266, 0.76436454, 0.7837795,
+              -0.5952583, -0.09569131, -0.40837383, 0.86149776,
+              0.039511904, 0.84441286, -0.3108668, 0.90227956,
+              0.41275355, 0.2607183, -0.87522304, 0.048515487,
+              0.052317, 0.5106603, 0.4253113, -0.86140335, 0.41041362,
+              -0.5078262, 0.241917, -0.5273401, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "176a250f-9bcd-4006-869e-fdf16ff960dd",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 3",
+               "title" => "Batch Article 3"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [0.44434232, -0.9012597, 0.7049639,
+              -0.32013887, -0.63913417, 0.021106685, -0.21791188,
+              0.22316115, -0.80421406, 0.080952026, -0.47909787,
+              0.6804155, 0.99829733, 0.0017517959, -0.11011519,
+              0.35734326, -0.109295204, -0.8797276, 0.06698518,
+              -0.18486454, -0.541505, 0.22286883, -0.79337317,
+              0.060753364, 0.31205633, 0.47265348, -0.18272974,
+              0.9894044, 0.28084952, 0.8817885, 0.98826253, 0.43280524,
+              0.5227791, 0.4965532, 0.15924513, 0.66936, -0.62033707,
+              -0.31471485, -0.76580524, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "38306ebb-50e4-4936-a4a0-0d72633e6f86",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 4",
+               "title" => "Batch Article 4"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [-0.28740662, -0.6399878, 0.97410053,
+              -0.3510804, -0.4260362, -0.28961214, -0.72960436,
+              -0.6187127, -0.2692198, 0.36183172, -0.8364742,
+              -0.4871104, 0.050617423, 0.3180441, -0.14893542,
+              0.26498923, -0.85916984, -0.34867263, -0.60675263,
+              -0.3831625, -0.8608211, 0.7556143, 0.35354042,
+              -0.90758175, 0.515793, -0.37253776, 0.49352282,
+              -0.7281271, -0.6526379, 0.9739936, -0.6801931,
+              -0.04097523, 0.08797154, -0.040821765, 0.571423,
+              -0.45137256, 0.9661644, -0.652337, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "702e1425-de0e-4771-b947-253f8b8ca87c",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 5",
+               "title" => "Batch Article 5"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [-0.108489074, 0.026259303, -0.75580895,
+              0.5769068, 0.8285969, 0.16769995, -0.9471187, 0.63425285,
+              0.55770665, -0.2789915, -0.9321324, 0.25701144,
+              0.3573472, -0.8115498, -0.85617286, -0.26962233,
+              -0.26252374, 0.963411, 0.3261835, 0.49975267, 0.7233784,
+              0.22901987, -0.60270923, -0.29741293, 0.08556709,
+              -0.7996221, 0.61674005, -0.28484344, -0.3746145,
+              -0.07405933, -0.08484109, 0.04497604, 0.8518057,
+              0.62692016, -0.22666386, -0.3767171, -0.9019976, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "0dc9aecf-606d-453f-8c67-97c0f8cbc69b",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 6",
+               "title" => "Batch Article 6"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [-0.3637714, 0.84086335, -0.7111481,
+              0.8375749, 0.31860113, 0.35987782, 0.36857128,
+              0.42095122, 0.017842896, 0.9092127, 0.8601702,
+              -0.9961686, 0.020964373, -0.69396, -0.0964496, 0.577271,
+              0.67019075, 0.3023624, 0.83290756, -0.071314245,
+              0.53184164, 0.42049432, 0.7070307, 0.82087296,
+              0.38904428, 0.0010790924, -0.5174159, -0.5882716,
+              -0.0332692, 0.9257257, -0.79998946, 0.20049058,
+              0.7093943, 0.6042601, 0.39898303, 0.10020932, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "1de26e3b-5a8b-4e72-ba9c-2f0c2c4d3624",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 7",
+               "title" => "Batch Article 7"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [0.6226337, -0.9214307, -0.35551468,
+              -0.2955285, -0.8766786, 0.88597196, 0.58831346,
+              0.09260497, 0.8897068, 0.6495584, -0.39493078,
+              0.28999558, 0.0050837207, 0.8564911, -0.31481716,
+              -0.2814437, 0.20742905, 0.37221918, 0.9853872,
+              -0.9053297, 0.86076593, -0.44666025, -0.78842276,
+              0.67169183, 0.04973047, -0.27055198, -0.02336009,
+              0.41306475, -0.90184873, -0.9148593, -0.92682254,
+              0.58985335, -0.27678937, 0.3095417, -0.03794403, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "0f6fdba4-68fa-4d13-b247-ac2b46619ed4",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 8",
+               "title" => "Batch Article 8"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [-0.48856428, 0.22543345, 0.30206951,
+              -0.822108, 0.02016839, -0.81543607, -0.40105873,
+              -0.022136318, -0.49303338, -0.120136626, -0.017099662,
+              -0.61122626, 0.36108267, 0.7574568, 0.43908632,
+              0.72273463, -0.062196594, -0.8726593, -0.7614782,
+              0.8055557, -0.8637061, 0.74752784, 0.17014286, 0.6471105,
+              -0.82407427, -0.014028642, 0.6592608, 0.40804863,
+              0.95801073, 0.21033555, -0.15410703, -0.36828348,
+              -0.031061962, -0.91842604, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "a275dc6c-1c5f-4d9e-ac4a-35f686e50a24",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 9",
+               "title" => "Batch Article 9"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [-0.4232934, 0.2664209, 0.84034127,
+              0.38799265, -0.4090062, 0.50045353, 0.027664194,
+              -0.0014513454, -0.42296594, -0.10998813, 0.90771395,
+              0.7548782, 0.88143927, -0.73205936, -0.63186747,
+              -0.28682908, -0.28339407, 0.47376004, 0.9542418,
+              0.3704417, -0.4423706, -0.0972989, -0.9435079,
+              -0.15547667, -0.21715976, -0.5099097, 0.52822185,
+              0.5043944, -0.12899229, 0.50598323, 0.63833624,
+              -0.65972483, -0.54383296, ...]
+           },
+           %{
+             "class" => "BatchIntegrationTest1760506791545",
+             "creationTimeUnix" => 1760506794650,
+             "deprecations" => nil,
+             "id" => "6fb648ae-ff04-4156-80d5-da531a1d0bb0",
+             "lastUpdateTimeUnix" => 1760506794650,
+             "properties" => %{
+               "category" => "batch_test",
+               "content" => "Content 10",
+               "title" => "Batch Article 10"
+             },
+             "result" => %{"status" => "SUCCESS"},
+             "vector" => [0.2652007, 0.32306147, -0.30469814,
+              0.7679585, -0.53749806, 0.6674479, 0.17190537,
+              0.091934256, 0.90059274, 0.750049, 0.03627943,
+              0.34123692, 0.49064898, -0.6880044, -0.69268376,
+              0.4052308, -0.24150315, -0.13645463, -0.3809513,
+              -0.6736945, 0.6870644, 0.20268248, 0.59094256,
+              0.32796732, -0.9398957, 0.044359732, -0.6100342,
+              0.027979016, 0.6797224, -0.75930405, -0.39667708,
+              0.59854114, ...]
+           }
+         ]
+
+     stacktrace:
+       test/integration/batch_integration_test.exs:46: (test)
+
+.
+
+ 10) test Query.bm25/3 - keyword search (live) BM25 search with properties filter (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:186
+     Expected truthy, got false
+     code: assert is_list(articles)
+     arguments:
+
+         # 1
+         nil
+
+     stacktrace:
+       test/integration/query_integration_test.exs:195: (test)
+
+
+
+ 11) test Query.near_vector/3 - vector search (live) finds similar objects by vector (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:129
+     ** (ArgumentError) errors were found at the given arguments:
+
+       * 1st argument: not a list
+
+     code: assert length(articles) >= 1
+     stacktrace:
+       (erts 16.0) :erlang.length(nil)
+       test/integration/query_integration_test.exs:150: (test)
+
+
+
+ 12) test Query.where/2 - filtering (live) filters with GreaterThan operator on int field (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:111
+     ** (ArgumentError) errors were found at the given arguments:
+
+       * 1st argument: not a list
+
+     code: assert length(articles) >= 1
+     stacktrace:
+       (erts 16.0) :erlang.length(nil)
+       test/integration/query_integration_test.exs:123: (test)
+
+
+
+ 13) test Query.hybrid/3 - hybrid search (live) performs hybrid search (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:158
+     Expected truthy, got false
+     code: assert is_list(articles)
+     arguments:
+
+         # 1
+         nil
+
+     stacktrace:
+       test/integration/query_integration_test.exs:167: (test)
+
+
+
+ 14) test Query combined with filters (live) combines where filter with limit (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:201
+     ** (ArgumentError) errors were found at the given arguments:
+
+       * 1st argument: not a list
+
+     code: assert length(articles) <= 2
+     stacktrace:
+       (erts 16.0) :erlang.length(nil)
+       test/integration/query_integration_test.exs:214: (test)
+
+.
+
+ 15) test Query.where/2 - filtering (live) filters with Equal operator (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:95
+     ** (ArgumentError) errors were found at the given arguments:
+
+       * 1st argument: not a list
+
+     code: assert length(articles) >= 1
+     stacktrace:
+       (erts 16.0) :erlang.length(nil)
+       test/integration/query_integration_test.exs:107: (test)
+
+.
+
+ 16) test Query.bm25/3 - keyword search (live) performs BM25 keyword search (WeaviateEx.Integration.QueryTest)
+     test/integration/query_integration_test.exs:173
+     Expected truthy, got false
+     code: assert is_list(articles)
+     arguments:
+
+         # 1
+         nil
+
+     stacktrace:
+       test/integration/query_integration_test.exs:182: (test)
+
+....
+
+ 17) test Objects.patch/4 (live) patches an object (partial update) (WeaviateEx.Integration.ObjectsTest)
+     test/integration/objects_integration_test.exs:183
+     match (=) failed
+     code:  assert {:ok, patched} =
+              Objects.patch(@test_collection, obj["id"], %{properties: %{title: "Patched Title"}})
+     left:  {:ok, patched}
+     right: {:error,
+             %{
+               status: 500,
+               body: %{
+                 "error" => [
+                   %{
+                     "message" => "msg:repo.merge code:500 err:merge into index objectsintegrationtest1760506791563: update local object: shard=\"0sqeWEMkczUm\": Validate vector index for update of 6771e1b4-4af5-4e34-8bf7-b3f92bcef7ec: new node has a vector with length 0. Existing nodes have vectors with length 384"
+                   }
+                 ]
+               }
+             }}
+     stacktrace:
+       test/integration/objects_integration_test.exs:184: (test)
+
+
+
+ 18) test Objects.validate/3 (live) returns error for invalid object data (WeaviateEx.Integration.ObjectsTest)
+     test/integration/objects_integration_test.exs:228
+     ** (BadBooleanError) expected a boolean on left-side of "or", got: {:error, %{status: 500, body: %{"error" => [%{"message" => "invalid UUID length: 0"}]}}}
+     code: assert {:ok, _} = result or match?({:error, _}, result)
+     stacktrace:
+       test/integration/objects_integration_test.exs:237: (test)
+
+.
+
+ 19) test Objects.update/4 (live) updates an object (full replacement) (WeaviateEx.Integration.ObjectsTest)
+     test/integration/objects_integration_test.exs:158
+     match (=) failed
+     code:  assert {:ok, updated} =
+              Objects.update(@test_collection, obj["id"], %{
+                properties: %{title: "Updated Title", content: "Updated content", score: 99}
+              })
+     left:  {:ok, updated}
+     right: {:error,
+             %{
+               status: 422,
+               body: %{
+                 "error" => [
+                   %{
+                     "message" => "invalid update: field 'id' is immutable"
+                   }
+                 ]
+               }
+             }}
+     stacktrace:
+       test/integration/objects_integration_test.exs:159: (test)
+
+...
+
+ 20) test Objects.delete/3 (live) returns error for non-existent object (WeaviateEx.Integration.ObjectsTest)
+     test/integration/objects_integration_test.exs:253
+     match (=) failed
+     code:  assert {:error, %{status: 404}} =
+              Objects.delete(@test_collection, "00000000-0000-0000-0000-999999999999")
+     left:  {:error, %{status: 404}}
+     right: {:ok, %{}}
+     stacktrace:
+       test/integration/objects_integration_test.exs:254: (test)
+
+
+
+ 21) test Objects.validate/3 (live) validates correct object data (WeaviateEx.Integration.ObjectsTest)
+     test/integration/objects_integration_test.exs:215
+     match (=) failed
+     code:  assert {:ok, result} =
+              Objects.validate(@test_collection, %{
+                properties: %{title: "Valid", content: "Valid content", score: 10}
+              })
+     left:  {:ok, result}
+     right: {:error,
+             %{
+               status: 500,
+               body: %{
+                 "error" => [
+                   %{"message" => "invalid UUID length: 0"}
+                 ]
+               }
+             }}
+     stacktrace:
+       test/integration/objects_integration_test.exs:216: (test)
+
+....
+Finished in 3.5 seconds (0.1s async, 3.4s sync)
+98 tests, 21 failures

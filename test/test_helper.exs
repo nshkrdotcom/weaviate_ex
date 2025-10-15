@@ -1,10 +1,10 @@
 # Start ExUnit with async test support
 ExUnit.start()
 
-# Define the mock for HTTP client
+# Always define the mock for HTTP client (needed for unit tests even when running with --include integration)
 Mox.defmock(WeaviateEx.HTTPClient.Mock, for: WeaviateEx.HTTPClient)
 
-# Configure the application to use mocks by default in tests
+# Default to mock mode for unit tests
 Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Mock)
 
 # Disable strict health checks during tests

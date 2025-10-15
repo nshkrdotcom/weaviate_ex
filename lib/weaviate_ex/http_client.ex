@@ -45,7 +45,11 @@ defmodule WeaviateEx.HTTPClient do
   @doc """
   Delegates to the configured HTTP client implementation.
   """
-  def request(method, url, headers, body \\ nil, opts \\ []) do
+  defdelegate request(method, url, headers, body \\ nil, opts \\ []),
+    to: __MODULE__,
+    as: :do_request
+
+  def do_request(method, url, headers, body, opts) do
     client().request(method, url, headers, body, opts)
   end
 end

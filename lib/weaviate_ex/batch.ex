@@ -79,7 +79,11 @@ defmodule WeaviateEx.Batch do
   def create_objects(objects, opts \\ []) when is_list(objects) do
     query_string = build_query_string(opts, [:consistency_level])
     body = %{objects: objects}
-    request(:post, "/v1/batch/objects#{query_string}", body, opts)
+
+    case request(:post, "/v1/batch/objects#{query_string}", body, opts) do
+      {:ok, results} when is_list(results) -> {:ok, %{"results" => results}}
+      other -> other
+    end
   end
 
   @doc """
@@ -119,7 +123,11 @@ defmodule WeaviateEx.Batch do
   @spec delete_objects(delete_criteria(), Keyword.t()) :: WeaviateEx.api_response()
   def delete_objects(criteria, opts \\ []) when is_map(criteria) do
     query_string = build_query_string(opts, [:consistency_level])
-    request(:delete, "/v1/batch/objects#{query_string}", criteria, opts)
+
+    # Weaviate batch delete requires wrapping in a "match" object
+    body = %{match: criteria}
+
+    request(:delete, "/v1/batch/objects#{query_string}", body, opts)
   end
 
   @doc """
@@ -150,7 +158,11 @@ defmodule WeaviateEx.Batch do
   @spec add_references(batch_references(), Keyword.t()) :: WeaviateEx.api_response()
   def add_references(references, opts \\ []) when is_list(references) do
     query_string = build_query_string(opts, [:consistency_level])
-    request(:post, "/v1/batch/references#{query_string}", references, opts)
+
+    case request(:post, "/v1/batch/references#{query_string}", references, opts) do
+      {:ok, results} when is_list(results) -> {:ok, %{"results" => results}}
+      other -> other
+    end
   end
 
   # Helper to build query strings
