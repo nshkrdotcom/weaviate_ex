@@ -62,10 +62,8 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.fields(["title", "content"])
         |> Query.limit(5)
 
-      assert {:ok, result} = Query.execute(query)
-      assert is_map(result)
-      assert result["data"]["Get"][@test_collection]
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
+      assert is_list(articles)
       assert length(articles) == 5
     end
 
@@ -76,8 +74,8 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.limit(3)
         |> Query.offset(5)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
+      assert is_list(articles)
       assert length(articles) == 3
     end
 
@@ -88,8 +86,8 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.additional(["id", "vector"])
         |> Query.limit(2)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
+      assert is_list(articles)
 
       first = List.first(articles)
       assert first["_additional"]["id"]
@@ -108,8 +106,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         })
         |> Query.fields(["title", "category"])
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert is_list(articles)
       assert length(articles) >= 1
@@ -126,8 +123,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         })
         |> Query.fields(["title", "score"])
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert is_list(articles)
       assert length(articles) >= 1
@@ -138,14 +134,14 @@ defmodule WeaviateEx.Integration.QueryTest do
   describe "Query.near_vector/3 - vector search (live)" do
     test "finds similar objects by vector" do
       # Get a reference object first
-      {:ok, ref_result} =
+      {:ok, ref_articles} =
         Query.get(@test_collection)
         |> Query.fields(["title"])
         |> Query.additional(["vector"])
         |> Query.limit(1)
         |> Query.execute()
 
-      ref_object = List.first(get_in(ref_result, ["data", "Get", @test_collection]))
+      ref_object = List.first(ref_articles)
       vector = ref_object["_additional"]["vector"]
 
       # Now search for similar
@@ -156,8 +152,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.additional(["distance"])
         |> Query.limit(3)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert is_list(articles)
       assert length(articles) >= 1
@@ -175,8 +170,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.fields(["title", "content"])
         |> Query.limit(5)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert is_list(articles)
       # Should return results (may be empty if no good matches)
@@ -191,8 +185,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.fields(["title", "content"])
         |> Query.limit(5)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert is_list(articles)
       assert length(articles) >= 1
@@ -205,8 +198,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.fields(["title"])
         |> Query.limit(10)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert is_list(articles)
       assert length(articles) >= 1
@@ -225,8 +217,7 @@ defmodule WeaviateEx.Integration.QueryTest do
         |> Query.fields(["title", "category"])
         |> Query.limit(2)
 
-      assert {:ok, result} = Query.execute(query)
-      articles = get_in(result, ["data", "Get", @test_collection])
+      assert {:ok, articles} = Query.execute(query)
 
       assert length(articles) <= 2
 

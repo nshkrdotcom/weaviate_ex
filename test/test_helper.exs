@@ -1,10 +1,8 @@
 # Start ExUnit with async test support
 ExUnit.start()
 
-# Load support files
-Code.require_file("support/mocks.ex", __DIR__)
-Code.require_file("support/factory.ex", __DIR__)
-Code.require_file("support/fixtures.ex", __DIR__)
+# Note: Support files are automatically compiled via elixirc_paths in mix.exs
+# No need to require them here as it causes module redefinition warnings
 
 # Configure Mox
 Mox.defmock(WeaviateEx.Protocol.Mock, for: WeaviateEx.Protocol)

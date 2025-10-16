@@ -31,7 +31,7 @@ defmodule WeaviateEx.Test.Factory do
         Keyword.get(attrs, :properties, %{
           "title" => "Test Title"
         }),
-      "id" => Keyword.get(attrs, :id, UUID.uuid4())
+      "id" => Keyword.get(attrs, :id, Uniq.UUID.uuid4())
     }
   end
 

@@ -179,6 +179,9 @@ defmodule WeaviateEx.Objects do
   This performs a PATCH request which merges changes with existing data.
   After patching, the updated object is fetched and returned.
 
+  NOTE: PATCH operations should not include vectors. If you need to update the vector,
+  use update/4 (PUT) instead which replaces the entire object.
+
   ## Examples
 
       {:ok, patched} = Objects.patch("Article", uuid, %{
@@ -188,8 +191,8 @@ defmodule WeaviateEx.Objects do
   @spec patch(collection_name(), object_id(), object_data(), Keyword.t()) ::
           WeaviateEx.api_response()
   def patch(collection_name, id, data, opts \\ []) do
-    # Drop immutable fields and class (not needed for patch)
-    body = Map.drop(data, [:id, :class, "id", "class"])
+    # Drop immutable fields, class, and vector (not allowed in PATCH)
+    body = Map.drop(data, [:id, :class, :vector, "id", "class", "vector"])
 
     query_string = build_query_string(opts, [:consistency_level])
 

@@ -6,7 +6,6 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
   @behaviour WeaviateEx.Protocol
 
   alias WeaviateEx.Client
-  alias WeaviateEx.Error
 
   @impl true
   def request(%Client{} = _client, _method, _path, _body, _opts) do

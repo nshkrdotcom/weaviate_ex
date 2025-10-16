@@ -1,11 +1,10 @@
 defmodule WeaviateEx.Test.Mocks do
   @moduledoc """
   Mock definitions using Mox for testing.
-  """
 
-  # Define all mocks
-  Mox.defmock(WeaviateEx.Protocol.Mock, for: WeaviateEx.Protocol)
-  Mox.defmock(WeaviateEx.HTTPClient.Mock, for: WeaviateEx.HTTPClient)
+  Note: Mock definitions are in test_helper.exs to avoid redefinition warnings.
+  This module only contains helper functions for working with mocks.
+  """
 
   @doc "Setup test client with mocked protocol"
   def setup_test_client(_context) do

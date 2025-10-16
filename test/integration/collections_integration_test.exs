@@ -4,17 +4,20 @@ defmodule WeaviateEx.Integration.CollectionsTest do
 
   @moduletag :integration
 
-  # Unique test collection name to avoid conflicts
-  @test_collection "WeaviateExTestCollection#{System.system_time(:millisecond)}"
-
-  setup_all do
+  setup do
     # Switch to real HTTP client for integration tests
     Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Finch)
     Application.put_env(:weaviate_ex, :url, "http://localhost:8080")
 
-    # Clean up any existing test collection
-    Collections.delete(@test_collection)
-    :ok
+    # Create unique collection name for each test
+    collection_name = "TestCol_#{:rand.uniform(999_999_999)}"
+
+    # Clean up after test
+    on_exit(fn ->
+      Collections.delete(collection_name)
+    end)
+
+    {:ok, collection: collection_name}
   end
 
   describe "Collections.list/1 (live)" do
@@ -26,9 +29,9 @@ defmodule WeaviateEx.Integration.CollectionsTest do
   end
 
   describe "Collections.create/3 (live)" do
-    test "creates a new collection in Weaviate" do
+    test "creates a new collection in Weaviate", %{collection: collection_name} do
       assert {:ok, collection} =
-               Collections.create(@test_collection, %{
+               Collections.create(collection_name, %{
                  description: "Test collection for integration tests",
                  properties: [
                    %{
@@ -50,15 +53,21 @@ defmodule WeaviateEx.Integration.CollectionsTest do
                  vectorizer: "none"
                })
 
-      assert collection["class"] == @test_collection
+      assert collection["class"] == collection_name
       assert is_list(collection["properties"])
       assert length(collection["properties"]) == 3
     end
 
-    test "returns error for duplicate collection" do
-      # Collection already exists from previous test
+    test "returns error for duplicate collection", %{collection: collection_name} do
+      # Create collection first
+      assert {:ok, _} =
+               Collections.create(collection_name, %{
+                 properties: [%{name: "field", dataType: ["text"]}]
+               })
+
+      # Try to create again - should fail
       assert {:error, error} =
-               Collections.create(@test_collection, %{
+               Collections.create(collection_name, %{
                  properties: [%{name: "field", dataType: ["text"]}]
                })
 
@@ -76,9 +85,15 @@ defmodule WeaviateEx.Integration.CollectionsTest do
   end
 
   describe "Collections.get/2 (live)" do
-    test "retrieves an existing collection" do
-      assert {:ok, collection} = Collections.get(@test_collection)
-      assert collection["class"] == @test_collection
+    test "retrieves an existing collection", %{collection: collection_name} do
+      # Create collection first
+      assert {:ok, _} =
+               Collections.create(collection_name, %{
+                 properties: [%{name: "field", dataType: ["text"]}]
+               })
+
+      assert {:ok, collection} = Collections.get(collection_name)
+      assert collection["class"] == collection_name
       assert is_list(collection["properties"])
     end
 
@@ -88,20 +103,32 @@ defmodule WeaviateEx.Integration.CollectionsTest do
   end
 
   describe "Collections.add_property/3 (live)" do
-    test "adds a new property to existing collection" do
+    test "adds a new property to existing collection", %{collection: collection_name} do
+      # Create collection first
+      assert {:ok, _} =
+               Collections.create(collection_name, %{
+                 properties: [%{name: "field1", dataType: ["text"]}]
+               })
+
       property = %{
         name: "testField#{System.system_time(:millisecond)}",
         dataType: ["text"],
         description: "Test field added during integration test"
       }
 
-      assert {:ok, result} = Collections.add_property(@test_collection, property)
+      assert {:ok, result} = Collections.add_property(collection_name, property)
       assert result["name"] == property.name
     end
 
-    test "returns error when adding invalid property" do
+    test "returns error when adding invalid property", %{collection: collection_name} do
+      # Create collection first
+      assert {:ok, _} =
+               Collections.create(collection_name, %{
+                 properties: [%{name: "field1", dataType: ["text"]}]
+               })
+
       assert {:error, error} =
-               Collections.add_property(@test_collection, %{
+               Collections.add_property(collection_name, %{
                  name: "invalid",
                  dataType: ["invalid_type"]
                })
@@ -111,19 +138,31 @@ defmodule WeaviateEx.Integration.CollectionsTest do
   end
 
   describe "Collections.get_shards/2 (live)" do
-    test "retrieves shard information for collection" do
-      assert {:ok, shards} = Collections.get_shards(@test_collection)
+    test "retrieves shard information for collection", %{collection: collection_name} do
+      # Create collection first
+      assert {:ok, _} =
+               Collections.create(collection_name, %{
+                 properties: [%{name: "field", dataType: ["text"]}]
+               })
+
+      assert {:ok, shards} = Collections.get_shards(collection_name)
       assert is_list(shards) or is_map(shards)
     end
   end
 
   describe "Collections.delete/2 (live)" do
-    test "deletes the test collection" do
-      # This runs last to clean up
-      assert {:ok, _} = Collections.delete(@test_collection)
+    test "deletes a collection", %{collection: collection_name} do
+      # Create collection first
+      assert {:ok, _} =
+               Collections.create(collection_name, %{
+                 properties: [%{name: "field", dataType: ["text"]}]
+               })
+
+      # Delete it
+      assert {:ok, _} = Collections.delete(collection_name)
 
       # Verify it's deleted
-      assert {:error, %{status: 404}} = Collections.get(@test_collection)
+      assert {:error, %{status: 404}} = Collections.get(collection_name)
     end
 
     test "returns success when deleting non-existent collection" do

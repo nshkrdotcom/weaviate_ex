@@ -32,13 +32,17 @@ defmodule WeaviateEx.Application do
 
   @impl true
   def start(_type, _args) do
-    # Validate configuration on startup
+    # Validate configuration on startup (skip in test mode)
     case validate_config() do
       :ok ->
         start_application()
 
       {:error, message} ->
-        log_configuration_error(message)
+        # Only log configuration errors outside of test environment
+        if Mix.env() != :test do
+          log_configuration_error(message)
+        end
+
         # Still start the application but log warnings
         start_application()
     end
@@ -58,9 +62,12 @@ defmodule WeaviateEx.Application do
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
-        # Perform health check after supervisor starts
-        strict = Application.get_env(:weaviate_ex, :strict, true)
-        Task.start(fn -> perform_health_check(strict) end)
+        # Perform health check after supervisor starts (skip in test mode)
+        if Mix.env() != :test do
+          strict = Application.get_env(:weaviate_ex, :strict, true)
+          Task.start(fn -> perform_health_check(strict) end)
+        end
+
         {:ok, pid}
 
       error ->

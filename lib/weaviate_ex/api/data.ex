@@ -57,8 +57,6 @@ defmodule WeaviateEx.API.Data do
   alias WeaviateEx.Client
   alias WeaviateEx.Error
 
-  use Bitwise
-
   @type collection_name :: String.t()
   @type object_id :: String.t()
   @type object_data :: map()
@@ -324,27 +322,8 @@ defmodule WeaviateEx.API.Data do
     if Map.has_key?(data, "id") or Map.has_key?(data, :id) do
       data
     else
-      Map.put(data, "id", generate_uuid())
+      Map.put(data, "id", Uniq.UUID.uuid4())
     end
-  end
-
-  defp generate_uuid do
-    # Simple UUID v4 generation
-    <<a::32, b::16, c::16, d::16, e::48>> = :crypto.strong_rand_bytes(16)
-
-    # Set version (4) and variant bits
-    c_with_version = (c &&& 0x0FFF) ||| 0x4000
-    d_with_variant = (d &&& 0x3FFF) ||| 0x8000
-
-    parts = [
-      Integer.to_string(a, 16) |> String.pad_leading(8, "0"),
-      Integer.to_string(b, 16) |> String.pad_leading(4, "0"),
-      Integer.to_string(c_with_version, 16) |> String.pad_leading(4, "0"),
-      Integer.to_string(d_with_variant, 16) |> String.pad_leading(4, "0"),
-      Integer.to_string(e, 16) |> String.pad_leading(12, "0")
-    ]
-
-    Enum.join(parts, "-") |> String.downcase()
   end
 
   defp build_query_string(opts, allowed_keys) do
