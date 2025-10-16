@@ -65,7 +65,7 @@ defmodule WeaviateEx.MixProject do
     [
       name: "weaviate_ex",
       description: description(),
-      files: ~w(lib mix.exs README.md INSTALL.md LICENSE assets),
+      files: ~w(lib mix.exs README.md INSTALL.md CHANGELOG.md LICENSE assets),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
@@ -91,10 +91,12 @@ defmodule WeaviateEx.MixProject do
       logo: "assets/weaviate_ex.svg",
       extras: [
         "README.md",
-        "INSTALL.md"
+        "INSTALL.md",
+        "CHANGELOG.md"
       ],
       groups_for_extras: [
-        Guides: ["README.md", "INSTALL.md"]
+        Guides: ["README.md", "INSTALL.md"],
+        "Release Notes": ["CHANGELOG.md"]
       ],
       groups_for_modules: [
         "Core API": [WeaviateEx],
