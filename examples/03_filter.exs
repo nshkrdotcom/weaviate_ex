@@ -5,42 +5,41 @@ Mix.install([{:weaviate_ex, path: "."}])
 Code.require_file("example_helper.exs", __DIR__)
 
 alias WeaviateEx.Filter
-import ExampleHelper
 
-section("Filter System - Query Filters")
+ExampleHelper.section("Filter System - Query Filters")
 
 # Simple equality filter
-step("Create equality filter")
-command(~s/Filter.equal("status", "published")/)
+ExampleHelper.step("Create equality filter")
+ExampleHelper.command(~s/Filter.equal("status", "published")/)
 filter1 = Filter.equal("status", "published")
-result("Filter", filter1)
+ExampleHelper.result("Filter", filter1)
 
 # Numeric comparison
-step("Create numeric comparison filter")
-command("Filter.greater_than(\"views\", 100)")
+ExampleHelper.step("Create numeric comparison filter")
+ExampleHelper.command("Filter.greater_than(\"views\", 100)")
 filter2 = Filter.greater_than("views", 100)
-result("Filter", filter2)
+ExampleHelper.result("Filter", filter2)
 
 # Text pattern matching
-step("Create LIKE filter")
-command(~s/Filter.like("title", "*AI*")/)
+ExampleHelper.step("Create LIKE filter")
+ExampleHelper.command(~s/Filter.like("title", "*AI*")/)
 filter3 = Filter.like("title", "*AI*")
-result("Filter", filter3)
+ExampleHelper.result("Filter", filter3)
 
 # Array filters
-step("Create array filter")
-command(~s/Filter.contains_any("tags", ["elixir", "phoenix"])/)
+ExampleHelper.step("Create array filter")
+ExampleHelper.command(~s/Filter.contains_any("tags", ["elixir", "phoenix"])/)
 filter4 = Filter.contains_any("tags", ["elixir", "phoenix"])
-result("Filter", filter4)
+ExampleHelper.result("Filter", filter4)
 
 # Geo filter
-step("Create geospatial filter")
-command("Filter.within_geo_range(\"location\", {40.7128, -74.0060}, 5000.0)")
+ExampleHelper.step("Create geospatial filter")
+ExampleHelper.command("Filter.within_geo_range(\"location\", {40.7128, -74.0060}, 5000.0)")
 filter5 = Filter.within_geo_range("location", {40.7128, -74.0060}, 5000.0)
-result("Filter", filter5)
+ExampleHelper.result("Filter", filter5)
 
 # Combined filters (AND)
-step("Combine filters with AND")
+ExampleHelper.step("Combine filters with AND")
 
 combined =
   Filter.all_of([
@@ -48,11 +47,11 @@ combined =
     Filter.greater_than("views", 100)
   ])
 
-command("Filter.all_of([filter1, filter2])")
-result("Combined Filter", combined)
+ExampleHelper.command("Filter.all_of([filter1, filter2])")
+ExampleHelper.result("Combined Filter", combined)
 
 # Combined filters (OR)
-step("Combine filters with OR")
+ExampleHelper.step("Combine filters with OR")
 
 or_filter =
   Filter.any_of([
@@ -60,13 +59,13 @@ or_filter =
     Filter.equal("category", "science")
   ])
 
-command("Filter.any_of([...])")
-result("OR Filter", or_filter)
+ExampleHelper.command("Filter.any_of([...])")
+ExampleHelper.result("OR Filter", or_filter)
 
 # Convert to GraphQL
-step("Convert filter to GraphQL format")
-command("Filter.to_graphql(combined)")
+ExampleHelper.step("Convert filter to GraphQL format")
+ExampleHelper.command("Filter.to_graphql(combined)")
 graphql = Filter.to_graphql(combined)
-result("GraphQL", graphql)
+ExampleHelper.result("GraphQL", graphql)
 
-IO.puts("\n#{green("✓")} Example complete!\n")
+IO.puts("\n#{ExampleHelper.green("✓")} Example complete!\n")

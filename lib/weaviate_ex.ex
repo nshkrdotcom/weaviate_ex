@@ -131,53 +131,14 @@ defmodule WeaviateEx do
   @doc false
   @spec request(atom(), String.t(), map() | nil, Keyword.t()) :: api_response()
   def request(method, path, body \\ nil, opts \\ []) do
-    url = build_url(path)
-    headers = build_headers()
-    encoded_body = if body, do: Jason.encode!(body), else: nil
+    # Create a client using the configured protocol implementation
+    {:ok, client} =
+      WeaviateEx.Client.new(
+        base_url: base_url(),
+        api_key: api_key()
+      )
 
-    case WeaviateEx.HTTPClient.request(method, url, headers, encoded_body, opts) do
-      {:ok, %{status: status, body: response_body}} when status in 200..299 ->
-        parse_response(response_body)
-
-      {:ok, %{status: status, body: response_body}} ->
-        {:error, %{status: status, body: parse_error_response(response_body)}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp build_url(path) do
-    base = base_url() |> String.trim_trailing("/")
-    path = if String.starts_with?(path, "/"), do: path, else: "/#{path}"
-    base <> path
-  end
-
-  defp build_headers do
-    headers = [
-      {"Content-Type", "application/json"},
-      {"Accept", "application/json"}
-    ]
-
-    case api_key() do
-      nil -> headers
-      key -> [{"Authorization", "Bearer #{key}"} | headers]
-    end
-  end
-
-  defp parse_response(""), do: {:ok, %{}}
-
-  defp parse_response(body) do
-    case Jason.decode(body) do
-      {:ok, data} -> {:ok, data}
-      {:error, _} -> {:ok, body}
-    end
-  end
-
-  defp parse_error_response(body) do
-    case Jason.decode(body) do
-      {:ok, data} -> data
-      {:error, _} -> body
-    end
+    # Delegate to the client
+    WeaviateEx.Client.request(client, method, path, body, opts)
   end
 end

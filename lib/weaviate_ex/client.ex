@@ -26,7 +26,11 @@ defmodule WeaviateEx.Client do
   @spec new(keyword()) :: {:ok, t()}
   def new(opts \\ []) do
     config = Config.new(opts)
-    protocol_impl = Keyword.get(opts, :protocol_impl, WeaviateEx.Protocol.HTTP.Client)
+    # Check Application config first, then opts, then default to HTTP client
+    protocol_impl =
+      Keyword.get(opts, :protocol_impl) ||
+        Application.get_env(:weaviate_ex, :protocol_impl) ||
+        WeaviateEx.Protocol.HTTP.Client
 
     client = %__MODULE__{
       config: config,

@@ -6,7 +6,7 @@ defmodule WeaviateEx.Integration.CollectionsTest do
 
   setup do
     # Switch to real HTTP client for integration tests
-    Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Finch)
+    Application.put_env(:weaviate_ex, :protocol_impl, WeaviateEx.Protocol.HTTP.Client)
     Application.put_env(:weaviate_ex, :url, "http://localhost:8080")
 
     # Create unique collection name for each test
@@ -71,7 +71,7 @@ defmodule WeaviateEx.Integration.CollectionsTest do
                  properties: [%{name: "field", dataType: ["text"]}]
                })
 
-      assert error[:status] in [422, 409]
+      assert error.status_code in [422, 409]
     end
 
     test "returns error for invalid schema" do
@@ -98,7 +98,8 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     end
 
     test "returns error for non-existent collection" do
-      assert {:error, %{status: 404}} = Collections.get("NonExistentCollection999")
+      assert {:error, %WeaviateEx.Error{status_code: 404}} =
+               Collections.get("NonExistentCollection999")
     end
   end
 
@@ -162,7 +163,7 @@ defmodule WeaviateEx.Integration.CollectionsTest do
       assert {:ok, _} = Collections.delete(collection_name)
 
       # Verify it's deleted
-      assert {:error, %{status: 404}} = Collections.get(collection_name)
+      assert {:error, %WeaviateEx.Error{status_code: 404}} = Collections.get(collection_name)
     end
 
     test "returns success when deleting non-existent collection" do

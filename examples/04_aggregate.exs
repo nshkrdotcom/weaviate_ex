@@ -5,13 +5,12 @@ Mix.install([{:weaviate_ex, path: "."}])
 Code.require_file("example_helper.exs", __DIR__)
 
 alias WeaviateEx.API.{Collections, Data, Aggregate}
-import ExampleHelper
 
 ExampleHelper.check_weaviate!()
 
-section("Aggregation API - Statistics")
+ExampleHelper.section("Aggregation API - Statistics")
 
-{:ok, client} = WeaviateEx.Client.new("http://localhost:8080")
+{:ok, client} = WeaviateEx.Client.new(base_url: "http://localhost:8080")
 
 # Setup collection with data
 Collections.create(client, %{
@@ -64,15 +63,15 @@ products = [
 Enum.each(products, &Data.insert(client, "Product", &1))
 
 # Count all
-step("Count all products")
-command("Aggregate.over_all(client, \"Product\", metrics: [:count])")
+ExampleHelper.step("Count all products")
+ExampleHelper.command("Aggregate.over_all(client, \"Product\", metrics: [:count])")
 {:ok, result} = Aggregate.over_all(client, "Product", metrics: [:count])
-result("Count", result)
+ExampleHelper.result("Count", result)
 
 # Numeric aggregations
-step("Aggregate price statistics")
+ExampleHelper.step("Aggregate price statistics")
 
-command(
+ExampleHelper.command(
   "Aggregate.over_all(client, \"Product\", properties: [{:price, [:mean, :sum, :maximum, :minimum]}])"
 )
 
@@ -81,24 +80,24 @@ command(
     properties: [{:price, [:mean, :sum, :maximum, :minimum, :count]}]
   )
 
-result("Price Stats", stats)
+ExampleHelper.result("Price Stats", stats)
 
 # Top occurrences
-step("Get top categories")
+ExampleHelper.step("Get top categories")
 
-command(
+ExampleHelper.command(
   "Aggregate.over_all(client, \"Product\", properties: [{:category, [:topOccurrences], limit: 10}])"
 )
 
 {:ok, categories} =
   Aggregate.over_all(client, "Product", properties: [{:category, [:topOccurrences], limit: 10}])
 
-result("Top Categories", categories)
+ExampleHelper.result("Top Categories", categories)
 
 # Group by
-step("Aggregate by category")
+ExampleHelper.step("Aggregate by category")
 
-command(
+ExampleHelper.command(
   "Aggregate.group_by(client, \"Product\", \"category\", metrics: [:count], properties: [{:price, [:mean]}])"
 )
 
@@ -108,7 +107,7 @@ command(
     properties: [{:price, [:mean]}]
   )
 
-result("Grouped Results", grouped)
+ExampleHelper.result("Grouped Results", grouped)
 
-cleanup(client, "Product")
-IO.puts("\n#{green("✓")} Example complete!\n")
+ExampleHelper.cleanup(client, "Product")
+IO.puts("\n#{ExampleHelper.green("✓")} Example complete!\n")

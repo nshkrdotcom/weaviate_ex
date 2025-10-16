@@ -1,22 +1,24 @@
 defmodule WeaviateEx.BatchTest do
   use ExUnit.Case, async: true
   import Mox
-  import WeaviateEx.TestHelpers
+  import WeaviateEx.Test.Mocks
   alias WeaviateEx.{Batch, Fixtures}
+  alias WeaviateEx.Protocol.Mock
 
   setup :verify_on_exit!
-  setup :setup_http_client
+  setup :setup_test_client
 
   describe "create_objects/2" do
-    test "creates multiple objects in batch" do
+    test "creates multiple objects in batch", %{client: _client} do
       objects = Fixtures.batch_objects_fixture("Article", 3)
 
       response = %{
         "results" => Enum.map(objects, fn obj -> %{"id" => obj["id"], "status" => "SUCCESS"} end)
       }
 
-      expect_http_request_with_body(:post, "/v1/batch/objects", :any, fn ->
-        mock_success_response(response)
+      Mox.expect(Mock, :request, fn _client, :post, path, _body, _opts ->
+        assert path =~ "/v1/batch/objects"
+        {:ok, response["results"]}
       end)
 
       assert {:ok, result} = Batch.create_objects(objects)
@@ -24,22 +26,21 @@ defmodule WeaviateEx.BatchTest do
       assert Enum.all?(result["results"], fn r -> r["status"] == "SUCCESS" end)
     end
 
-    test "returns partial success with errors" do
+    test "returns partial success with errors", %{client: _client} do
       objects = Fixtures.batch_objects_fixture("Article", 2)
 
-      response = %{
-        "results" => [
-          %{"id" => Enum.at(objects, 0)["id"], "status" => "SUCCESS"},
-          %{
-            "id" => Enum.at(objects, 1)["id"],
-            "status" => "FAILED",
-            "errors" => %{"error" => "Invalid property"}
-          }
-        ]
-      }
+      response = [
+        %{"id" => Enum.at(objects, 0)["id"], "status" => "SUCCESS"},
+        %{
+          "id" => Enum.at(objects, 1)["id"],
+          "status" => "FAILED",
+          "errors" => %{"error" => "Invalid property"}
+        }
+      ]
 
-      expect_http_request_with_body(:post, "/v1/batch/objects", :any, fn ->
-        mock_success_response(response)
+      Mox.expect(Mock, :request, fn _client, :post, path, _body, _opts ->
+        assert path =~ "/v1/batch/objects"
+        {:ok, response}
       end)
 
       assert {:ok, result} = Batch.create_objects(objects)
@@ -47,28 +48,22 @@ defmodule WeaviateEx.BatchTest do
       assert Enum.at(result["results"], 1)["status"] == "FAILED"
     end
 
-    test "handles consistency level option" do
+    test "handles consistency level option", %{client: _client} do
       objects = [Fixtures.object_fixture()]
 
-      response = %{
-        "results" => [%{"id" => "00000000-0000-0000-0000-000000000001", "status" => "SUCCESS"}]
-      }
+      response = [%{"id" => "00000000-0000-0000-0000-000000000001", "status" => "SUCCESS"}]
 
-      expect_http_request_with_body(
-        :post,
-        "/v1/batch/objects?consistency_level=QUORUM",
-        :any,
-        fn ->
-          mock_success_response(response)
-        end
-      )
+      Mox.expect(Mock, :request, fn _client, :post, path, _body, _opts ->
+        assert path =~ "/v1/batch/objects?consistency_level=QUORUM"
+        {:ok, response}
+      end)
 
       assert {:ok, _} = Batch.create_objects(objects, consistency_level: "QUORUM")
     end
   end
 
   describe "delete_objects/2" do
-    test "deletes objects matching criteria" do
+    test "deletes objects matching criteria", %{client: _client} do
       response = %{
         "match" => %{
           "class" => "Article",
@@ -83,8 +78,9 @@ defmodule WeaviateEx.BatchTest do
         }
       }
 
-      expect_http_request_with_body(:delete, "/v1/batch/objects", :any, fn ->
-        mock_success_response(response)
+      Mox.expect(Mock, :request, fn _client, :delete, path, _body, _opts ->
+        assert path =~ "/v1/batch/objects"
+        {:ok, response}
       end)
 
       assert {:ok, result} =
@@ -100,12 +96,20 @@ defmodule WeaviateEx.BatchTest do
       assert result["results"]["successful"] == 5
     end
 
-    test "returns error on invalid criteria" do
-      expect_http_request_with_body(:delete, "/v1/batch/objects", :any, fn ->
-        mock_error_response(400, "Invalid where clause")
+    test "returns error on invalid criteria", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :delete, path, _body, _opts ->
+        assert path =~ "/v1/batch/objects"
+
+        {:error,
+         %WeaviateEx.Error{
+           type: :bad_request,
+           message: "Invalid where clause",
+           details: %{},
+           status_code: 400
+         }}
       end)
 
-      assert {:error, %{status: 400}} =
+      assert {:error, %WeaviateEx.Error{type: :bad_request}} =
                Batch.delete_objects(%{
                  class: "Article",
                  where: %{}
@@ -114,7 +118,7 @@ defmodule WeaviateEx.BatchTest do
   end
 
   describe "add_references/2" do
-    test "adds cross-references in batch" do
+    test "adds cross-references in batch", %{client: _client} do
       references = [
         %{
           from: "weaviate://localhost/Article/00000000-0000-0000-0000-000000000001/hasAuthor",
@@ -122,10 +126,11 @@ defmodule WeaviateEx.BatchTest do
         }
       ]
 
-      response = %{"results" => [%{"status" => "SUCCESS"}]}
+      response = [%{"status" => "SUCCESS"}]
 
-      expect_http_request_with_body(:post, "/v1/batch/references", :any, fn ->
-        mock_success_response(response)
+      Mox.expect(Mock, :request, fn _client, :post, path, _body, _opts ->
+        assert path =~ "/v1/batch/references"
+        {:ok, response}
       end)
 
       assert {:ok, result} = Batch.add_references(references)
@@ -136,7 +141,7 @@ defmodule WeaviateEx.BatchTest do
   describe "integration tests" do
     @tag :integration
     test "batch create and delete workflow" do
-      if integration_mode?() do
+      if WeaviateEx.TestHelpers.integration_mode?() do
         # Create multiple objects
         objects = [
           %{class: "TestArticle", properties: %{title: "Batch 1"}},

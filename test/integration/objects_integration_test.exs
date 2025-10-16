@@ -8,7 +8,7 @@ defmodule WeaviateEx.Integration.ObjectsTest do
 
   setup_all do
     # Switch to real HTTP client for integration tests
-    Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Finch)
+    Application.put_env(:weaviate_ex, :protocol_impl, WeaviateEx.Protocol.HTTP.Client)
     Application.put_env(:weaviate_ex, :url, "http://localhost:8080")
 
     # Create test collection
@@ -102,7 +102,7 @@ defmodule WeaviateEx.Integration.ObjectsTest do
     end
 
     test "returns error for non-existent object" do
-      assert {:error, %{status: 404}} =
+      assert {:error, %WeaviateEx.Error{status_code: 404}} =
                Objects.get(@test_collection, "00000000-0000-0000-0000-999999999999")
     end
 
@@ -272,7 +272,8 @@ defmodule WeaviateEx.Integration.ObjectsTest do
       assert {:ok, _} = Objects.delete(@test_collection, object["id"])
 
       # Verify it's deleted
-      assert {:error, %{status: 404}} = Objects.get(@test_collection, object["id"])
+      assert {:error, %WeaviateEx.Error{status_code: 404}} =
+               Objects.get(@test_collection, object["id"])
     end
 
     test "returns success for non-existent object" do

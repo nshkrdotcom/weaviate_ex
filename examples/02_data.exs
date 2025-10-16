@@ -5,13 +5,12 @@ Mix.install([{:weaviate_ex, path: "."}])
 Code.require_file("example_helper.exs", __DIR__)
 
 alias WeaviateEx.API.{Collections, Data}
-import ExampleHelper
 
 ExampleHelper.check_weaviate!()
 
-section("Data Operations - CRUD")
+ExampleHelper.section("Data Operations - CRUD")
 
-{:ok, client} = WeaviateEx.Client.new("http://localhost:8080")
+{:ok, client} = WeaviateEx.Client.new(base_url: "http://localhost:8080")
 
 # Setup
 Collections.create(client, %{
@@ -25,46 +24,47 @@ Collections.create(client, %{
 })
 
 # Create (Insert)
-step("Insert new object")
+ExampleHelper.step("Insert new object")
 
 data = %{
   properties: %{
     "title" => "Hello Weaviate",
     "content" => "This is a test article",
     "views" => 0
-  }
+  },
+  vector: [0.1, 0.2, 0.3, 0.4, 0.5]
 }
 
-command("Data.insert(client, \"Article\", data)")
+ExampleHelper.command("Data.insert(client, \"Article\", data)")
 {:ok, object} = Data.insert(client, "Article", data)
 uuid = object["id"]
-result("Created", %{id: uuid, properties: object["properties"]})
+ExampleHelper.result("Created", %{id: uuid, properties: object["properties"]})
 
 # Read
-step("Get object by ID")
-command(~s/Data.get_by_id(client, "Article", uuid)/)
+ExampleHelper.step("Get object by ID")
+ExampleHelper.command(~s/Data.get_by_id(client, "Article", uuid)/)
 {:ok, retrieved} = Data.get_by_id(client, "Article", uuid)
-success("Retrieved: #{retrieved["properties"]["title"]}")
+ExampleHelper.success("Retrieved: #{retrieved["properties"]["title"]}")
 
 # Update (Patch)
-step("Update object (partial)")
+ExampleHelper.step("Update object (partial)")
 
-patch_data = %{properties: %{"views" => 42}}
-command("Data.patch(client, \"Article\", uuid, patch_data)")
+patch_data = %{properties: %{"views" => 42}, vector: [0.1, 0.2, 0.3, 0.4, 0.5]}
+ExampleHelper.command("Data.patch(client, \"Article\", uuid, patch_data)")
 {:ok, updated} = Data.patch(client, "Article", uuid, patch_data)
-result("Updated", %{views: updated["properties"]["views"]})
+ExampleHelper.result("Updated", %{views: updated["properties"]["views"]})
 
 # Check Existence
-step("Check if object exists")
-command(~s/Data.exists?(client, "Article", uuid)/)
+ExampleHelper.step("Check if object exists")
+ExampleHelper.command(~s/Data.exists?(client, "Article", uuid)/)
 {:ok, true} = Data.exists?(client, "Article", uuid)
-success("Object exists")
+ExampleHelper.success("Object exists")
 
 # Delete
-step("Delete object")
-command(~s/Data.delete_by_id(client, "Article", uuid)/)
+ExampleHelper.step("Delete object")
+ExampleHelper.command(~s/Data.delete_by_id(client, "Article", uuid)/)
 {:ok, _} = Data.delete_by_id(client, "Article", uuid)
-success("Deleted object")
+ExampleHelper.success("Deleted object")
 
-cleanup(client, "Article")
-IO.puts("\n#{green("✓")} Example complete!\n")
+ExampleHelper.cleanup(client, "Article")
+IO.puts("\n#{ExampleHelper.green("✓")} Example complete!\n")

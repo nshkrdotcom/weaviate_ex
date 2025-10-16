@@ -6,7 +6,7 @@ defmodule WeaviateEx.Integration.HealthTest do
 
   setup_all do
     # Switch to real HTTP client for integration tests
-    Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Finch)
+    Application.put_env(:weaviate_ex, :protocol_impl, WeaviateEx.Protocol.HTTP.Client)
     Application.put_env(:weaviate_ex, :url, "http://localhost:8080")
     :ok
   end

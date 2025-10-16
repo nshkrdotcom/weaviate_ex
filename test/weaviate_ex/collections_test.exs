@@ -1,14 +1,16 @@
 defmodule WeaviateEx.CollectionsTest do
   use ExUnit.Case, async: true
   import Mox
-  import WeaviateEx.TestHelpers
-  alias WeaviateEx.{Collections, Fixtures}
+  import WeaviateEx.Test.Mocks
+  alias WeaviateEx.API.Collections
+  alias WeaviateEx.Fixtures
+  alias WeaviateEx.Protocol.Mock
 
   setup :verify_on_exit!
-  setup :setup_http_client
+  setup :setup_test_client
 
   describe "list/1" do
-    test "returns all collections" do
+    test "returns all collections", %{client: client} do
       schema = %{
         "classes" => [
           Fixtures.collection_fixture("Article"),
@@ -16,116 +18,121 @@ defmodule WeaviateEx.CollectionsTest do
         ]
       }
 
-      expect_http_request(:get, "/v1/schema", fn ->
-        mock_success_response(schema)
-      end)
+      expect_http_success(Mock, :get, "/v1/schema", schema)
 
-      assert {:ok, response} = Collections.list()
-      assert length(response["classes"]) == 2
+      assert {:ok, collection_names} = Collections.list(client)
+      assert length(collection_names) == 2
+      assert "Article" in collection_names
+      assert "Author" in collection_names
     end
 
-    test "returns error on failure" do
-      expect_http_request(:get, "/v1/schema", fn ->
-        mock_error_response(500, "Internal server error")
-      end)
+    test "returns error on failure", %{client: client} do
+      expect_http_error(Mock, :get, "/v1/schema", :server_error)
 
-      assert {:error, %{status: 500}} = Collections.list()
+      assert {:error, %WeaviateEx.Error{type: :server_error}} = Collections.list(client)
     end
   end
 
-  describe "get/1" do
-    test "returns a specific collection" do
+  describe "get/2" do
+    test "returns a specific collection", %{client: client} do
       collection = Fixtures.collection_fixture("Article")
 
-      expect_http_request(:get, "/v1/schema/Article", fn ->
-        mock_success_response(collection)
-      end)
+      expect_http_success(Mock, :get, "/v1/schema/Article", collection)
 
-      assert {:ok, result} = Collections.get("Article")
+      assert {:ok, result} = Collections.get(client, "Article")
       assert result["class"] == "Article"
     end
 
-    test "returns error when collection not found" do
-      expect_http_request(:get, "/v1/schema/NonExistent", fn ->
-        mock_error_response(404, "Collection not found")
-      end)
+    test "returns error when collection not found", %{client: client} do
+      expect_http_error(Mock, :get, "/v1/schema/NonExistent", :not_found)
 
-      assert {:error, %{status: 404}} = Collections.get("NonExistent")
+      assert {:error, %WeaviateEx.Error{type: :not_found}} =
+               Collections.get(client, "NonExistent")
     end
   end
 
   describe "create/2" do
-    test "creates a new collection" do
+    test "creates a new collection", %{client: client} do
+      config = %{
+        "class" => "Article",
+        "properties" => [
+          %{"name" => "title", "dataType" => ["text"]},
+          %{"name" => "content", "dataType" => ["text"]}
+        ]
+      }
+
       collection = Fixtures.collection_fixture("Article")
 
-      expect_http_request_with_body(:post, "/v1/schema", :any, fn ->
-        mock_success_response(collection, 201)
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/schema", ^config, _opts ->
+        {:ok, collection}
       end)
 
-      assert {:ok, result} =
-               Collections.create("Article", %{
-                 properties: [
-                   %{name: "title", dataType: ["text"]},
-                   %{name: "content", dataType: ["text"]}
-                 ]
-               })
-
+      assert {:ok, result} = Collections.create(client, config)
       assert result["class"] == "Article"
     end
 
-    test "returns error on invalid schema" do
-      expect_http_request_with_body(:post, "/v1/schema", :any, fn ->
-        mock_error_response(422, "Invalid property definition")
+    test "returns error on invalid schema", %{client: client} do
+      config = %{"class" => "Article"}
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/schema", ^config, _opts ->
+        {:error,
+         %WeaviateEx.Error{
+           type: :validation_error,
+           message: "Invalid property definition",
+           details: %{},
+           status_code: 422
+         }}
       end)
 
-      assert {:error, %{status: 422}} = Collections.create("Article", %{})
+      assert {:error, %WeaviateEx.Error{type: :validation_error}} =
+               Collections.create(client, config)
     end
   end
 
-  describe "update/2" do
-    test "updates an existing collection" do
-      collection = Fixtures.collection_fixture("Article")
+  describe "update/3" do
+    test "updates an existing collection", %{client: client} do
+      updates = %{"description" => "Updated description"}
+      updated_collection = Fixtures.collection_fixture("Article")
 
-      expect_http_request_with_body(:put, "/v1/schema/Article", :any, fn ->
-        mock_success_response(collection)
+      Mox.expect(Mock, :request, fn _client, :put, "/v1/schema/Article", ^updates, _opts ->
+        {:ok, updated_collection}
       end)
 
-      assert {:ok, result} =
-               Collections.update("Article", %{
-                 description: "Updated description"
-               })
-
+      assert {:ok, result} = Collections.update(client, "Article", updates)
       assert result["class"] == "Article"
     end
   end
 
-  describe "delete/1" do
-    test "deletes a collection" do
-      expect_http_request(:delete, "/v1/schema/Article", fn ->
-        mock_success_response(%{})
+  describe "delete/2" do
+    test "deletes a collection", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :delete, "/v1/schema/Article", nil, _opts ->
+        {:ok, %{}}
       end)
 
-      assert {:ok, _} = Collections.delete("Article")
+      assert {:ok, _} = Collections.delete(client, "Article")
     end
 
-    test "returns error when collection not found" do
-      expect_http_request(:delete, "/v1/schema/NonExistent", fn ->
-        mock_error_response(404, "Collection not found")
-      end)
+    test "returns error when collection not found", %{client: client} do
+      expect_http_error(Mock, :delete, "/v1/schema/NonExistent", :not_found)
 
-      assert {:error, %{status: 404}} = Collections.delete("NonExistent")
+      assert {:error, %WeaviateEx.Error{type: :not_found}} =
+               Collections.delete(client, "NonExistent")
     end
   end
 
   describe "add_property/3" do
-    test "adds a property to a collection" do
-      property = %{name: "author", dataType: ["text"]}
+    test "adds a property to a collection", %{client: client} do
+      property = %{"name" => "author", "dataType" => ["text"]}
 
-      expect_http_request_with_body(:post, "/v1/schema/Article/properties", :any, fn ->
-        mock_success_response(property, 201)
+      Mox.expect(Mock, :request, fn _client,
+                                    :post,
+                                    "/v1/schema/Article/properties",
+                                    ^property,
+                                    _opts ->
+        {:ok, property}
       end)
 
-      assert {:ok, result} = Collections.add_property("Article", property)
+      assert {:ok, result} = Collections.add_property(client, "Article", property)
       assert result["name"] == "author"
     end
   end
@@ -133,19 +140,26 @@ defmodule WeaviateEx.CollectionsTest do
   describe "integration tests" do
     @tag :integration
     test "full CRUD workflow" do
-      if integration_mode?() do
+      if WeaviateEx.TestHelpers.integration_mode?() do
+        {:ok, client} =
+          WeaviateEx.Client.new(
+            base_url: WeaviateEx.base_url(),
+            api_key: WeaviateEx.api_key()
+          )
+
         # Create
         {:ok, _} =
-          Collections.create("TestArticle", %{
-            properties: [%{name: "title", dataType: ["text"]}]
+          Collections.create(client, %{
+            "class" => "TestArticle",
+            "properties" => [%{"name" => "title", "dataType" => ["text"]}]
           })
 
         # Read
-        {:ok, collection} = Collections.get("TestArticle")
+        {:ok, collection} = Collections.get(client, "TestArticle")
         assert collection["class"] == "TestArticle"
 
         # Delete
-        {:ok, _} = Collections.delete("TestArticle")
+        {:ok, _} = Collections.delete(client, "TestArticle")
       else
         assert true
       end

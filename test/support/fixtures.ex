@@ -111,15 +111,7 @@ defmodule WeaviateEx.Fixtures do
   end
 
   # Helper to generate consistent UUIDs for testing
-  defp uuid(n) when is_integer(n) do
-    n
-    |> Integer.to_string()
-    |> String.pad_leading(32, "0")
-    |> String.graphemes()
-    |> Enum.chunk_every(4)
-    |> Enum.take(5)
-    |> Enum.map(&Enum.join/1)
-    |> Enum.join("-")
-    |> then(fn s -> String.slice(s, 0, 36) end)
+  defp uuid(_n) do
+    Uniq.UUID.uuid4()
   end
 end

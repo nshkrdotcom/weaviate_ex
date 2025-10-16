@@ -69,11 +69,11 @@ defmodule ExampleHelper do
   end
 
   # ANSI color helpers
-  defp bold(text), do: "\e[1m#{text}\e[0m"
-  defp dim(text), do: "\e[2m#{text}\e[0m"
-  defp red(text), do: "\e[31m#{text}\e[0m"
-  defp green(text), do: "\e[32m#{text}\e[0m"
-  defp yellow(text), do: "\e[33m#{text}\e[0m"
-  defp blue(text), do: "\e[34m#{text}\e[0m"
-  defp cyan(text), do: "\e[36m#{text}\e[0m"
+  def bold(text), do: "\e[1m#{text}\e[0m"
+  def dim(text), do: "\e[2m#{text}\e[0m"
+  def red(text), do: "\e[31m#{text}\e[0m"
+  def green(text), do: "\e[32m#{text}\e[0m"
+  def yellow(text), do: "\e[33m#{text}\e[0m"
+  def blue(text), do: "\e[34m#{text}\e[0m"
+  def cyan(text), do: "\e[36m#{text}\e[0m"
 end
