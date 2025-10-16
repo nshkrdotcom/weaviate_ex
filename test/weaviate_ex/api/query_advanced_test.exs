@@ -231,7 +231,9 @@ defmodule WeaviateEx.API.QueryAdvancedTest do
         # Should only have the last sort (views desc)
         assert body["query"] =~ "views"
         assert body["query"] =~ "desc"
-        refute body["query"] =~ "title"
+        # Check that title is not in the sort clause (only in fields)
+        assert body["query"] =~ ~r/sort:.*views/
+        refute body["query"] =~ ~r/sort:.*title/
 
         {:ok,
          %{
@@ -363,10 +365,12 @@ defmodule WeaviateEx.API.QueryAdvancedTest do
       end)
 
       # Simulate combining with near_text
-      assert {:ok, []} =
-               build_base_query()
-               |> QueryAdvanced.autocut(3)
-               |> execute_query(client)
+      query =
+        build_base_query()
+        |> Map.put(:near_text, "artificial intelligence")
+        |> QueryAdvanced.autocut(3)
+
+      assert {:ok, []} = execute_query(query, client)
     end
   end
 
@@ -382,10 +386,67 @@ defmodule WeaviateEx.API.QueryAdvancedTest do
 
   defp execute_query(query, client) do
     # Mock implementation - in real code this would call Query.execute/1
-    # For now, just trigger the mock expectation
+    # Build a GraphQL query string from the query map to test query builders
     collection = query.collection
+    fields = Map.get(query, :fields, ["title"])
+    _limit = Map.get(query, :limit, 10)
 
-    WeaviateEx.Client.request(client, :post, "/v1/graphql", %{"query" => "..."}, [])
+    # Build query parameters
+    params = []
+
+    # Add sort if present
+    params =
+      if sort_fields = Map.get(query, :sort) do
+        sort_str = build_sort_string(sort_fields)
+        ["sort: #{sort_str}" | params]
+      else
+        params
+      end
+
+    # Add groupBy if present
+    params =
+      if group_by = Map.get(query, :group_by) do
+        group_str = build_group_by_string(group_by)
+        ["groupBy: #{group_str}" | params]
+      else
+        params
+      end
+
+    # Add autocut if present
+    params =
+      if autocut = Map.get(query, :autocut) do
+        ["autocut: #{autocut}" | params]
+      else
+        params
+      end
+
+    # Add nearText if present (for testing)
+    params =
+      if near_text = Map.get(query, :near_text) do
+        ["nearText: { concepts: [\"#{near_text}\"] }" | params]
+      else
+        params
+      end
+
+    # Build full query
+    params_str =
+      if Enum.empty?(params) do
+        ""
+      else
+        "(#{Enum.join(Enum.reverse(params), ", ")})"
+      end
+
+    graphql_query = """
+    {
+      Get {
+        #{collection}#{params_str} {
+          #{Enum.join(fields, "\n      ")}
+        }
+      }
+    }
+    """
+
+    WeaviateEx.Client.request(client, :post, "/v1/graphql", %{"query" => graphql_query}, [])
     |> case do
       {:ok, %{"data" => %{"Get" => get_results}}} ->
         results = Map.get(get_results, collection, [])
@@ -397,5 +458,19 @@ defmodule WeaviateEx.API.QueryAdvancedTest do
       error ->
         error
     end
+  end
+
+  defp build_sort_string(sort_fields) do
+    sorts =
+      Enum.map(sort_fields, fn %{path: path, order: order} ->
+        "{ path: [\"#{Enum.join(path, "\", \"")}\"], order: #{order} }"
+      end)
+
+    "[#{Enum.join(sorts, ", ")}]"
+  end
+
+  defp build_group_by_string(group_by) do
+    %{path: path, groups: groups, objects_per_group: objects} = group_by
+    "{ path: [\"#{Enum.join(path, "\", \"")}\"], groups: #{groups}, objectsPerGroup: #{objects} }"
   end
 end
