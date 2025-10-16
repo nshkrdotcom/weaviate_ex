@@ -238,7 +238,28 @@ defmodule WeaviateEx.Query do
   @spec execute(t(), Keyword.t()) :: WeaviateEx.api_response()
   def execute(%__MODULE__{} = query, opts \\ []) do
     graphql_query = build_graphql(query)
-    request(:post, "/v1/graphql", %{query: graphql_query}, opts)
+
+    case request(:post, "/v1/graphql", %{query: graphql_query}, opts) do
+      {:ok, response} -> parse_response(response, query.collection)
+      error -> error
+    end
+  end
+
+  # Parse GraphQL response and extract collection results
+  defp parse_response(%{"data" => %{"Get" => get_results}}, collection)
+       when is_map(get_results) do
+    # Get collection results, defaulting to [] if missing or nil
+    collection_results = Map.get(get_results, collection, []) || []
+    {:ok, collection_results}
+  end
+
+  defp parse_response(%{"errors" => errors}, _collection) do
+    {:error, %{graphql_errors: errors}}
+  end
+
+  defp parse_response(response, _collection) do
+    # Fallback - return the raw response
+    {:ok, response}
   end
 
   # Build GraphQL query string
@@ -294,36 +315,105 @@ defmodule WeaviateEx.Query do
   defp maybe_add_where(args, nil), do: args
 
   defp maybe_add_where(args, where) do
-    args ++ ["where: #{Jason.encode!(where)}"]
+    args ++ ["where: #{map_to_graphql(where)}"]
   end
 
   defp maybe_add_near_text(args, nil), do: args
 
   defp maybe_add_near_text(args, params) do
-    args ++ ["nearText: #{Jason.encode!(params)}"]
+    args ++ ["nearText: #{map_to_graphql(params)}"]
   end
 
   defp maybe_add_near_vector(args, nil), do: args
 
   defp maybe_add_near_vector(args, params) do
-    args ++ ["nearVector: #{Jason.encode!(params)}"]
+    args ++ ["nearVector: #{map_to_graphql(params)}"]
   end
 
   defp maybe_add_near_object(args, nil), do: args
 
   defp maybe_add_near_object(args, params) do
-    args ++ ["nearObject: #{Jason.encode!(params)}"]
+    args ++ ["nearObject: #{map_to_graphql(params)}"]
   end
 
   defp maybe_add_hybrid(args, nil), do: args
 
   defp maybe_add_hybrid(args, params) do
-    args ++ ["hybrid: #{Jason.encode!(params)}"]
+    args ++ ["hybrid: #{map_to_graphql(params)}"]
   end
 
   defp maybe_add_bm25(args, nil), do: args
 
   defp maybe_add_bm25(args, params) do
-    args ++ ["bm25: #{Jason.encode!(params)}"]
+    args ++ ["bm25: #{map_to_graphql(params)}"]
+  end
+
+  # Convert Elixir map/list to GraphQL object syntax (without quotes on keys)
+  defp map_to_graphql(value) when is_map(value) do
+    entries =
+      value
+      |> Enum.map(fn {k, v} ->
+        key_str = to_string(k)
+        "#{key_str}: #{map_to_graphql(v, key_str)}"
+      end)
+      |> Enum.join(", ")
+
+    "{#{entries}}"
+  end
+
+  defp map_to_graphql(value) when is_list(value) do
+    items =
+      value
+      |> Enum.map(&map_to_graphql(&1, nil))
+      |> Enum.join(", ")
+
+    "[#{items}]"
+  end
+
+  defp map_to_graphql(value) when is_binary(value) do
+    # Escape quotes and wrap in quotes for strings
+    escaped = String.replace(value, "\"", "\\\"")
+    "\"#{escaped}\""
+  end
+
+  defp map_to_graphql(value) when is_number(value) or is_boolean(value) or is_nil(value) do
+    to_string(value)
+  end
+
+  # Version with key context for enum detection
+  defp map_to_graphql(value, key) when is_binary(value) and key in ["operator", "fusionType"] do
+    # These fields are enums in GraphQL - don't quote them
+    value
+  end
+
+  defp map_to_graphql(value, _key) when is_binary(value) do
+    # Regular strings - quote them
+    escaped = String.replace(value, "\"", "\\\"")
+    "\"#{escaped}\""
+  end
+
+  defp map_to_graphql(value, _key) when is_map(value) do
+    entries =
+      value
+      |> Enum.map(fn {k, v} ->
+        key_str = to_string(k)
+        "#{key_str}: #{map_to_graphql(v, key_str)}"
+      end)
+      |> Enum.join(", ")
+
+    "{#{entries}}"
+  end
+
+  defp map_to_graphql(value, _key) when is_list(value) do
+    items =
+      value
+      |> Enum.map(&map_to_graphql(&1, nil))
+      |> Enum.join(", ")
+
+    "[#{items}]"
+  end
+
+  defp map_to_graphql(value, _key) when is_number(value) or is_boolean(value) or is_nil(value) do
+    to_string(value)
   end
 end

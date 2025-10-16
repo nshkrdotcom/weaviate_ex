@@ -19,7 +19,9 @@ defmodule WeaviateEx.QueryTest do
         |> Query.limit(10)
 
       assert {:ok, result} = Query.execute(query)
-      assert result["data"]["Get"]["Article"]
+      # Query.execute/2 now returns the parsed collection results directly
+      assert is_list(result)
+      assert length(result) == 2
     end
 
     test "builds query with additional fields" do

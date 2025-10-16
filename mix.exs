@@ -38,6 +38,9 @@ defmodule WeaviateEx.MixProject do
       # JSON encoding/decoding
       {:jason, "~> 1.4"},
 
+      # UUID generation
+      {:uniq, "~> 0.6"},
+
       # Optional: gRPC support (for future enhancement)
       # {:grpc, "~> 0.7", optional: true},
 

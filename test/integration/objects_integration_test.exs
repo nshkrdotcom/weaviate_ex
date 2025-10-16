@@ -182,9 +182,13 @@ defmodule WeaviateEx.Integration.ObjectsTest do
 
   describe "Objects.patch/4 (live)" do
     setup do
+      # Create object WITH a vector to match the collection's vector dimension
+      vector = Enum.map(1..384, fn _ -> :rand.uniform() * 2 - 1 end)
+
       {:ok, object} =
         Objects.create(@test_collection, %{
-          properties: %{title: "Patch Test", content: "Original", score: 5}
+          properties: %{title: "Patch Test", content: "Original", score: 5},
+          vector: vector
         })
 
       on_exit(fn -> Objects.delete(@test_collection, object["id"]) end)
@@ -250,7 +254,11 @@ defmodule WeaviateEx.Integration.ObjectsTest do
         })
 
       # Might succeed or fail depending on Weaviate config
-      assert {:ok, _} = result or match?({:error, _}, result)
+      # Use proper assertion that handles both cases
+      case result do
+        {:ok, _} -> assert true
+        {:error, _} -> assert true
+      end
     end
   end
 
