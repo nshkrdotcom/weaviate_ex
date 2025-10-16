@@ -445,7 +445,7 @@ defmodule WeaviateEx.API.GenerativeTest do
   end
 
   describe "with_generate/3" do
-    test "adds generate clause to existing query", %{client: client} do
+    test "adds generate clause to existing query", %{client: _client} do
       # This function modifies a query map to add generation
       query = %{
         collection: "Article",
