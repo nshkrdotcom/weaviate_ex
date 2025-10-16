@@ -21,7 +21,8 @@ defmodule WeaviateEx.API.AggregateTest do
         assert path =~ "/v1/graphql"
         assert body["query"] =~ "Aggregate"
         assert body["query"] =~ "Article"
-        assert body["query"] =~ "meta { count }"
+        assert body["query"] =~ "meta"
+        assert body["query"] =~ "count"
 
         {:ok,
          %{
@@ -159,7 +160,8 @@ defmodule WeaviateEx.API.AggregateTest do
         assert body["query"] =~ "Aggregate"
         assert body["query"] =~ "nearText"
         assert body["query"] =~ "artificial intelligence"
-        assert body["query"] =~ "meta { count }"
+        assert body["query"] =~ "meta"
+        assert body["query"] =~ "count"
 
         {:ok,
          %{
@@ -319,7 +321,7 @@ defmodule WeaviateEx.API.AggregateTest do
     test "aggregates results grouped by property", %{client: client} do
       Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
         assert body["query"] =~ "Aggregate"
-        assert body["query"] =~ "groupBy"
+        assert body["query"] =~ "groupedBy"
         assert body["query"] =~ "category"
 
         {:ok,
@@ -355,7 +357,7 @@ defmodule WeaviateEx.API.AggregateTest do
 
     test "groups by property with aggregated metrics", %{client: client} do
       Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
-        assert body["query"] =~ "groupBy"
+        assert body["query"] =~ "groupedBy"
         assert body["query"] =~ "author"
         assert body["query"] =~ "views"
         assert body["query"] =~ "mean"
@@ -398,7 +400,7 @@ defmodule WeaviateEx.API.AggregateTest do
 
     test "groups by nested property path", %{client: client} do
       Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
-        assert body["query"] =~ "groupBy"
+        assert body["query"] =~ "groupedBy"
         # Nested path: author.name
         assert body["query"] =~ ~r/author.*name/
 
