@@ -162,4 +162,61 @@ defmodule WeaviateEx.API.CollectionsTest do
       assert {:ok, false} = Collections.exists?(client, "NonExistent")
     end
   end
+
+  describe "delete_all/1" do
+    test "deletes all collections successfully", %{client: client} do
+      # First call to list collections
+      Mox.expect(Mock, :request, fn _client, :get, "/v1/schema", nil, _opts ->
+        {:ok,
+         %{
+           "classes" => [
+             %{"class" => "Article"},
+             %{"class" => "Author"}
+           ]
+         }}
+      end)
+
+      # Expect delete calls for each collection
+      Mox.expect(Mock, :request, 2, fn _client, :delete, path, nil, _opts ->
+        assert path in ["/v1/schema/Article", "/v1/schema/Author"]
+        {:ok, %{}}
+      end)
+
+      assert {:ok, deleted_count: 2} = Collections.delete_all(client)
+    end
+
+    test "handles empty schema", %{client: client} do
+      expect_http_success(Mock, :get, "/v1/schema", %{"classes" => []})
+
+      assert {:ok, deleted_count: 0} = Collections.delete_all(client)
+    end
+
+    test "reports partial failures", %{client: client} do
+      # List collections
+      Mox.expect(Mock, :request, fn _client, :get, "/v1/schema", nil, _opts ->
+        {:ok,
+         %{
+           "classes" => [
+             %{"class" => "Article"},
+             %{"class" => "Author"}
+           ]
+         }}
+      end)
+
+      # First delete succeeds, second fails
+      Mox.expect(Mock, :request, fn _client, :delete, "/v1/schema/Article", nil, _opts ->
+        {:ok, %{}}
+      end)
+
+      Mox.expect(Mock, :request, fn _client, :delete, "/v1/schema/Author", nil, _opts ->
+        {:error, %WeaviateEx.Error{type: :server_error, message: "Failed to delete"}}
+      end)
+
+      assert {:ok, result} = Collections.delete_all(client)
+      assert result[:deleted_count] == 1
+      assert result[:failed_count] == 1
+      assert length(result[:failures]) == 1
+      assert hd(result[:failures])[:collection] == "Author"
+    end
+  end
 end

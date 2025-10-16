@@ -130,13 +130,23 @@ defmodule WeaviateEx.ObjectsTest do
       patched_object = %{
         "id" => "00000000-0000-0000-0000-000000000001",
         "class" => "Article",
-        "properties" => %{"title" => "Patched Title"}
+        "properties" => %{"title" => "Patched Title", "content" => "Original"}
       }
 
+      # PATCH request returns 204 No Content
       expect_http_request_with_body(
         :patch,
         "/v1/objects/Article/00000000-0000-0000-0000-000000000001",
         :any,
+        fn ->
+          mock_success_response(%{}, 204)
+        end
+      )
+
+      # Then GET to retrieve updated object
+      expect_http_request(
+        :get,
+        "/v1/objects/Article/00000000-0000-0000-0000-000000000001",
         fn ->
           mock_success_response(patched_object)
         end
