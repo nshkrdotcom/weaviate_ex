@@ -255,7 +255,8 @@ defmodule WeaviateEx.API.VectorConfig do
 
     pq_config =
       if encoder = Keyword.get(opts, :encoder) do
-        Map.put(pq_config, "encoder", encoder)
+        encoder_with_string_keys = stringify_keys(encoder)
+        Map.put(pq_config, "encoder", encoder_with_string_keys)
       else
         pq_config
       end
@@ -362,7 +363,12 @@ defmodule WeaviateEx.API.VectorConfig do
 
   @doc "Add named vectors configuration"
   def with_named_vectors(config, vectors) do
-    Map.put(config, "vectorConfig", vectors)
+    vectors_with_string_keys =
+      Enum.into(vectors, %{}, fn {name, vector_config} ->
+        {name, stringify_keys(vector_config)}
+      end)
+
+    Map.put(config, "vectorConfig", vectors_with_string_keys)
   end
 
   @doc "Add replication configuration"
@@ -426,6 +432,15 @@ defmodule WeaviateEx.API.VectorConfig do
   def valid_distance?(metric), do: metric in @distance_metrics
 
   ## Private Helpers
+
+  defp stringify_keys(map) when is_map(map) do
+    Enum.into(map, %{}, fn
+      {key, value} when is_atom(key) -> {Atom.to_string(key), stringify_keys(value)}
+      {key, value} -> {key, stringify_keys(value)}
+    end)
+  end
+
+  defp stringify_keys(value), do: value
 
   defp build_module_opts(opts, config \\ []) do
     snake_to_camel = Keyword.get(config, :snake_to_camel, false)
