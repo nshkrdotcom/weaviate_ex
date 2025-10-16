@@ -1,8 +1,19 @@
 # Start ExUnit with async test support
 ExUnit.start()
 
+# Load support files
+Code.require_file("support/mocks.ex", __DIR__)
+Code.require_file("support/factory.ex", __DIR__)
+Code.require_file("support/fixtures.ex", __DIR__)
+
+# Configure Mox
+Mox.defmock(WeaviateEx.Protocol.Mock, for: WeaviateEx.Protocol)
+
 # Always define the mock for HTTP client (needed for unit tests even when running with --include integration)
 Mox.defmock(WeaviateEx.HTTPClient.Mock, for: WeaviateEx.HTTPClient)
+
+# Set global mode for async tests
+Application.put_env(:weaviate_ex, :protocol_impl, WeaviateEx.Protocol.Mock)
 
 # Default to mock mode for unit tests
 Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Mock)
@@ -10,9 +21,8 @@ Application.put_env(:weaviate_ex, :http_client, WeaviateEx.HTTPClient.Mock)
 # Disable strict health checks during tests
 Application.put_env(:weaviate_ex, :strict, false)
 
-# Tag for integration tests that require live Weaviate
-# Run with: mix test --include integration
-ExUnit.configure(exclude: [integration: true])
+# Exclude integration tests by default
+ExUnit.configure(exclude: [:integration, :property, :performance])
 
 defmodule WeaviateEx.TestHelpers do
   @moduledoc """
