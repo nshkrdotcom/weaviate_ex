@@ -92,7 +92,8 @@ defmodule WeaviateEx.MixProject do
       extras: [
         "README.md",
         "INSTALL.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "LICENSE"
       ],
       groups_for_extras: [
         Guides: ["README.md", "INSTALL.md"],
