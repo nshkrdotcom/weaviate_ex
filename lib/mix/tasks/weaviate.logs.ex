@@ -81,19 +81,15 @@ defmodule Mix.Tasks.Weaviate.Logs do
         {_, 0} ->
           :ok
 
-        {output, 1} ->
+        {_, 1} ->
           Mix.shell().error("""
 
           No logs for #{file}? Ensure the services are running.
-
-          #{output}
           """)
 
-        {output, exit_code} ->
+        {_, exit_code} ->
           Mix.raise("""
-          Failed to fetch logs from #{file} (exit #{exit_code})
-
-          #{output}
+          Failed to fetch logs from #{file} (exit #{exit_code}). Review the output above for details.
           """)
       end
     end)

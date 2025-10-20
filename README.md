@@ -16,10 +16,10 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - **Complete API Coverage** - Collections, objects, batch operations, queries, aggregations, tenants
 - **Type-Safe** - Protocol-based architecture with comprehensive specs
 - **Test-First Design** - 158+ tests with Mox-based mocking for fast, isolated testing
-- **Developer-Friendly** - Intuitive API with helpful error messages
+- **Developer-Friendly** - Intuitive API, dedicated Mix tooling, and helpful error messages
 - **Production-Ready** - Connection pooling with Finch, proper error handling, health checks
-- **Easy Setup** - Automated Docker installation with `install.sh`
-- **Rich Examples** - 6 runnable examples covering all major features
+- **Easy Setup** - First-class Mix tasks for managing local Weaviate stacks
+- **Rich Examples** - 8 runnable examples covering all major features
 
 ## Table of Contents
 
@@ -27,6 +27,7 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+  - [Embedded Mode](#embedded-mode)
   - [Health Checks](#health-checks)
   - [Collections (Schema Management)](#collections-schema-management)
   - [Data Operations (CRUD)](#data-operations-crud)
@@ -48,39 +49,31 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 
 ## Quick Start
 
-### 1. Install Weaviate
+### 1. Start Weaviate locally
 
-Run the installation script to set up Weaviate with Docker:
+> 🧰 **Prerequisite**: Docker Desktop (macOS/Windows) or Docker Engine (Linux)
 
-```bash
-./install.sh
-```
-
-This automated script will:
-- ✅ Check and install Docker (if needed on Ubuntu/Debian)
-- ✅ Create a `.env` file with default configuration
-- ✅ Pull the Weaviate Docker image (v1.28.1)
-- ✅ Start Weaviate with health checks
-- ✅ Verify the connection is working
-- ✅ Display helpful commands for managing Weaviate
-
-**Manual Installation** (if `install.sh` doesn't work):
+We ship the full set of Docker Compose profiles from the Python client under `ci/weaviate/`. Use our Mix tasks to bring everything up:
 
 ```bash
-# 1. Ensure Docker is installed
-docker --version
+# Boot every profile (single node, modules, RBAC, async, cluster, proxy, etc.)
+mix weaviate.start --version latest
 
-# 2. Start Weaviate using Docker Compose
-docker compose up -d
-
-# 3. Wait for health check (30-60 seconds)
-docker compose ps
-
-# 4. Verify connection
-curl http://localhost:8080/v1/meta
+# Inspect running services and exposed ports
+mix weaviate.status
 ```
 
-For detailed installation instructions, see [INSTALL.md](INSTALL.md).
+The first run downloads several images (contextionary, proxy, multiple Weaviate variants) and waits for every `/v1/.well-known/ready` endpoint to return `200`. Expect it to take a couple of minutes on a fresh machine.
+
+When you're done:
+
+```bash
+mix weaviate.stop --version latest
+```
+
+Need only the async “journey tests” stack? Pass `--profile async` to `mix weaviate.start`. The tasks accept any Docker image tag, so swap `latest` for an explicit `1.30.5` (or export `WEAVIATE_VERSION` to suppress Docker’s warning banners).
+
+> Prefer the classic single-node setup? `./install.sh` still exists and brings up the minimal compose file, but the Mix tasks give you the full parity matrix the Python client uses for integration testing.
 
 ### 2. Add to Your Project
 
@@ -129,8 +122,11 @@ The library automatically performs a health check on startup:
 ```
 [WeaviateEx] Successfully connected to Weaviate
   URL: http://localhost:8080
-  Version: 1.28.1
+  Version: 1.34.0-rc.0
+
 ```
+
+You can also run `mix weaviate.status` to see every profile that’s currently online and the ports they expose.
 
 If configuration is missing, you'll get helpful error messages:
 
@@ -227,6 +223,31 @@ config :weaviate_ex,
 
 ## Usage
 
+### Embedded Mode
+
+Need an ephemeral instance without Docker? WeaviateEx can download and manage the official embedded binary:
+
+```elixir
+# Downloads (once) into ~/.cache/weaviate-embedded and starts the process
+{:ok, embedded} =
+  WeaviateEx.start_embedded(
+    version: "1.34.0",
+    port: 8099,
+    grpc_port: 50155,
+    persistence_data_path: Path.expand("tmp/weaviate-data"),
+    environment_variables: %{"DISABLE_TELEMETRY" => "true"}
+  )
+
+# Talk to it just like any other instance
+System.put_env("WEAVIATE_URL", "http://localhost:8099")
+{:ok, meta} = WeaviateEx.health_check()
+
+# Always stop the handle when finished
+:ok = WeaviateEx.stop_embedded(embedded)
+```
+
+Passing `version: "latest"` fetches the most recent GitHub release. Binaries are cached, so subsequent calls reuse the download. You can override `binary_path`/`persistence_data_path` to control where the executable and data live.
+
 ### Health Checks
 
 Check if Weaviate is accessible and get version information:
@@ -234,7 +255,7 @@ Check if Weaviate is accessible and get version information:
 ```elixir
 # Get metadata (version, modules)
 {:ok, meta} = WeaviateEx.health_check()
-# => %{"version" => "1.28.1", "modules" => %{}}
+# => %{"version" => "1.34.0-rc.0", "modules" => %{}}
 
 # Check readiness (can handle requests)
 {:ok, true} = WeaviateEx.ready?()
@@ -623,7 +644,7 @@ Collections.create(client, config)
 
 ## Examples
 
-WeaviateEx includes **6 runnable examples** that demonstrate all major features:
+WeaviateEx includes **8 runnable examples** that demonstrate all major features:
 
 | Example | Description | What You'll Learn |
 |---------|-------------|-------------------|
@@ -633,25 +654,54 @@ WeaviateEx includes **6 runnable examples** that demonstrate all major features:
 | `04_aggregate.exs` | Aggregations | Count, statistics, top occurrences, group by |
 | `05_vector_config.exs` | Vector configuration | HNSW, PQ compression, flat index, distance metrics |
 | `06_tenants.exs` | Multi-tenancy | Create tenants, activate/deactivate, list, delete |
+| `07_batch.exs` | Batch API | Bulk create/delete with summaries, query remaining data |
+| `08_query.exs` | Query builder | BM25 search, filters, near-vector similarity |
+
+### Prerequisites
+
+Follow these steps once before running any example:
+
+1. **Start the local stack** (full profile with all compose files):
+
+   ```bash
+   # from the project root
+   mix weaviate.start --version latest
+   # or use the helper script
+   ./scripts/weaviate-stack.sh start --version latest
+   ```
+
+   To shut everything down afterwards use `mix weaviate.stop --version latest` (or `./scripts/weaviate-stack.sh stop`).
+
+2. **Confirm the services are healthy** (optional but recommended):
+
+   ```bash
+   mix weaviate.status
+   ```
+
+3. **Point the client at the running cluster** (avoids repeated configuration warnings):
+
+   ```bash
+   export WEAVIATE_URL=http://localhost:8080
+   # set WEAVIATE_API_KEY=... as well if your instance requires auth
+   ```
 
 ### Running Examples
 
 All examples are self-contained and include clean visual output:
 
 ```bash
-# Make sure Weaviate is running
-mix weaviate.start
+# With WEAVIATE_URL exported
 
 # Run any example
-elixir examples/01_collections.exs
-elixir examples/02_data.exs
-elixir examples/03_filter.exs
+mix run examples/01_collections.exs
+mix run examples/02_data.exs
+mix run examples/03_filter.exs
 # ... etc
 
 # Or run all examples
 for example in examples/*.exs; do
   echo "Running $example..."
-  elixir "$example"
+  mix run "$example"
 done
 ```
 
@@ -752,95 +802,101 @@ Current test coverage by module:
 
 ## Mix Tasks
 
-Convenient Mix tasks for managing your local Weaviate instance:
+Our developer tooling mirrors the Python client’s workflows by shelling out to the Compose scripts in `ci/weaviate/`:
 
 ```bash
-# Start Weaviate (uses docker compose)
-mix weaviate.start
+# Start every profile with a specific Weaviate tag (default: latest)
+mix weaviate.start --version 1.34.0
 
-# Stop Weaviate
-mix weaviate.stop
+# Only bring up the async/journey-test stack
+mix weaviate.start --profile async --version latest
 
-# Stop and remove all data (WARNING: deletes everything)
-mix weaviate.stop --remove-volumes
+# Stop containers (match the version you started with)
+mix weaviate.stop --version latest
 
-# Check status
+# Tear everything down and wipe named volumes
+mix weaviate.stop --version latest --remove-volumes
+
+# See container status for each compose file and exposed ports
 mix weaviate.status
 
-# View logs
-mix weaviate.logs
+# Tail the last 100 lines from a specific compose file
+mix weaviate.logs --file docker-compose-backup.yml --tail 100
 
-# Follow logs in real-time
-mix weaviate.logs --follow
-
-# View last 50 lines
-mix weaviate.logs --tail 50
+# Follow logs for the async profile
+mix weaviate.logs --file docker-compose-async.yml --follow
 ```
 
-These tasks are wrappers around Docker Compose for convenience.
+> ℹ️ The log and status tasks execute `docker compose -f ci/weaviate/<file> …`. If you don’t want to pass `--version` every time, export `WEAVIATE_VERSION=<tag>` in your shell to avoid Docker warnings about missing variables.
+
+### Helper script
+
+Prefer a single entry point? Use the convenience wrapper in `scripts/`:
+
+```bash
+# Show help
+./scripts/weaviate-stack.sh help
+
+# Run the full start → status → logs → stop cycle
+./scripts/weaviate-stack.sh cycle
+
+# Start only the async profile with a specific tag
+./scripts/weaviate-stack.sh start --profile async --version 1.34.0
+```
+
+The script simply forwards to the Mix tasks under the hood, adding a friendly help menu and defaults (`--version latest`, logs from `docker-compose.yml`, tail 20 lines).
 
 ## Docker Management
 
-### Using Docker Compose Directly
+### Using the bundled scripts
+
+All Compose profiles live under `ci/weaviate/` (ported straight from the Python client). The shell helpers there mirror our Mix tasks:
 
 ```bash
-# Start Weaviate in detached mode
-docker compose up -d
+# Start every profile (single node, modules, RBAC, cluster, async, proxy…)
+./ci/weaviate/start_weaviate.sh latest
 
-# Stop Weaviate
-docker compose down
+# Async-only sandbox for journey tests
+./ci/weaviate/start_weaviate_jt.sh latest
 
-# Stop and remove all data
-docker compose down -v
-
-# View logs
-docker compose logs -f weaviate
-
-# Check status
-docker compose ps
-
-# Restart Weaviate
-docker compose restart
-
-# Pull latest image
-docker compose pull
+# Stop whatever is running
+./ci/weaviate/stop_weaviate.sh latest
 ```
 
-### Docker Compose Configuration
+Edit `ci/weaviate/compose.sh` if you add/remove compose files so the scripts (and Mix tasks) continue to iterate over the correct set.
 
-The included `docker-compose.yml` configures:
+### Direct Docker Compose commands
 
-- **Image**: Weaviate v1.28.1
-- **Ports**:
-  - `8080:8080` - HTTP REST API
-  - `40051:50051` - gRPC API
-- **Environment**:
-  - Anonymous access enabled (for local development)
-  - No default vectorizer (bring your own vectors)
-  - Persistence enabled
-- **Volumes**: `weaviate_data` for persistent storage
-- **Health checks**: Automatic health monitoring
-
-### Troubleshooting Docker
+You can operate on any profile manually by passing `-f ci/weaviate/<file>`:
 
 ```bash
-# Check if Docker is running
+# Spawn just the baseline stack
+docker compose -f ci/weaviate/docker-compose.yml up -d
+
+# Inspect the cluster nodes
+docker compose -f ci/weaviate/docker-compose-cluster.yml ps
+
+# Tail logs for the RBAC profile
+docker compose -f ci/weaviate/docker-compose-rbac.yml logs -f
+
+# Remove everything (data included)
+docker compose -f ci/weaviate/docker-compose.yml down -v
+```
+
+### Troubleshooting tips
+
+```bash
+# Confirm Docker is running
 docker info
 
-# View detailed container status
-docker compose ps -a
+# See which services are up for a given profile
+docker compose -f ci/weaviate/docker-compose-backup.yml ps -a
 
-# Check container logs for errors
-docker compose logs weaviate --tail 100
-
-# Restart with fresh data (WARNING: deletes all data)
-docker compose down -v && docker compose up -d
-
-# Test connectivity
-curl http://localhost:8080/v1/meta
-
-# Check health endpoint
+# Check the ready endpoint of the primary instance
 curl http://localhost:8080/v1/.well-known/ready
+
+# Query metadata
+curl http://localhost:8080/v1/meta
 ```
 
 ## Authentication
@@ -892,7 +948,7 @@ config :weaviate_ex,
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history and release notes
 - **[API Documentation](https://hexdocs.pm/weaviate_ex)** - Full API reference on HexDocs
 - **[Weaviate Docs](https://docs.weaviate.io)** - Official Weaviate documentation
-- **Examples** - 6 runnable examples in the GitHub repository (see [Examples](#examples) section)
+- **Examples** - 8 runnable examples in the GitHub repository (see [Examples](#examples) section)
 
 ### Building Documentation Locally
 
@@ -944,9 +1000,17 @@ mix format
 
 ```
 weaviate_ex/
+├── ci/
+│   └── weaviate/                   # Docker assets mirrored from Python client
+│       ├── compose.sh
+│       ├── start_weaviate.sh
+│       ├── docker-compose.yml
+│       └── docker-compose-*.yml
 ├── lib/
 │   ├── weaviate_ex.ex              # Top-level API
 │   ├── weaviate_ex/
+│   │   ├── embedded.ex             # Embedded binary lifecycle manager
+│   │   ├── dev_support/            # Internal tooling (compose helper)
 │   │   ├── application.ex          # OTP application
 │   │   ├── client.ex               # Client struct & config
 │   │   ├── config.ex               # Configuration management
@@ -958,20 +1022,16 @@ weaviate_ex/
 │   │   │   ├── aggregate.ex
 │   │   │   ├── tenants.ex
 │   │   │   └── vector_config.ex
-│   │   ├── protocol/               # Protocol-based HTTP client
-│   │   │   └── http/
-│   │   │       └── client.ex
 │   │   └── ...
 │   └── mix/
-│       └── tasks/                  # Mix tasks
+│       └── tasks/
 │           ├── weaviate.start.ex
 │           ├── weaviate.stop.ex
 │           ├── weaviate.status.ex
 │           └── weaviate.logs.ex
 ├── test/                           # Test suite
 ├── examples/                       # Runnable examples (in source repo)
-├── docker-compose.yml              # Weaviate Docker setup
-├── install.sh                      # Automated installation
+├── install.sh                      # Legacy single-profile bootstrap
 └── mix.exs                         # Project configuration
 ```
 

@@ -54,8 +54,10 @@ defmodule Mix.Tasks.Weaviate.Status do
           {_, 0} ->
             Mix.shell().info("")
 
-          {output, exit_code} ->
-            Mix.shell().error("docker compose ps failed (exit #{exit_code}): #{output}")
+          {_, exit_code} ->
+            Mix.shell().error(
+              "docker compose ps failed for #{file} (exit #{exit_code}). Review the output above."
+            )
         end
       end)
 

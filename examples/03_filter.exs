@@ -1,7 +1,10 @@
 # Filter System Example
 # Run: mix run examples/03_filter.exs
 
-Mix.install([{:weaviate_ex, path: "."}])
+unless Code.ensure_loaded?(WeaviateEx) do
+  Mix.install([{:weaviate_ex, path: "."}])
+end
+
 Code.require_file("example_helper.exs", __DIR__)
 
 alias WeaviateEx.Filter

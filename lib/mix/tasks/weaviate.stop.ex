@@ -41,19 +41,18 @@ defmodule Mix.Tasks.Weaviate.Stop do
 
     ensure_docker!()
 
-    case WeaviateEx.DevSupport.Compose.run_script("stop_weaviate.sh", [version],
-           into: IO.stream(:stdio, :line)
-         ) do
-      {_, 0} ->
-        if remove_volumes?, do: remove_volumes()
-        Mix.shell().info("\n✓ Weaviate containers stopped")
+    {_, status} =
+      WeaviateEx.DevSupport.Compose.run_script("stop_weaviate.sh", [version],
+        into: IO.stream(:stdio, :line)
+      )
 
-      {output, status} ->
-        Mix.raise("""
-        Failed to stop Weaviate (exit #{status})
-
-        #{output}
-        """)
+    if status == 0 do
+      if remove_volumes?, do: remove_volumes()
+      Mix.shell().info("\n✓ Weaviate containers stopped")
+    else
+      Mix.raise("""
+      Failed to stop Weaviate (exit #{status}). Review the output above for details.
+      """)
     end
   end
 
@@ -87,18 +86,17 @@ defmodule Mix.Tasks.Weaviate.Stop do
     Removing Docker volumes for all Weaviate profiles...
     """)
 
-    case WeaviateEx.DevSupport.Compose.exec_all(["down", "--remove-orphans", "-v"],
-           into: IO.stream(:stdio, :line)
-         ) do
-      {_, 0} ->
-        Mix.shell().info("\n✓ Volumes removed")
+    {_, status} =
+      WeaviateEx.DevSupport.Compose.exec_all(["down", "--remove-orphans", "-v"],
+        into: IO.stream(:stdio, :line)
+      )
 
-      {output, status} ->
-        Mix.raise("""
-        Failed to remove volumes (exit #{status})
-
-        #{output}
-        """)
+    if status == 0 do
+      Mix.shell().info("\n✓ Volumes removed")
+    else
+      Mix.raise("""
+      Failed to remove volumes (exit #{status}). Review the output above for details.
+      """)
     end
   end
 end

@@ -1,7 +1,10 @@
 # Vector Configuration Example
 # Run: mix run examples/05_vector_config.exs
 
-Mix.install([{:weaviate_ex, path: "."}])
+unless Code.ensure_loaded?(WeaviateEx) do
+  Mix.install([{:weaviate_ex, path: "."}])
+end
+
 Code.require_file("example_helper.exs", __DIR__)
 
 alias WeaviateEx.API.{Collections, VectorConfig}
@@ -10,13 +13,13 @@ ExampleHelper.check_weaviate!()
 
 ExampleHelper.section("Vector Configuration - Vectorizers & Indexes")
 
-{:ok, client} = WeaviateEx.Client.new(base_url: "http://localhost:8080")
+client = ExampleHelper.client!()
 
 # Example 1: None vectorizer with HNSW (bring your own vectors)
 ExampleHelper.step("Configure with custom vectors + HNSW index")
 
 config1 =
-  VectorConfig.new("AIArticle")
+  VectorConfig.new(ExampleHelper.unique_class("AIArticle"))
   |> VectorConfig.with_vectorizer(:none)
   |> VectorConfig.with_hnsw_index(
     distance: :cosine,
@@ -29,19 +32,19 @@ config1 =
   ])
 
 ExampleHelper.command(
-  "VectorConfig.new(\"AIArticle\") |> with_vectorizer(:none) |> with_hnsw_index()"
+  "VectorConfig.new(\"AIArticle\") |> with_vectorizer(:none) |> with_hnsw_index(...)"
 )
 
 ExampleHelper.result("Config", Map.take(config1, ["class", "vectorizer", "vectorIndexType"]))
 
 {:ok, _} = Collections.create(client, config1)
-ExampleHelper.success("Created AIArticle collection")
+ExampleHelper.success("Created #{config1["class"]} collection")
 
 # Example 2: HNSW with Product Quantization
 ExampleHelper.step("Configure with PQ compression")
 
 config2 =
-  VectorConfig.new("CompressedData")
+  VectorConfig.new(ExampleHelper.unique_class("CompressedData"))
   |> VectorConfig.with_vectorizer(:none)
   |> VectorConfig.with_hnsw_index(distance: :cosine)
   |> VectorConfig.with_product_quantization(
@@ -57,13 +60,13 @@ ExampleHelper.command("with_product_quantization(enabled: true, segments: 96)")
 ExampleHelper.result("PQ Config", config2["vectorIndexConfig"]["pq"])
 
 {:ok, _} = Collections.create(client, config2)
-ExampleHelper.success("Created CompressedData with PQ")
+ExampleHelper.success("Created #{config2["class"]} with PQ")
 
 # Example 3: Flat index for exact search
 ExampleHelper.step("Configure flat index for exact search")
 
 config3 =
-  VectorConfig.new("ExactSearch")
+  VectorConfig.new(ExampleHelper.unique_class("ExactSearch"))
   |> VectorConfig.with_vectorizer(:none)
   |> VectorConfig.with_flat_index(distance: :dot)
   |> VectorConfig.with_properties([
@@ -75,11 +78,11 @@ ExampleHelper.command("with_vectorizer(:none) |> with_flat_index(distance: :dot)
 ExampleHelper.result("Flat Index Config", Map.take(config3, ["class", "vectorIndexType"]))
 
 {:ok, _} = Collections.create(client, config3)
-ExampleHelper.success("Created ExactSearch with flat index")
+ExampleHelper.success("Created #{config3["class"]} with flat index")
 
 # Cleanup
-ExampleHelper.cleanup(client, "AIArticle")
-ExampleHelper.cleanup(client, "CompressedData")
-ExampleHelper.cleanup(client, "ExactSearch")
+Enum.each([config1["class"], config2["class"], config3["class"]], fn class_name ->
+  ExampleHelper.cleanup(client, class_name)
+end)
 
 IO.puts("\n#{ExampleHelper.green("✓")} Example complete!\n")

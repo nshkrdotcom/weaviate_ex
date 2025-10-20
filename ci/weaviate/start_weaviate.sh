@@ -2,9 +2,14 @@
 
 set -eou pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 export WEAVIATE_VERSION=$1
 
-source ./ci/compose.sh
+source "${SCRIPT_DIR}/compose.sh"
+
+cd "${PROJECT_ROOT}"
 
 echo "Stop existing session if running"
 compose_down_all

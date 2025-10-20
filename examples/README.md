@@ -4,17 +4,25 @@ Comprehensive examples demonstrating all WeaviateEx functionality.
 
 ## Prerequisites
 
-Weaviate must be running:
+Weaviate must be running and reachable at `WEAVIATE_URL`:
 
 ```bash
-# Option 1: Using mix task
-mix weaviate.start
+# 1. Start the full stack (same compose files as the Python client)
+mix weaviate.start --version latest
+# or use the helper script with a menu
+./scripts/weaviate-stack.sh start --version latest
 
-# Option 2: Using Docker Compose
-docker compose up -d
-
-# Check status
+# 2. Verify the services are healthy (optional)
 mix weaviate.status
+
+# 3. Configure the client endpoint for the examples
+export WEAVIATE_URL=http://localhost:8080
+# export WEAVIATE_API_KEY=...  # if your instance requires auth
+
+# When finished, tear everything down
+mix weaviate.stop --version latest
+# or use the helper
+./scripts/weaviate-stack.sh stop --version latest
 ```
 
 ## Running Examples
@@ -28,6 +36,8 @@ mix run examples/03_filter.exs
 mix run examples/04_aggregate.exs
 mix run examples/05_vector_config.exs
 mix run examples/06_tenants.exs
+mix run examples/07_batch.exs
+mix run examples/08_query.exs
 ```
 
 ## Examples Overview
@@ -65,12 +75,10 @@ mix run examples/06_tenants.exs
 - Boolean percentages
 
 ### 05_vector_config.exs - Vector Configuration
-- 11 vectorizer configurations
-- HNSW index settings
-- Product Quantization (PQ)
-- Binary/Scalar Quantization
-- Multi-modal (CLIP)
-- Named vectors
+- Generate schemas with the fluent `VectorConfig` builder
+- Custom HNSW parameters (distance, ef, max connections)
+- Product Quantization (PQ) toggles and settings
+- Flat index configuration for exact search
 
 ### 06_tenants.exs - Multi-Tenancy
 - Create tenants
@@ -79,6 +87,18 @@ mix run examples/06_tenants.exs
 - Check existence
 - Count tenants
 - Filter by activity status
+
+### 07_batch.exs - Batch API
+- Create multiple objects with one request
+- Inspect structured summaries (success/failed counts)
+- Delete objects using match filters
+- Verify results with the query builder
+
+### 08_query.exs - GraphQL Query Builder
+- BM25 keyword search
+- Filtered queries using the `Filter` DSL
+- Near-vector similarity search with `_additional` metadata
+- Flexible field selection and pagination
 
 ## Output Format
 

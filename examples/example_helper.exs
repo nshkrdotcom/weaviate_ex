@@ -3,6 +3,8 @@ defmodule ExampleHelper do
   Helper module for running examples with clean output formatting.
   """
 
+  alias WeaviateEx.API.Collections
+
   def check_weaviate! do
     case WeaviateEx.health_check() do
       {:ok, _} ->
@@ -15,6 +17,28 @@ defmodule ExampleHelper do
         IO.puts("  #{cyan("Option 2:")} docker compose up -d\n")
         IO.puts("#{dim("Then run this example again.")}\n")
         System.halt(1)
+    end
+  end
+
+  def base_url do
+    System.get_env("WEAVIATE_URL", "http://localhost:8080")
+  end
+
+  def client! do
+    {:ok, client} = WeaviateEx.Client.new(base_url: base_url())
+    client
+  end
+
+  def unique_class(base) when is_binary(base) do
+    suffix = System.unique_integer([:positive])
+    "#{base}#{suffix}"
+  end
+
+  def reset_collection!(client, class_name) do
+    case Collections.delete(client, class_name) do
+      {:ok, _} -> :ok
+      {:error, %WeaviateEx.Error{status_code: code}} when code in [404, 400] -> :ok
+      {:error, _} -> :ok
     end
   end
 
@@ -65,7 +89,7 @@ defmodule ExampleHelper do
 
   def cleanup(client, collection_name) do
     IO.puts("\n#{dim("Cleaning up...")}")
-    WeaviateEx.API.Collections.delete(client, collection_name)
+    reset_collection!(client, collection_name)
   end
 
   # ANSI color helpers

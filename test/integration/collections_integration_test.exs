@@ -10,7 +10,7 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     Application.put_env(:weaviate_ex, :url, "http://localhost:8080")
 
     # Create unique collection name for each test
-    collection_name = "TestCol_#{:rand.uniform(999_999_999)}"
+    collection_name = "TestCollection#{:rand.uniform(999_999_999)}"
 
     # Clean up after test
     on_exit(fn ->
@@ -61,15 +61,17 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     test "returns error for duplicate collection", %{collection: collection_name} do
       # Create collection first
       assert {:ok, _} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field", dataType: ["text"]}])
+               )
 
       # Try to create again - should fail
       assert {:error, error} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field", dataType: ["text"]}])
+               )
 
       assert error.status_code in [422, 409]
     end
@@ -88,9 +90,10 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     test "retrieves an existing collection", %{collection: collection_name} do
       # Create collection first
       assert {:ok, _} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field", dataType: ["text"]}])
+               )
 
       assert {:ok, collection} = Collections.get(collection_name)
       assert collection["class"] == collection_name
@@ -107,9 +110,10 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     test "adds a new property to existing collection", %{collection: collection_name} do
       # Create collection first
       assert {:ok, _} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field1", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field1", dataType: ["text"]}])
+               )
 
       property = %{
         name: "testField#{System.system_time(:millisecond)}",
@@ -124,9 +128,10 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     test "returns error when adding invalid property", %{collection: collection_name} do
       # Create collection first
       assert {:ok, _} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field1", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field1", dataType: ["text"]}])
+               )
 
       assert {:error, error} =
                Collections.add_property(collection_name, %{
@@ -142,9 +147,10 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     test "retrieves shard information for collection", %{collection: collection_name} do
       # Create collection first
       assert {:ok, _} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field", dataType: ["text"]}])
+               )
 
       assert {:ok, shards} = Collections.get_shards(collection_name)
       assert is_list(shards) or is_map(shards)
@@ -155,9 +161,10 @@ defmodule WeaviateEx.Integration.CollectionsTest do
     test "deletes a collection", %{collection: collection_name} do
       # Create collection first
       assert {:ok, _} =
-               Collections.create(collection_name, %{
-                 properties: [%{name: "field", dataType: ["text"]}]
-               })
+               Collections.create(
+                 collection_name,
+                 base_schema([%{name: "field", dataType: ["text"]}])
+               )
 
       # Delete it
       assert {:ok, _} = Collections.delete(collection_name)
@@ -170,5 +177,12 @@ defmodule WeaviateEx.Integration.CollectionsTest do
       # Weaviate returns 204 No Content even for non-existent collections
       assert {:ok, _} = Collections.delete("NonExistent999")
     end
+  end
+
+  defp base_schema(properties) do
+    %{
+      properties: properties,
+      vectorizer: "none"
+    }
   end
 end

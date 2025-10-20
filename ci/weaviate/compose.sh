@@ -2,13 +2,15 @@
 
 set -eou pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 function ls_compose {
-  ls ci | grep 'docker-compose'
+  ls "$SCRIPT_DIR" | grep 'docker-compose'
 }
 
 function exec_all {
   for file in $(ls_compose); do
-    docker compose -f $(echo "ci/${file} ${1}")
+    docker compose -f "${SCRIPT_DIR}/${file}" $1
   done
 }
 

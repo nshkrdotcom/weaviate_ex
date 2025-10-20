@@ -59,18 +59,15 @@ defmodule Mix.Tasks.Weaviate.Start do
         :full -> "start_weaviate.sh"
       end
 
-    case WeaviateEx.DevSupport.Compose.run_script(script, [version],
-           into: IO.stream(:stdio, :line)
-         ) do
-      {_, 0} ->
-        Mix.shell().info("\n✓ All Weaviate containers are running")
+    {_, status} =
+      WeaviateEx.DevSupport.Compose.run_script(script, [version], into: IO.stream(:stdio, :line))
 
-      {output, status} ->
-        Mix.raise("""
-        Failed to start Weaviate (exit #{status})
-
-        #{output}
-        """)
+    if status == 0 do
+      Mix.shell().info("\n✓ All Weaviate containers are running")
+    else
+      Mix.raise("""
+      Failed to start Weaviate (exit #{status}). Review the output above for details.
+      """)
     end
   end
 
