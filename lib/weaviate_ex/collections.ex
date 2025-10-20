@@ -37,6 +37,10 @@ defmodule WeaviateEx.Collections do
         name: "author",
         dataType: ["text"]
       })
+
+      # Enable multi-tenancy and confirm the collection exists
+      {:ok, %{"enabled" => true}} = WeaviateEx.Collections.set_multi_tenancy("Article", true)
+      {:ok, true} = WeaviateEx.Collections.exists?("Article")
   """
 
   import WeaviateEx, only: [request: 4]
@@ -44,6 +48,7 @@ defmodule WeaviateEx.Collections do
   @type collection_name :: String.t()
   @type collection_config :: map()
   @type property :: map()
+  @type opts :: Keyword.t()
 
   @doc """
   Lists all collections in the schema.
@@ -109,8 +114,14 @@ defmodule WeaviateEx.Collections do
   """
   @spec create(collection_name(), collection_config(), Keyword.t()) :: WeaviateEx.api_response()
   def create(name, config, opts \\ []) do
-    body = Map.put(config, "class", name)
-    request(:post, "/v1/schema", body, opts)
+    request_opts = Keyword.drop(opts, [:config_overrides])
+
+    body =
+      config
+      |> merge_config(opts)
+      |> Map.put("class", name)
+
+    request(:post, "/v1/schema", body, request_opts)
   end
 
   @doc """
@@ -128,8 +139,14 @@ defmodule WeaviateEx.Collections do
   """
   @spec update(collection_name(), collection_config(), Keyword.t()) :: WeaviateEx.api_response()
   def update(name, config, opts \\ []) do
-    body = Map.put(config, "class", name)
-    request(:put, "/v1/schema/#{name}", body, opts)
+    request_opts = Keyword.drop(opts, [:config_overrides])
+
+    body =
+      config
+      |> merge_config(opts)
+      |> Map.put("class", name)
+
+    request(:put, "/v1/schema/#{name}", body, request_opts)
   end
 
   @doc """
@@ -193,7 +210,8 @@ defmodule WeaviateEx.Collections do
   """
   @spec get_shards(collection_name(), Keyword.t()) :: WeaviateEx.api_response()
   def get_shards(collection_name, opts \\ []) do
-    request(:get, "/v1/schema/#{collection_name}/shards", nil, opts)
+    path = "/v1/schema/#{collection_name}/shards" <> build_query_string(opts, [:tenant])
+    request(:get, path, nil, opts)
   end
 
   @doc """
@@ -215,7 +233,11 @@ defmodule WeaviateEx.Collections do
           WeaviateEx.api_response()
   def update_shard(collection_name, shard_name, status, opts \\ []) do
     body = %{"status" => status}
-    request(:put, "/v1/schema/#{collection_name}/shards/#{shard_name}", body, opts)
+
+    path =
+      "/v1/schema/#{collection_name}/shards/#{shard_name}" <> build_query_string(opts, [:tenant])
+
+    request(:put, path, body, opts)
   end
 
   @doc """
@@ -259,5 +281,101 @@ defmodule WeaviateEx.Collections do
           WeaviateEx.api_response()
   def remove_tenants(collection_name, tenant_names, opts \\ []) when is_list(tenant_names) do
     request(:delete, "/v1/schema/#{collection_name}/tenants", tenant_names, opts)
+  end
+
+  @doc """
+  Checks whether a collection exists.
+
+  Returns `{:ok, true}` when the collection is present, `{:ok, false}` when the
+  server returns a not-found response, or `{:error, %WeaviateEx.Error{}}` if another
+  error occurs.
+  """
+  @spec exists?(collection_name(), Keyword.t()) :: {:ok, boolean()} | {:error, term()}
+  def exists?(name, opts \\ []) do
+    case request(:get, "/v1/schema/#{name}", nil, opts) do
+      {:ok, _} -> {:ok, true}
+      {:error, %WeaviateEx.Error{type: :not_found} = _error} -> {:ok, false}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  @doc """
+  Enable or disable multi-tenancy for a collection.
+
+  ## Examples
+
+      iex> WeaviateEx.Collections.set_multi_tenancy("Article", true)
+      {:ok, %{"enabled" => true}}
+  """
+  @spec set_multi_tenancy(collection_name(), boolean(), Keyword.t()) ::
+          WeaviateEx.api_response()
+  def set_multi_tenancy(name, enabled, opts \\ []) when is_boolean(enabled) do
+    action = if enabled, do: "enable", else: "disable"
+    path = "/v1/schema/#{name}/multi-tenancy/#{action}"
+    body = %{"enabled" => enabled}
+    request(:post, path, body, opts)
+  end
+
+  defp merge_config(config, opts) when is_map(config) do
+    overrides =
+      opts
+      |> Keyword.get(:config_overrides, %{})
+      |> normalize_map()
+
+    config
+    |> normalize_map()
+    |> deep_merge(overrides)
+  end
+
+  defp merge_config(config, _opts), do: config
+
+  defp deep_merge(map, overrides) when is_map(map) and is_map(overrides) do
+    Map.merge(map, overrides, fn _key, left, right -> deep_merge(left, right) end)
+  end
+
+  defp deep_merge(_map, override), do: override
+
+  defp normalize_map(map) when is_map(map) do
+    Map.new(map, fn
+      {key, value} when is_map(value) ->
+        {normalize_key(key), normalize_map(value)}
+
+      {key, value} when is_list(value) ->
+        {normalize_key(key), Enum.map(value, &normalize_collection_value/1)}
+
+      {key, value} ->
+        {normalize_key(key), value}
+    end)
+  end
+
+  defp normalize_map(value), do: value
+
+  defp normalize_collection_value(value) when is_map(value), do: normalize_map(value)
+  defp normalize_collection_value(value), do: value
+
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_key(key), do: key
+
+  defp build_query_string(opts, allowed_keys) do
+    params =
+      opts
+      |> Enum.filter(fn {key, _} -> key in allowed_keys end)
+      |> Enum.map(fn {key, value} -> "#{key}=#{encode_query_value(value)}" end)
+      |> Enum.join("&")
+
+    if params == "", do: "", else: "?#{params}"
+  end
+
+  defp encode_query_value(value) when is_list(value) do
+    value
+    |> Enum.map(&to_string/1)
+    |> Enum.join(",")
+    |> URI.encode_www_form()
+  end
+
+  defp encode_query_value(value) do
+    value
+    |> to_string()
+    |> URI.encode_www_form()
   end
 end

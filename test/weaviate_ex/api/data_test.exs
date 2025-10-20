@@ -78,6 +78,29 @@ defmodule WeaviateEx.API.DataTest do
       assert object["id"] == uuid
     end
 
+    test "requests _additional metadata using include option", %{client: client} do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        uri = URI.parse(path)
+        assert uri.path == "/v1/objects/Article/#{uuid}"
+
+        params = URI.decode_query(uri.query)
+        assert Map.has_key?(params, "include")
+
+        includes =
+          params["include"]
+          |> String.split(",")
+          |> Enum.sort()
+
+        assert includes == ["_additional", "vector"]
+        {:ok, %{"id" => uuid, "class" => "Article"}}
+      end)
+
+      assert {:ok, _} =
+               Data.get_by_id(client, "Article", uuid, include: ["vector", "_additional"])
+    end
+
     test "handles not found errors", %{client: client} do
       uuid = "550e8400-e29b-41d4-a716-446655440000"
 
@@ -106,6 +129,26 @@ defmodule WeaviateEx.API.DataTest do
 
       assert {:ok, updated} = Data.update(client, "Article", uuid, %{properties: new_properties})
       assert updated["properties"] == new_properties
+    end
+
+    test "applies tenant and consistency options on update", %{client: client} do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :put, path, _body, _opts ->
+        uri = URI.parse(path)
+        assert uri.path == "/v1/objects/Article/#{uuid}"
+        params = URI.decode_query(uri.query)
+        assert params["tenant"] == "tenant-a"
+        assert params["consistency_level"] == "QUORUM"
+
+        {:ok, %{"id" => uuid}}
+      end)
+
+      assert {:ok, _} =
+               Data.update(client, "Article", uuid, %{properties: %{}},
+                 tenant: "tenant-a",
+                 consistency_level: "QUORUM"
+               )
     end
   end
 
@@ -139,6 +182,46 @@ defmodule WeaviateEx.API.DataTest do
       assert patched["properties"]["title"] == "Patched"
       assert patched["properties"]["content"] == "Original"
     end
+
+    test "retrieves patched object with include metadata", %{client: client} do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :patch, path, _body, _opts ->
+        uri = URI.parse(path)
+        assert uri.path == "/v1/objects/Article/#{uuid}"
+        params = URI.decode_query(uri.query)
+        assert params["tenant"] == "tenant-a"
+        {:ok, %{}}
+      end)
+
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        uri = URI.parse(path)
+        assert uri.path == "/v1/objects/Article/#{uuid}"
+        params = URI.decode_query(uri.query)
+
+        includes =
+          params["include"]
+          |> String.split(",")
+          |> Enum.sort()
+
+        assert includes == ["_additional"]
+
+        {:ok,
+         %{
+           "id" => uuid,
+           "_additional" => %{"vectorWeights" => [0.1]},
+           "properties" => %{"title" => "Patched"}
+         }}
+      end)
+
+      assert {:ok, result} =
+               Data.patch(client, "Article", uuid, %{properties: %{"title" => "Patched"}},
+                 tenant: "tenant-a",
+                 include: ["_additional"]
+               )
+
+      assert result["_additional"]["vectorWeights"] == [0.1]
+    end
   end
 
   describe "delete_by_id/3" do
@@ -151,6 +234,26 @@ defmodule WeaviateEx.API.DataTest do
       end)
 
       assert {:ok, _} = Data.delete_by_id(client, "Article", uuid)
+    end
+
+    test "deletes object with tenant and consistency parameters", %{client: client} do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :delete, path, nil, _opts ->
+        uri = URI.parse(path)
+        assert uri.path == "/v1/objects/Article/#{uuid}"
+        params = URI.decode_query(uri.query)
+        assert params["tenant"] == "tenant-a"
+        assert params["consistency_level"] == "ONE"
+
+        {:ok, %{}}
+      end)
+
+      assert {:ok, _} =
+               Data.delete_by_id(client, "Article", uuid,
+                 tenant: "tenant-a",
+                 consistency_level: "ONE"
+               )
     end
 
     test "handles not found errors", %{client: client} do

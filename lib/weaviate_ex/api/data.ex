@@ -56,6 +56,7 @@ defmodule WeaviateEx.API.Data do
 
   alias WeaviateEx.Client
   alias WeaviateEx.Error
+  alias WeaviateEx.Objects.Payload
 
   @type collection_name :: String.t()
   @type object_id :: String.t()
@@ -90,12 +91,11 @@ defmodule WeaviateEx.API.Data do
   @spec insert(Client.t(), collection_name(), object_data(), opts()) ::
           {:ok, map()} | {:error, Error.t()}
   def insert(client, collection_name, data, opts \\ []) do
-    # Generate UUID if not provided and normalize keys
+    payload_opts = Keyword.take(opts, [:auto_generate_id])
+
     body =
       data
-      |> normalize_keys()
-      |> ensure_id()
-      |> Map.put("class", collection_name)
+      |> Payload.prepare_for_insert(collection_name, payload_opts)
 
     path = "/v1/objects" <> build_query_string(opts, [:tenant, :consistency_level])
     Client.request(client, :post, path, body, opts)
@@ -158,11 +158,9 @@ defmodule WeaviateEx.API.Data do
   @spec update(Client.t(), collection_name(), object_id(), object_data(), opts()) ::
           {:ok, map()} | {:error, Error.t()}
   def update(client, collection_name, id, data, opts \\ []) do
-    body =
-      data
-      |> normalize_keys()
-      |> Map.put("id", id)
-      |> Map.put("class", collection_name)
+    payload_opts = Keyword.take(opts, [:keep_vector])
+
+    body = Payload.prepare_for_update(data, collection_name, id, payload_opts)
 
     path =
       "/v1/objects/#{collection_name}/#{id}" <>
@@ -196,7 +194,10 @@ defmodule WeaviateEx.API.Data do
   @spec patch(Client.t(), collection_name(), object_id(), object_data(), opts()) ::
           {:ok, map()} | {:error, Error.t()}
   def patch(client, collection_name, id, data, opts \\ []) do
-    body = normalize_keys(data)
+    body =
+      data
+      |> Payload.prepare_for_patch()
+      |> Map.drop(["vector", :vector])
 
     path =
       "/v1/objects/#{collection_name}/#{id}" <>
@@ -298,9 +299,9 @@ defmodule WeaviateEx.API.Data do
   def validate(client, collection_name, data, opts \\ []) do
     body =
       data
-      |> normalize_keys()
-      |> ensure_id()
-      |> Map.put("class", collection_name)
+      |> Payload.normalize_keys()
+      |> maybe_put_validation_id()
+      |> Payload.ensure_class(collection_name)
 
     path = "/v1/objects/validate" <> build_query_string(opts, [:consistency_level])
     Client.request(client, :post, path, body, opts)
@@ -308,21 +309,11 @@ defmodule WeaviateEx.API.Data do
 
   ## Private Helpers
 
-  defp normalize_keys(data) when is_map(data) do
-    Map.new(data, fn
-      {:properties, value} -> {"properties", value}
-      {:vector, value} -> {"vector", value}
-      {:id, value} -> {"id", value}
-      {key, value} when is_atom(key) -> {Atom.to_string(key), value}
-      {key, value} -> {key, value}
-    end)
-  end
-
-  defp ensure_id(data) do
-    if Map.has_key?(data, "id") or Map.has_key?(data, :id) do
-      data
-    else
-      Map.put(data, "id", Uniq.UUID.uuid4())
+  defp maybe_put_validation_id(data) do
+    cond do
+      Map.has_key?(data, "id") -> data
+      Map.has_key?(data, :id) -> data
+      true -> Map.put(data, "id", "00000000-0000-0000-0000-000000000000")
     end
   end
 
@@ -330,9 +321,27 @@ defmodule WeaviateEx.API.Data do
     params =
       opts
       |> Enum.filter(fn {key, _value} -> key in allowed_keys end)
-      |> Enum.map(fn {key, value} -> "#{key}=#{URI.encode_www_form(to_string(value))}" end)
+      |> Enum.map(&encode_param/1)
+      |> Enum.reject(&is_nil/1)
       |> Enum.join("&")
 
     if params == "", do: "", else: "?#{params}"
+  end
+
+  defp encode_param({key, value}) do
+    "#{key}=#{encode_value(value)}"
+  end
+
+  defp encode_value(value) when is_list(value) do
+    value
+    |> Enum.map(&to_string/1)
+    |> Enum.join(",")
+    |> URI.encode_www_form()
+  end
+
+  defp encode_value(value) do
+    value
+    |> to_string()
+    |> URI.encode_www_form()
   end
 end

@@ -147,6 +147,47 @@ If configuration is missing, you'll get helpful error messages:
 ╚════════════════════════════════════════════════════════════════╝
 ```
 
+### 5. Shape a Tenant-Aware Collection and Load Data
+
+```elixir
+alias WeaviateEx.{Collections, Objects, Batch}
+
+# Define the collection and toggle multi-tenancy when ready
+{:ok, _collection} =
+  Collections.create("Article", %{
+    description: "Articles by tenant",
+    properties: [
+      %{name: "title", dataType: ["text"]},
+      %{name: "content", dataType: ["text"]}
+    ]
+  })
+
+{:ok, %{"enabled" => true}} = Collections.set_multi_tenancy("Article", true)
+{:ok, true} = Collections.exists?("Article")
+
+# Create & read tenant-scoped objects with _additional metadata
+{:ok, created} =
+  Objects.create("Article", %{properties: %{title: "Tenant scoped", content: "Hello!"}},
+    tenant: "tenant-a"
+  )
+
+{:ok, fetched} =
+  Objects.get("Article", created["id"],
+    tenant: "tenant-a",
+    include: ["_additional", "vector"]
+  )
+
+# Batch ingest with a summary that separates successes from errors
+objects =
+  Enum.map(1..3, fn idx ->
+    %{class: "Article", properties: %{title: "Story #{idx}"}, tenant: "tenant-a"}
+  end)
+
+{:ok, summary} = Batch.create_objects(objects, return_summary: true, tenant: "tenant-a")
+summary.statistics
+#=> %{processed: 3, successful: 3, failed: 0}
+```
+
 ## Installation
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions covering:
@@ -334,11 +375,14 @@ objects = [
   %{class: "Article", properties: %{title: "Article 3", content: "Content 3"}}
 ]
 
-{:ok, result} = WeaviateEx.Batch.create_objects(objects)
+{:ok, summary} = WeaviateEx.Batch.create_objects(objects, return_summary: true)
 
-# Check for errors
-failed = Enum.filter(result, fn obj ->
-  obj["result"]["status"] == "FAILED"
+# Check rolled-up stats and per-object errors
+summary.statistics
+#=> %{processed: 3, successful: 3, failed: 0}
+
+Enum.each(summary.errors, fn error ->
+  Logger.warn("[Batch error] #{error.id} => #{Enum.join(error.messages, "; ")}")
 end)
 
 # Batch delete with criteria (WHERE filter)

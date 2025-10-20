@@ -90,6 +90,34 @@ defmodule WeaviateEx.API.CollectionsTest do
       assert created["class"] == "Article"
     end
 
+    test "merges raw config overrides before creating", %{client: client} do
+      base_config = %{
+        "class" => "Article",
+        "properties" => [%{"name" => "title", "dataType" => ["text"]}],
+        "multiTenancyConfig" => %{"enabled" => false}
+      }
+
+      overrides = %{
+        "multiTenancyConfig" => %{"enabled" => true},
+        "vectorIndexConfig" => %{"ef" => 64}
+      }
+
+      expected_payload = %{
+        "class" => "Article",
+        "properties" => [%{"name" => "title", "dataType" => ["text"]}],
+        "multiTenancyConfig" => %{"enabled" => true},
+        "vectorIndexConfig" => %{"ef" => 64}
+      }
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/schema", body, _opts ->
+        assert body == expected_payload
+        {:ok, body}
+      end)
+
+      assert {:ok, _} =
+               Collections.create(client, base_config, config_overrides: overrides)
+    end
+
     test "handles validation error", %{client: client} do
       config = %{"class" => "Invalid"}
 
@@ -130,6 +158,31 @@ defmodule WeaviateEx.API.CollectionsTest do
       assert {:ok, updated} = Collections.update(client, "Article", updates)
       assert updated["vectorIndexConfig"]["ef"] == 200
     end
+
+    test "merges raw config overrides on update", %{client: client} do
+      updates = %{"description" => "Updated description"}
+
+      overrides = %{
+        "vectorIndexConfig" => %{"ef" => 120},
+        "multiTenancyConfig" => %{"enabled" => true}
+      }
+
+      expected_body = %{
+        "description" => "Updated description",
+        "vectorIndexConfig" => %{"ef" => 120},
+        "multiTenancyConfig" => %{"enabled" => true}
+      }
+
+      Mox.expect(Mock, :request, fn _client, :put, "/v1/schema/Article", body, _opts ->
+        assert body == expected_body
+        {:ok, Map.put(body, "class", "Article")}
+      end)
+
+      assert {:ok, result} =
+               Collections.update(client, "Article", updates, config_overrides: overrides)
+
+      assert result["multiTenancyConfig"]["enabled"]
+    end
   end
 
   describe "add_property/3" do
@@ -160,6 +213,53 @@ defmodule WeaviateEx.API.CollectionsTest do
       expect_http_error(Mock, :get, "/v1/schema/NonExistent", :not_found)
 
       assert {:ok, false} = Collections.exists?(client, "NonExistent")
+    end
+  end
+
+  describe "set_multi_tenancy/3" do
+    test "enables multi-tenancy", %{client: client} do
+      Mox.expect(Mock, :request, fn _client,
+                                    :post,
+                                    "/v1/schema/Article/multi-tenancy/enable",
+                                    %{"enabled" => true},
+                                    _opts ->
+        {:ok, %{"enabled" => true}}
+      end)
+
+      assert {:ok, %{"enabled" => true}} =
+               Collections.set_multi_tenancy(client, "Article", true)
+    end
+
+    test "propagates conflict errors when toggling multi-tenancy", %{client: client} do
+      Mox.expect(Mock, :request, fn _client,
+                                    :post,
+                                    "/v1/schema/Article/multi-tenancy/disable",
+                                    %{"enabled" => false},
+                                    _opts ->
+        {:error, %WeaviateEx.Error{type: :conflict, message: "not allowed"}}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :conflict}} =
+               Collections.set_multi_tenancy(client, "Article", false)
+    end
+  end
+
+  describe "get_shards/3" do
+    test "fetches shards scoped to tenant", %{client: client} do
+      shards = [
+        %{"name" => "tenant-a__shard", "status" => "READY", "tenant" => "tenant-a"}
+      ]
+
+      Mox.expect(Mock, :request, fn _client,
+                                    :get,
+                                    "/v1/schema/Article/shards?tenant=tenant-a",
+                                    nil,
+                                    _opts ->
+        {:ok, shards}
+      end)
+
+      assert {:ok, result} = Collections.get_shards(client, "Article", tenant: "tenant-a")
+      assert hd(result)["tenant"] == "tenant-a"
     end
   end
 

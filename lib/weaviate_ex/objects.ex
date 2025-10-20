@@ -21,6 +21,10 @@ defmodule WeaviateEx.Objects do
       # List objects
       {:ok, objects} = WeaviateEx.Objects.list("Article", limit: 10)
 
+      # Fetch an object with tenant scoping and _additional metadata
+      {:ok, object} =
+        WeaviateEx.Objects.get("Article", uuid, tenant: "tenant-a", include: ["_additional"])
+
       # Update an object (full replacement)
       {:ok, updated} = WeaviateEx.Objects.update("Article", uuid, %{
         properties: %{title: "Updated Title"}
@@ -39,6 +43,7 @@ defmodule WeaviateEx.Objects do
   """
 
   import WeaviateEx, only: [request: 4]
+  alias WeaviateEx.Objects.Payload
 
   @type collection_name :: String.t()
   @type object_id :: String.t()
@@ -75,8 +80,13 @@ defmodule WeaviateEx.Objects do
   """
   @spec create(collection_name(), object_data(), Keyword.t()) :: WeaviateEx.api_response()
   def create(collection_name, data, opts \\ []) do
-    body = Map.put(data, :class, collection_name)
-    query_string = build_query_string(opts, [:consistency_level])
+    payload_opts = Keyword.take(opts, [:auto_generate_id])
+
+    body =
+      data
+      |> Payload.prepare_for_insert(collection_name, payload_opts)
+
+    query_string = build_query_string(opts, [:consistency_level, :tenant])
     request(:post, "/v1/objects#{query_string}", body, opts)
   end
 
@@ -132,7 +142,7 @@ defmodule WeaviateEx.Objects do
     query_string =
       build_query_string(
         [{:class, collection_name} | opts],
-        [:class, :limit, :offset, :after, :include, :sort, :order]
+        [:class, :limit, :offset, :after, :include, :sort, :order, :tenant, :consistency_level]
       )
 
     request(:get, "/v1/objects#{query_string}", nil, opts)
@@ -152,16 +162,15 @@ defmodule WeaviateEx.Objects do
   @spec update(collection_name(), object_id(), object_data(), Keyword.t()) ::
           WeaviateEx.api_response()
   def update(collection_name, id, data, opts \\ []) do
-    # For PUT, Weaviate requires id in the body
-    # Clean the data and add id and class back
+    payload_opts = Keyword.take(opts, [:keep_vector])
+
     body =
       data
       |> Map.drop([:id, :class, "id", "class"])
       |> clean_properties_for_update()
-      |> Map.put(:id, id)
-      |> Map.put(:class, collection_name)
+      |> Payload.prepare_for_update(collection_name, id, payload_opts)
 
-    query_string = build_query_string(opts, [:consistency_level])
+    query_string = build_query_string(opts, [:consistency_level, :tenant])
     request(:put, "/v1/objects/#{collection_name}/#{id}#{query_string}", body, opts)
   end
 
@@ -192,9 +201,12 @@ defmodule WeaviateEx.Objects do
           WeaviateEx.api_response()
   def patch(collection_name, id, data, opts \\ []) do
     # Drop immutable fields, class, and vector (not allowed in PATCH)
-    body = Map.drop(data, [:id, :class, :vector, "id", "class", "vector"])
+    body =
+      data
+      |> Map.drop([:id, :class, :vector, "id", "class", "vector"])
+      |> Payload.prepare_for_patch()
 
-    query_string = build_query_string(opts, [:consistency_level])
+    query_string = build_query_string(opts, [:consistency_level, :tenant])
 
     # Weaviate returns 204 No Content on successful PATCH, so we need to fetch the updated object
     case request(:patch, "/v1/objects/#{collection_name}/#{id}#{query_string}", body, opts) do
@@ -256,14 +268,9 @@ defmodule WeaviateEx.Objects do
     # Validate endpoint requires an ID - generate dummy UUID if not provided
     body =
       data
-      |> Map.put(:class, collection_name)
-      |> then(fn map ->
-        if Map.has_key?(map, :id) or Map.has_key?(map, "id") do
-          map
-        else
-          Map.put(map, :id, "00000000-0000-0000-0000-000000000000")
-        end
-      end)
+      |> Payload.normalize_keys()
+      |> ensure_validation_id()
+      |> Payload.ensure_class(collection_name)
 
     query_string = build_query_string(opts, [:consistency_level])
     request(:post, "/v1/objects/validate#{query_string}", body, opts)
@@ -274,9 +281,30 @@ defmodule WeaviateEx.Objects do
     params =
       opts
       |> Enum.filter(fn {key, _value} -> key in allowed_keys end)
-      |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
+      |> Enum.map(fn {key, value} -> "#{key}=#{encode_query_value(value)}" end)
       |> Enum.join("&")
 
     if params == "", do: "", else: "?#{params}"
+  end
+
+  defp encode_query_value(value) when is_list(value) do
+    value
+    |> Enum.map(&to_string/1)
+    |> Enum.join(",")
+    |> URI.encode_www_form()
+  end
+
+  defp encode_query_value(value) do
+    value
+    |> to_string()
+    |> URI.encode_www_form()
+  end
+
+  defp ensure_validation_id(data) do
+    cond do
+      Map.has_key?(data, "id") -> data
+      Map.has_key?(data, :id) -> data
+      true -> Map.put(data, "id", "00000000-0000-0000-0000-000000000000")
+    end
   end
 end

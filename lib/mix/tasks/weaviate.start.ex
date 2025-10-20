@@ -1,29 +1,27 @@
 defmodule Mix.Tasks.Weaviate.Start do
   @moduledoc """
-  Starts the local Weaviate Docker container.
+  Starts the Weaviate Docker stack using the copied Python client scripts.
 
   ## Usage
 
-      mix weaviate.start
+      mix weaviate.start [options]
 
-  This task will:
-  - Start Weaviate using docker compose
-  - Wait for the health check to pass
-  - Display connection information
+  This task shells out to `ci/weaviate/start_weaviate.sh`, which will:
+  - Stop any existing containers
+  - Start every docker-compose profile under `ci/weaviate/`
+  - Wait until each exposed port reports `/v1/.well-known/ready`
 
   ## Options
 
-      --detach     - Start in detached mode (default: true)
-      --no-wait    - Don't wait for health check
-      --timeout    - Health check timeout in seconds (default: 60)
+      --version, -v  - Docker image tag (default: $WEAVIATE_VERSION or "latest")
+      --profile, -p  - Which script to run (`full` or `async`, default: `full`)
 
   ## Examples
 
-      # Start Weaviate and wait for it to be healthy
-      mix weaviate.start
+      mix weaviate.start --version 1.30.5
+      mix weaviate.start --profile async
 
-      # Start without waiting for health check
-      mix weaviate.start --no-wait
+  The script outputs progress logs directly; this task simply forwards stdout/stderr.
   """
 
   use Mix.Task
@@ -35,136 +33,59 @@ defmodule Mix.Tasks.Weaviate.Start do
   def run(args) do
     {opts, _, _} =
       OptionParser.parse(args,
-        switches: [detach: :boolean, wait: :boolean, timeout: :integer],
-        aliases: [d: :detach, w: :wait, t: :timeout]
+        switches: [version: :string, profile: :string],
+        aliases: [v: :version, p: :profile]
       )
 
-    detach = Keyword.get(opts, :detach, true)
-    wait = Keyword.get(opts, :wait, true)
-    timeout = Keyword.get(opts, :timeout, 60)
+    profile =
+      opts
+      |> Keyword.get(:profile, "full")
+      |> String.downcase()
+      |> case do
+        "async" -> :async
+        "full" -> :full
+        other -> Mix.raise("Unknown profile #{inspect(other)}. Use \"full\" or \"async\".")
+      end
 
-    Mix.shell().info("Starting Weaviate...")
+    version = Keyword.get(opts, :version, System.get_env("WEAVIATE_VERSION") || "latest")
 
-    case check_docker_available() do
-      :ok -> start_weaviate(detach, wait, timeout)
-      {:error, reason} -> Mix.raise(reason)
+    Mix.shell().info("Starting Weaviate (profile: #{profile}, version: #{version})\n")
+
+    ensure_docker!()
+
+    script =
+      case profile do
+        :async -> "start_weaviate_jt.sh"
+        :full -> "start_weaviate.sh"
+      end
+
+    case WeaviateEx.DevSupport.Compose.run_script(script, [version],
+           into: IO.stream(:stdio, :line)
+         ) do
+      {_, 0} ->
+        Mix.shell().info("\n✓ All Weaviate containers are running")
+
+      {output, status} ->
+        Mix.raise("""
+        Failed to start Weaviate (exit #{status})
+
+        #{output}
+        """)
     end
   end
 
-  defp check_docker_available do
+  defp ensure_docker! do
     case System.cmd("docker", ["compose", "version"], stderr_to_stdout: true) do
       {_, 0} ->
         :ok
 
       _ ->
-        {:error,
-         """
-         Docker Compose is not available.
+        Mix.raise("""
+        Docker Compose is not available.
 
-         Please install Docker and Docker Compose:
-         https://docs.docker.com/get-docker/
-         """}
+        Please install Docker and Docker Compose:
+        https://docs.docker.com/get-docker/
+        """)
     end
-  end
-
-  defp start_weaviate(detach, wait, timeout) do
-    # Check if docker-compose.yml exists
-    unless File.exists?("docker-compose.yml") do
-      Mix.raise("""
-      docker-compose.yml not found in current directory.
-
-      Make sure you're running this command from the project root.
-      """)
-    end
-
-    # Start docker compose
-    cmd_args = ["compose", "up"]
-    cmd_args = if detach, do: cmd_args ++ ["-d"], else: cmd_args
-
-    case System.cmd("docker", cmd_args, into: IO.stream(:stdio, :line), stderr_to_stdout: true) do
-      {_, 0} ->
-        if wait and detach do
-          wait_for_health(timeout)
-        else
-          Mix.shell().info("Weaviate started successfully")
-        end
-
-        :ok
-
-      {_, exit_code} ->
-        Mix.raise("Failed to start Weaviate (exit code: #{exit_code})")
-    end
-  end
-
-  defp wait_for_health(timeout) do
-    Mix.shell().info("\nWaiting for Weaviate to become healthy (timeout: #{timeout}s)...")
-
-    start_time = System.system_time(:second)
-    wait_loop(start_time, timeout)
-  end
-
-  defp wait_loop(start_time, timeout) do
-    elapsed = System.system_time(:second) - start_time
-
-    if elapsed >= timeout do
-      Mix.shell().error("""
-
-      Weaviate did not become healthy within #{timeout} seconds.
-
-      Check the logs with: mix weaviate.logs
-      """)
-
-      :timeout
-    else
-      case check_health() do
-        :healthy ->
-          display_success_message()
-          :ok
-
-        :unhealthy ->
-          Mix.shell().info(".")
-          Process.sleep(2000)
-          wait_loop(start_time, timeout)
-      end
-    end
-  end
-
-  defp check_health do
-    case System.cmd("docker", ["compose", "ps", "--format", "json"], stderr_to_stdout: true) do
-      {output, 0} ->
-        if String.contains?(output, "healthy") do
-          :healthy
-        else
-          :unhealthy
-        end
-
-      _ ->
-        :unhealthy
-    end
-  end
-
-  defp display_success_message do
-    url = get_weaviate_url()
-
-    Mix.shell().info("""
-
-    ✓ Weaviate is healthy and ready!
-
-    Connection Info:
-      URL: #{url}
-      API: #{url}/v1
-
-    Quick test:
-      curl #{url}/v1/meta
-
-    Useful commands:
-      mix weaviate.status  - Check status
-      mix weaviate.logs    - View logs
-      mix weaviate.stop    - Stop Weaviate
-    """)
-  end
-
-  defp get_weaviate_url do
-    System.get_env("WEAVIATE_URL", "http://localhost:8080")
   end
 end

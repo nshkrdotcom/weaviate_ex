@@ -51,6 +51,7 @@ defmodule WeaviateEx do
   """
 
   require Logger
+  alias WeaviateEx.Embedded
 
   @type api_response :: {:ok, map() | list()} | {:error, term()}
   @type uuid :: String.t()
@@ -125,6 +126,29 @@ defmodule WeaviateEx do
       error -> error
     end
   end
+
+  ## Embedded Weaviate
+
+  @doc """
+  Starts an embedded Weaviate instance using the official binary.
+
+  This function delegates to `WeaviateEx.Embedded.start/1` and returns an
+  opaque handle that should be passed to `stop_embedded/1` when you're done.
+
+  ## Examples
+
+      {:ok, emb} = WeaviateEx.start_embedded(version: "1.30.5", port: 8090)
+      WeaviateEx.health_check()
+      :ok = WeaviateEx.stop_embedded(emb)
+  """
+  @spec start_embedded([Embedded.option()]) :: {:ok, Embedded.Instance.t()} | {:error, term()}
+  def start_embedded(opts \\ []), do: Embedded.start(opts)
+
+  @doc """
+  Stops an embedded Weaviate instance started with `start_embedded/1`.
+  """
+  @spec stop_embedded(Embedded.Instance.t()) :: :ok
+  def stop_embedded(instance), do: Embedded.stop(instance)
 
   ## HTTP Client
 

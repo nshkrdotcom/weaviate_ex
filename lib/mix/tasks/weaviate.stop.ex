@@ -1,24 +1,21 @@
 defmodule Mix.Tasks.Weaviate.Stop do
   @moduledoc """
-  Stops the local Weaviate Docker container.
+  Stops the Weaviate Docker stack started by `mix weaviate.start`.
 
   ## Usage
 
-      mix weaviate.stop
+      mix weaviate.stop [options]
 
-  This task will stop the Weaviate container using docker compose.
+  This task shells out to `ci/weaviate/stop_weaviate.sh`, which tears down every compose profile and removes the `weaviate-data` directory.
 
   ## Options
 
-      --remove-volumes, -v  - Remove data volumes (WARNING: deletes all data)
-      --timeout, -t         - Shutdown timeout in seconds (default: 10)
+      --version, -v          - Docker image tag (default: $WEAVIATE_VERSION or "latest")
+      --remove-volumes, -r   - Run an additional `docker compose … down -v` to wipe volumes
 
   ## Examples
 
-      # Stop Weaviate
       mix weaviate.stop
-
-      # Stop and remove all data
       mix weaviate.stop --remove-volumes
   """
 
@@ -31,32 +28,42 @@ defmodule Mix.Tasks.Weaviate.Stop do
   def run(args) do
     {opts, _, _} =
       OptionParser.parse(args,
-        switches: [remove_volumes: :boolean, timeout: :integer],
-        aliases: [v: :remove_volumes, t: :timeout]
+        switches: [remove_volumes: :boolean, version: :string],
+        aliases: [r: :remove_volumes, v: :version]
       )
 
-    remove_volumes = Keyword.get(opts, :remove_volumes, false)
-    timeout = Keyword.get(opts, :timeout, 10)
+    remove_volumes? = Keyword.get(opts, :remove_volumes, false)
+    version = Keyword.get(opts, :version, System.get_env("WEAVIATE_VERSION") || "latest")
 
-    if remove_volumes do
-      confirm_volume_removal()
-    end
+    if remove_volumes?, do: confirm_volume_removal()
 
-    Mix.shell().info("Stopping Weaviate...")
+    Mix.shell().info("Stopping Weaviate (version: #{version})\n")
 
-    case check_docker_available() do
-      :ok -> stop_weaviate(remove_volumes, timeout)
-      {:error, reason} -> Mix.raise(reason)
+    ensure_docker!()
+
+    case WeaviateEx.DevSupport.Compose.run_script("stop_weaviate.sh", [version],
+           into: IO.stream(:stdio, :line)
+         ) do
+      {_, 0} ->
+        if remove_volumes?, do: remove_volumes()
+        Mix.shell().info("\n✓ Weaviate containers stopped")
+
+      {output, status} ->
+        Mix.raise("""
+        Failed to stop Weaviate (exit #{status})
+
+        #{output}
+        """)
     end
   end
 
-  defp check_docker_available do
+  defp ensure_docker! do
     case System.cmd("docker", ["compose", "version"], stderr_to_stdout: true) do
       {_, 0} ->
         :ok
 
       _ ->
-        {:error, "Docker Compose is not available"}
+        Mix.raise("Docker Compose is not available")
     end
   end
 
@@ -74,23 +81,24 @@ defmodule Mix.Tasks.Weaviate.Stop do
     end
   end
 
-  defp stop_weaviate(remove_volumes, timeout) do
-    cmd_args = ["compose", "down", "--timeout", "#{timeout}"]
-    cmd_args = if remove_volumes, do: cmd_args ++ ["-v"], else: cmd_args
+  defp remove_volumes do
+    Mix.shell().info("""
 
-    case System.cmd("docker", cmd_args, into: IO.stream(:stdio, :line), stderr_to_stdout: true) do
+    Removing Docker volumes for all Weaviate profiles...
+    """)
+
+    case WeaviateEx.DevSupport.Compose.exec_all(["down", "--remove-orphans", "-v"],
+           into: IO.stream(:stdio, :line)
+         ) do
       {_, 0} ->
-        if remove_volumes do
-          Mix.shell().info("\n✓ Weaviate stopped and all data volumes removed")
-        else
-          Mix.shell().info("\n✓ Weaviate stopped successfully")
-          Mix.shell().info("  (Data persisted in volumes)")
-        end
+        Mix.shell().info("\n✓ Volumes removed")
 
-        :ok
+      {output, status} ->
+        Mix.raise("""
+        Failed to remove volumes (exit #{status})
 
-      {_, exit_code} ->
-        Mix.raise("Failed to stop Weaviate (exit code: #{exit_code})")
+        #{output}
+        """)
     end
   end
 end

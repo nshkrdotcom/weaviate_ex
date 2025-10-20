@@ -6,6 +6,8 @@ defmodule WeaviateEx.API.Collections do
   alias WeaviateEx.Client
   alias WeaviateEx.Error
 
+  @type opts :: keyword()
+
   @doc """
   List all collections.
 
@@ -73,9 +75,11 @@ defmodule WeaviateEx.API.Collections do
     * `{:ok, map()}` - Created collection config
     * `{:error, Error.t()}` - Error if validation fails or exists
   """
-  @spec create(Client.t(), map()) :: {:ok, map()} | {:error, Error.t()}
-  def create(client, config) do
-    Client.request(client, :post, "/v1/schema", config, [])
+  @spec create(Client.t(), map(), opts()) :: {:ok, map()} | {:error, Error.t()}
+  def create(client, config, opts \\ []) do
+    request_opts = Keyword.drop(opts, [:config_overrides])
+    payload = merge_config(config, opts)
+    Client.request(client, :post, "/v1/schema", payload, request_opts)
   end
 
   @doc "Delete a collection"
@@ -85,9 +89,11 @@ defmodule WeaviateEx.API.Collections do
   end
 
   @doc "Update a collection"
-  @spec update(Client.t(), String.t(), map()) :: {:ok, map()} | {:error, Error.t()}
-  def update(client, collection_name, updates) do
-    Client.request(client, :put, "/v1/schema/#{collection_name}", updates, [])
+  @spec update(Client.t(), String.t(), map(), opts()) :: {:ok, map()} | {:error, Error.t()}
+  def update(client, collection_name, updates, opts \\ []) do
+    request_opts = Keyword.drop(opts, [:config_overrides])
+    payload = merge_config(updates, opts)
+    Client.request(client, :put, "/v1/schema/#{collection_name}", payload, request_opts)
   end
 
   @doc "Add property to collection"
@@ -102,7 +108,7 @@ defmodule WeaviateEx.API.Collections do
     case get(client, collection_name) do
       {:ok, _} -> {:ok, true}
       {:error, %Error{type: :not_found}} -> {:ok, false}
-      {:error, _} -> {:ok, false}
+      {:error, error} -> {:error, error}
     end
   end
 
@@ -158,4 +164,97 @@ defmodule WeaviateEx.API.Collections do
         {:error, error}
     end
   end
+
+  @doc """
+  Enable or disable multi-tenancy for a collection.
+
+  Returns the updated multi-tenancy configuration from the server.
+  """
+  @spec set_multi_tenancy(Client.t(), String.t(), boolean(), opts()) ::
+          {:ok, map()} | {:error, Error.t()}
+  def set_multi_tenancy(client, collection_name, enabled, opts \\ []) when is_boolean(enabled) do
+    action = if enabled, do: "enable", else: "disable"
+    path = "/v1/schema/#{collection_name}/multi-tenancy/#{action}"
+    body = %{"enabled" => enabled}
+    Client.request(client, :post, path, body, opts)
+  end
+
+  @doc """
+  Retrieve shard information for a collection.
+
+  Supports tenant-aware inspection by passing `tenant: "tenant-name"` in options.
+  """
+  @spec get_shards(Client.t(), String.t(), opts()) :: {:ok, list()} | {:error, Error.t()}
+  def get_shards(client, collection_name, opts \\ []) do
+    path = build_path("/v1/schema/#{collection_name}/shards", opts, [:tenant])
+    Client.request(client, :get, path, nil, opts)
+  end
+
+  defp merge_config(config, opts) when is_map(config) do
+    overrides =
+      opts
+      |> Keyword.get(:config_overrides, %{})
+      |> normalize_value()
+
+    deep_merge(normalize_value(config), overrides)
+  end
+
+  defp merge_config(config, _opts), do: config
+
+  defp deep_merge(map, overrides) when is_map(map) and is_map(overrides) do
+    Map.merge(map, overrides, fn _key, left, right -> deep_merge(left, right) end)
+  end
+
+  defp deep_merge(_map, override), do: override
+
+  defp build_path(base, opts, allowed_keys) do
+    query =
+      opts
+      |> Enum.filter(fn {key, _} -> key in allowed_keys end)
+      |> Enum.map(&encode_param/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("&")
+
+    if query == "", do: base, else: base <> "?" <> query
+  end
+
+  defp encode_param({key, value}) do
+    encoded_value =
+      value
+      |> normalize_value()
+      |> encode_value()
+
+    "#{key}=#{encoded_value}"
+  end
+
+  defp encode_value(value) when is_list(value) do
+    value
+    |> Enum.map(&to_string/1)
+    |> Enum.join(",")
+    |> URI.encode_www_form()
+  end
+
+  defp encode_value(value) do
+    value
+    |> to_string()
+    |> URI.encode_www_form()
+  end
+
+  defp normalize_value(map) when is_map(map) do
+    Map.new(map, fn
+      {key, value} when is_map(value) ->
+        {normalize_key(key), normalize_value(value)}
+
+      {key, value} when is_list(value) ->
+        {normalize_key(key), Enum.map(value, &normalize_value/1)}
+
+      {key, value} ->
+        {normalize_key(key), value}
+    end)
+  end
+
+  defp normalize_value(value), do: value
+
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_key(key), do: key
 end

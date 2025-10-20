@@ -60,6 +60,38 @@ defmodule WeaviateEx.BatchTest do
 
       assert {:ok, _} = Batch.create_objects(objects, consistency_level: "QUORUM")
     end
+
+    test "returns summary struct when requested", %{client: _client} do
+      objects = Fixtures.batch_objects_fixture("Article", 2)
+
+      response = %{
+        "results" => %{
+          "objects" => [
+            %{"id" => Enum.at(objects, 0)["id"], "status" => "SUCCESS", "class" => "Article"},
+            %{
+              "id" => Enum.at(objects, 1)["id"],
+              "status" => "FAILED",
+              "class" => "Article",
+              "result" => %{
+                "errors" => [
+                  %{"message" => "invalid property", "path" => "properties.title"}
+                ]
+              }
+            }
+          ]
+        }
+      }
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/batch/objects", _body, _opts ->
+        {:ok, response}
+      end)
+
+      assert {:ok, summary} = Batch.create_objects(objects, return_summary: true)
+      assert %WeaviateEx.API.Batch.Result{} = summary
+      assert summary.statistics.successful == 1
+      assert summary.statistics.failed == 1
+      assert Enum.map(summary.errors, & &1.id) == [Enum.at(objects, 1)["id"]]
+    end
   end
 
   describe "delete_objects/2" do

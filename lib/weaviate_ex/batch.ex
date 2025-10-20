@@ -35,9 +35,14 @@ defmodule WeaviateEx.Batch do
       ]
 
       {:ok, result} = WeaviateEx.Batch.add_references(references)
+
+      # Request a summary separating successes and failures
+      {:ok, summary} = WeaviateEx.Batch.create_objects(objects, return_summary: true)
+      summary.statistics
   """
 
   import WeaviateEx, only: [request: 4]
+  alias WeaviateEx.API.Batch, as: BatchAPI
 
   @type batch_objects :: list(map())
   @type batch_references :: list(map())
@@ -77,13 +82,15 @@ defmodule WeaviateEx.Batch do
   """
   @spec create_objects(batch_objects(), Keyword.t()) :: WeaviateEx.api_response()
   def create_objects(objects, opts \\ []) when is_list(objects) do
-    query_string = build_query_string(opts, [:consistency_level])
-    body = %{objects: objects}
+    summary? = Keyword.get(opts, :return_summary, false)
+    request_opts = Keyword.drop(opts, [:return_summary])
 
-    case request(:post, "/v1/batch/objects#{query_string}", body, opts) do
-      {:ok, results} when is_list(results) -> {:ok, %{"results" => results}}
-      other -> other
-    end
+    with_client(fn client ->
+      case BatchAPI.create_objects(client, objects, Keyword.put(request_opts, :summary, summary?)) do
+        {:ok, %BatchAPI.Result{} = result} -> {:ok, result}
+        other -> other
+      end
+    end)
   end
 
   @doc """
@@ -122,12 +129,9 @@ defmodule WeaviateEx.Batch do
   """
   @spec delete_objects(delete_criteria(), Keyword.t()) :: WeaviateEx.api_response()
   def delete_objects(criteria, opts \\ []) when is_map(criteria) do
-    query_string = build_query_string(opts, [:consistency_level])
-
-    # Weaviate batch delete requires wrapping in a "match" object
-    body = %{match: criteria}
-
-    request(:delete, "/v1/batch/objects#{query_string}", body, opts)
+    with_client(fn client ->
+      BatchAPI.delete_objects(client, criteria, opts)
+    end)
   end
 
   @doc """
@@ -174,5 +178,15 @@ defmodule WeaviateEx.Batch do
       |> Enum.join("&")
 
     if params == "", do: "", else: "?#{params}"
+  end
+
+  defp with_client(fun) when is_function(fun, 1) do
+    {:ok, client} =
+      WeaviateEx.Client.new(
+        base_url: WeaviateEx.base_url(),
+        api_key: WeaviateEx.api_key()
+      )
+
+    fun.(client)
   end
 end
