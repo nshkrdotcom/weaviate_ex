@@ -19,6 +19,14 @@ defmodule WeaviateEx.Embedded do
     @moduledoc "Opaque handle returned by `start/1`."
     @enforce_keys [:options, :executable, :process_port, :os_pid]
     defstruct [:options, :executable, :process_port, :os_pid]
+
+    @typedoc "Opaque handle describing the spawned embedded instance."
+    @type t :: %__MODULE__{
+            options: map(),
+            executable: String.t(),
+            process_port: port(),
+            os_pid: non_neg_integer() | nil
+          }
   end
 
   @typedoc "Options that control the embedded instance lifecycle."

@@ -18,17 +18,22 @@ defmodule WeaviateEx.API.Batch do
     defstruct successful: [],
               errors: [],
               statistics: %{processed: 0, successful: 0, failed: 0}
+
+    @typedoc """
+    Summary returned when `summary: true` is passed to batch operations.
+    """
+    @type t :: %__MODULE__{
+            successful: list(),
+            errors: list(),
+            statistics: %{
+              processed: non_neg_integer(),
+              successful: non_neg_integer(),
+              failed: non_neg_integer()
+            }
+          }
   end
 
-  @type t :: %Result{
-          successful: list(),
-          errors: list(),
-          statistics: %{
-            processed: non_neg_integer(),
-            successful: non_neg_integer(),
-            failed: non_neg_integer()
-          }
-        }
+  @type t :: Result.t()
 
   @type opts :: keyword()
   @type objects_payload :: list(map())
