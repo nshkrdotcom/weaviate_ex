@@ -109,4 +109,81 @@ defmodule WeaviateEx.ErrorTest do
       assert Error.grpc_retryable?(:permission_denied) == false
     end
   end
+
+  describe "backup_not_found/2" do
+    test "creates correct error" do
+      error = Error.backup_not_found("backup-123", :filesystem)
+
+      assert error.type == :not_found
+      assert error.message == "Backup 'backup-123' not found in filesystem storage"
+      assert error.details[:category] == :backup
+      assert error.details[:backup_id] == "backup-123"
+      assert error.details[:backend] == :filesystem
+    end
+  end
+
+  describe "backup_already_exists/2" do
+    test "creates correct error" do
+      error = Error.backup_already_exists("backup-123", :s3)
+
+      assert error.type == :conflict
+      assert error.message == "Backup 'backup-123' already exists in s3 storage"
+      assert error.details[:category] == :backup
+      assert error.details[:backup_id] == "backup-123"
+      assert error.details[:backend] == :s3
+    end
+  end
+
+  describe "backup_failed/2" do
+    test "creates correct error" do
+      error = Error.backup_failed("backup-123", "disk full")
+
+      assert error.type == :backup_failed
+      assert error.message == "Backup 'backup-123' failed: disk full"
+      assert error.details[:category] == :backup
+      assert error.details[:backup_id] == "backup-123"
+    end
+  end
+
+  describe "restore_failed/2" do
+    test "creates correct error" do
+      error = Error.restore_failed("backup-123", "collection exists")
+
+      assert error.type == :restore_failed
+      assert error.message == "Restore of 'backup-123' failed: collection exists"
+      assert error.details[:category] == :backup
+      assert error.details[:backup_id] == "backup-123"
+    end
+  end
+
+  describe "backup_timeout/2" do
+    test "creates correct error for create operation" do
+      error = Error.backup_timeout("backup-123", :create)
+
+      assert error.type == :timeout_error
+      assert error.message == "create operation for backup 'backup-123' timed out"
+      assert error.details[:category] == :backup
+      assert error.details[:backup_id] == "backup-123"
+      assert error.details[:operation] == :create
+    end
+
+    test "creates correct error for restore operation" do
+      error = Error.backup_timeout("backup-123", :restore)
+
+      assert error.type == :timeout_error
+      assert error.message == "restore operation for backup 'backup-123' timed out"
+      assert error.details[:operation] == :restore
+    end
+  end
+
+  describe "invalid_backend/1" do
+    test "creates correct error" do
+      error = Error.invalid_backend(:invalid)
+
+      assert error.type == :bad_request
+      assert error.message == "Invalid backup backend: :invalid"
+      assert error.details[:category] == :backup
+      assert error.details[:backend] == :invalid
+    end
+  end
 end

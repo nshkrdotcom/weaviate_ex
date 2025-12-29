@@ -259,4 +259,87 @@ defmodule WeaviateEx do
   defdelegate revoke_group_roles(client, group, roles),
     to: WeaviateEx.API.Groups,
     as: :revoke_roles
+
+  ## Backup Convenience Functions
+
+  @doc """
+  Create a new backup.
+
+  Delegates to `WeaviateEx.API.Backup.create/4`.
+
+  ## Examples
+
+      {:ok, status} = WeaviateEx.create_backup(client, "daily-backup", :filesystem)
+      {:ok, status} = WeaviateEx.create_backup(client, "daily-backup", :s3,
+        include_collections: ["Article"],
+        wait_for_completion: true
+      )
+  """
+  defdelegate create_backup(client, backup_id, backend, opts \\ []),
+    to: WeaviateEx.API.Backup,
+    as: :create
+
+  @doc """
+  Restore a backup.
+
+  Delegates to `WeaviateEx.API.Backup.restore/4`.
+
+  ## Examples
+
+      {:ok, status} = WeaviateEx.restore_backup(client, "daily-backup", :filesystem)
+      {:ok, status} = WeaviateEx.restore_backup(client, "daily-backup", :s3,
+        wait_for_completion: true
+      )
+  """
+  defdelegate restore_backup(client, backup_id, backend, opts \\ []),
+    to: WeaviateEx.API.Backup,
+    as: :restore
+
+  @doc """
+  List all backups for a storage backend.
+
+  Delegates to `WeaviateEx.API.Backup.list/2`.
+
+  ## Examples
+
+      {:ok, backups} = WeaviateEx.list_backups(client, :filesystem)
+  """
+  defdelegate list_backups(client, backend), to: WeaviateEx.API.Backup, as: :list
+
+  @doc """
+  Cancel an in-progress backup.
+
+  Delegates to `WeaviateEx.API.Backup.cancel/3`.
+
+  ## Examples
+
+      :ok = WeaviateEx.cancel_backup(client, "daily-backup", :filesystem)
+  """
+  defdelegate cancel_backup(client, backup_id, backend), to: WeaviateEx.API.Backup, as: :cancel
+
+  @doc """
+  Get the status of a backup creation.
+
+  Delegates to `WeaviateEx.API.Backup.get_create_status/3`.
+
+  ## Examples
+
+      {:ok, status} = WeaviateEx.get_backup_status(client, "daily-backup", :filesystem)
+  """
+  defdelegate get_backup_status(client, backup_id, backend),
+    to: WeaviateEx.API.Backup,
+    as: :get_create_status
+
+  @doc """
+  Get the status of a backup restoration.
+
+  Delegates to `WeaviateEx.API.Backup.get_restore_status/3`.
+
+  ## Examples
+
+      {:ok, status} = WeaviateEx.get_restore_status(client, "daily-backup", :filesystem)
+  """
+  defdelegate get_restore_status(client, backup_id, backend),
+    to: WeaviateEx.API.Backup,
+    as: :get_restore_status
 end

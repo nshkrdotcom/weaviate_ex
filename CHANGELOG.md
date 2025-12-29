@@ -11,6 +11,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Backup & Restore Module
+- **Backup API** (`WeaviateEx.API.Backup`) - Complete backup and restore functionality:
+  - `create/4` - Create backup with include/exclude collections, config, wait_for_completion
+  - `restore/4` - Restore backup with include/exclude collections, config, wait_for_completion
+  - `get_create_status/3` - Get backup creation status
+  - `get_restore_status/3` - Get restore operation status
+  - `list/2` - List all backups for a storage backend
+  - `cancel/3` - Cancel in-progress backup
+  - `wait_for_completion/5` - Poll until operation completes with configurable timeout
+- **Storage Backend Enum** (`WeaviateEx.Backup.Storage`) - 4 supported backends:
+  - `:filesystem` - Local filesystem storage
+  - `:s3` - Amazon S3 or S3-compatible storage
+  - `:gcs` - Google Cloud Storage
+  - `:azure` - Azure Blob Storage
+  - Helper functions: `all/0`, `valid?/1`, `to_api_path/1`, `from_api/1`
+- **Compression Level Enum** (`WeaviateEx.Backup.Compression`):
+  - `:default` - Balanced compression
+  - `:best_speed` - Faster compression, larger files
+  - `:best_compression` - Slower compression, smaller files
+- **Backup Status Types** (`WeaviateEx.Backup.Status`):
+  - Status values: `:started`, `:transferring`, `:transferred`, `:success`, `:failed`, `:canceled`
+  - Response structs: `CreateResponse`, `RestoreResponse`, `BackupInfo`
+  - Helper functions: `completed?/1`, `success?/1`, `in_progress?/1`
+- **Backup Configuration** (`WeaviateEx.Backup.Config`):
+  - `Create` struct with `cpu_percentage` and `compression` options
+  - `Restore` struct with `cpu_percentage` option
+  - Factory functions: `create/1`, `restore/1`
+- **Storage Location Structs** (`WeaviateEx.Backup.Location`):
+  - `Filesystem` - Local path configuration
+  - `S3` - Bucket, path, endpoint, region, credentials, SSL
+  - `GCS` - Bucket, path, project ID, credentials
+  - `Azure` - Container, path, connection string
+  - Factory functions: `filesystem/1`, `s3/3`, `gcs/3`, `azure/3`
+- **Backup Error Types** (`WeaviateEx.Error`):
+  - `backup_not_found/2`, `backup_already_exists/2`, `backup_failed/2`
+  - `restore_failed/2`, `backup_timeout/2`, `invalid_backend/1`
+- **Main Module Backup Functions**:
+  - `create_backup/4`, `restore_backup/4`, `list_backups/2`
+  - `cancel_backup/3`, `get_backup_status/3`, `get_restore_status/3`
+
 #### Role-Based Access Control (RBAC)
 - **RBAC Module** (`WeaviateEx.RBAC`) - Complete role-based access control support:
   - `Actions` - Action type definitions and conversions for all 11 permission types
@@ -134,9 +174,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retained `{:finch, "~> 0.18"}` - For schema operations and HTTP fallback
 
 ### Stats
-- **195+ new tests** for RBAC, Users, and Groups modules
-- **881 tests passing** (up from 694)
+- **290+ new tests** for Backup, RBAC, Users, and Groups modules
+- **~980 tests passing** (up from 694)
 - Full gRPC support for data operations
+- Complete Backup & Restore support with 4 storage backends
 - Complete RBAC support matching Python client functionality
 - Backwards compatible - existing code continues to work
 

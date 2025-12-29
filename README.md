@@ -62,6 +62,7 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
   - [Aggregations](#aggregations)
   - [Advanced Filtering](#advanced-filtering)
   - [Vector Configuration](#vector-configuration)
+  - [Backup & Restore](#backup--restore)
   - [Multi-Tenancy](#multi-tenancy)
   - [RBAC (Role-Based Access Control)](#rbac-role-based-access-control)
   - [User Management](#user-management)
@@ -653,6 +654,76 @@ config = VectorConfig.new("CompressedData")
 config = VectorConfig.new("ExactSearch")
   |> VectorConfig.with_vectorizer(:none)
   |> VectorConfig.with_flat_index(distance: :dot)
+```
+
+### Backup & Restore
+
+Complete backup and restore operations with multiple storage backends:
+
+```elixir
+alias WeaviateEx.Backup.{Config, Location}
+
+# Create a backup to filesystem
+{:ok, status} = WeaviateEx.create_backup(client, "daily-backup", :filesystem)
+
+# Create backup to S3 with specific collections and wait for completion
+{:ok, status} = WeaviateEx.create_backup(client, "daily-backup", :s3,
+  include_collections: ["Article", "Author"],
+  wait_for_completion: true,
+  config: Config.create(compression: :best_compression)
+)
+
+# Check backup status
+{:ok, status} = WeaviateEx.get_backup_status(client, "daily-backup", :filesystem)
+IO.puts("Status: #{status.status}")  # :started, :transferring, :success, etc.
+
+# List all backups
+{:ok, backups} = WeaviateEx.list_backups(client, :filesystem)
+
+# Restore a backup
+{:ok, status} = WeaviateEx.restore_backup(client, "daily-backup", :filesystem,
+  wait_for_completion: true
+)
+
+# Restore specific collections only
+{:ok, status} = WeaviateEx.restore_backup(client, "daily-backup", :s3,
+  include_collections: ["Article"]
+)
+
+# Cancel an in-progress backup
+:ok = WeaviateEx.cancel_backup(client, "daily-backup", :filesystem)
+```
+
+#### Storage Backends
+
+| Backend | Description | Configuration |
+|---------|-------------|---------------|
+| `:filesystem` | Local filesystem | `BACKUP_FILESYSTEM_PATH` on server |
+| `:s3` | Amazon S3 / S3-compatible | Bucket, region, credentials |
+| `:gcs` | Google Cloud Storage | Bucket, project ID, credentials |
+| `:azure` | Azure Blob Storage | Container, connection string |
+
+#### Location Configuration (Advanced)
+
+```elixir
+alias WeaviateEx.Backup.Location
+
+# Create location configs for cloud backends
+s3_loc = Location.s3("my-bucket", "/backups",
+  endpoint: "s3.us-west-2.amazonaws.com",
+  region: "us-west-2",
+  access_key_id: "...",
+  secret_access_key: "..."
+)
+
+gcs_loc = Location.gcs("my-bucket", "/backups",
+  project_id: "my-project",
+  credentials: %{...}
+)
+
+azure_loc = Location.azure("my-container", "/backups",
+  connection_string: "..."
+)
 ```
 
 ### Multi-Tenancy

@@ -220,4 +220,108 @@ defmodule WeaviateEx.Error do
   def invalid_permission(reason) do
     rbac_error(:bad_request, "Invalid permission: #{reason}", %{})
   end
+
+  ## Backup-Specific Errors
+
+  @doc """
+  Create a backup not found error.
+
+  ## Examples
+
+      error = Error.backup_not_found("backup-123", :filesystem)
+  """
+  @spec backup_not_found(String.t(), atom()) :: t()
+  def backup_not_found(backup_id, backend) do
+    %__MODULE__{
+      type: :not_found,
+      message: "Backup '#{backup_id}' not found in #{backend} storage",
+      details: %{category: :backup, backup_id: backup_id, backend: backend},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a backup already exists error.
+
+  ## Examples
+
+      error = Error.backup_already_exists("backup-123", :s3)
+  """
+  @spec backup_already_exists(String.t(), atom()) :: t()
+  def backup_already_exists(backup_id, backend) do
+    %__MODULE__{
+      type: :conflict,
+      message: "Backup '#{backup_id}' already exists in #{backend} storage",
+      details: %{category: :backup, backup_id: backup_id, backend: backend},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a backup failed error.
+
+  ## Examples
+
+      error = Error.backup_failed("backup-123", "disk full")
+  """
+  @spec backup_failed(String.t(), String.t()) :: t()
+  def backup_failed(backup_id, reason) do
+    %__MODULE__{
+      type: :backup_failed,
+      message: "Backup '#{backup_id}' failed: #{reason}",
+      details: %{category: :backup, backup_id: backup_id},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a restore failed error.
+
+  ## Examples
+
+      error = Error.restore_failed("backup-123", "collection already exists")
+  """
+  @spec restore_failed(String.t(), String.t()) :: t()
+  def restore_failed(backup_id, reason) do
+    %__MODULE__{
+      type: :restore_failed,
+      message: "Restore of '#{backup_id}' failed: #{reason}",
+      details: %{category: :backup, backup_id: backup_id},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a backup timeout error.
+
+  ## Examples
+
+      error = Error.backup_timeout("backup-123", :create)
+  """
+  @spec backup_timeout(String.t(), atom()) :: t()
+  def backup_timeout(backup_id, operation) do
+    %__MODULE__{
+      type: :timeout_error,
+      message: "#{operation} operation for backup '#{backup_id}' timed out",
+      details: %{category: :backup, backup_id: backup_id, operation: operation},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create an invalid backup backend error.
+
+  ## Examples
+
+      error = Error.invalid_backend(:invalid)
+  """
+  @spec invalid_backend(atom()) :: t()
+  def invalid_backend(backend) do
+    %__MODULE__{
+      type: :bad_request,
+      message: "Invalid backup backend: #{inspect(backend)}",
+      details: %{category: :backup, backend: backend},
+      status_code: nil
+    }
+  end
 end
