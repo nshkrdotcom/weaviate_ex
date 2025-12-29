@@ -125,7 +125,7 @@ defmodule WeaviateEx.Batch.DynamicTest do
 
       state = Dynamic.get_state(pid)
       # Buffer should be empty after flush
-      assert length(state.objects_buffer) == 0
+      assert state.objects_buffer == []
 
       Dynamic.stop(pid)
     end
@@ -194,7 +194,7 @@ defmodule WeaviateEx.Batch.DynamicTest do
       assert stats.failed == 0
 
       state = Dynamic.get_state(pid)
-      assert length(state.objects_buffer) == 0
+      assert state.objects_buffer == []
 
       Dynamic.stop(pid)
     end
@@ -354,7 +354,7 @@ defmodule WeaviateEx.Batch.DynamicTest do
 
       # Try to decrease below min
       for _ <- 1..20 do
-        Dynamic.report_queue_size(pid, 10000)
+        Dynamic.report_queue_size(pid, 10_000)
       end
 
       state = Dynamic.get_state(pid)

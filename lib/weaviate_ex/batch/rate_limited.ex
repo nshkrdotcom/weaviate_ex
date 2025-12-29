@@ -563,9 +563,9 @@ defmodule WeaviateEx.Batch.RateLimited do
 
   defp build_query_string(opts) do
     params =
-      opts
-      |> Enum.map(fn {key, value} -> "#{key}=#{URI.encode_www_form(to_string(value))}" end)
-      |> Enum.join("&")
+      Enum.map_join(opts, "&", fn {key, value} ->
+        "#{key}=#{URI.encode_www_form(to_string(value))}"
+      end)
 
     "?" <> params
   end

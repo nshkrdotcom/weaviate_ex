@@ -62,7 +62,7 @@ defmodule WeaviateEx.Batch do
 
   import WeaviateEx, only: [request: 4]
   alias WeaviateEx.API.Batch, as: BatchAPI
-  alias WeaviateEx.Batch.{Dynamic, RateLimited, FixedSize}
+  alias WeaviateEx.Batch.{Dynamic, FixedSize, RateLimited}
   alias WeaviateEx.Batch.ErrorTracking.Results
 
   @type batch_objects :: list(map())
@@ -499,47 +499,46 @@ defmodule WeaviateEx.Batch do
 
     results = Results.new()
 
-    # Flush objects
-    {results, error} =
-      if length(objects) > 0 do
-        formatted_objects = format_objects(objects)
+    with {:ok, results} <- flush_objects_list(client, objects, results, opts) do
+      flush_references_list(client, references, results, batcher, opts)
+    end
+  end
 
-        case BatchAPI.create_objects(client, formatted_objects, Keyword.put(opts, :summary, true)) do
-          {:ok, %BatchAPI.Result{} = result} ->
-            {merge_results(results, convert_api_result(result)), nil}
+  defp flush_objects_list(_client, [], results, _opts), do: {:ok, results}
 
-          {:error, error} ->
-            {results, error}
-        end
-      else
-        {results, nil}
-      end
+  defp flush_objects_list(client, objects, results, opts) do
+    formatted_objects = format_objects(objects)
 
-    if error do
-      {:error, error}
-    else
-      # Flush references
-      if length(references) > 0 do
-        formatted_refs = format_references(references)
+    case BatchAPI.create_objects(client, formatted_objects, Keyword.put(opts, :summary, true)) do
+      {:ok, %BatchAPI.Result{} = result} ->
+        {:ok, merge_results(results, convert_api_result(result))}
 
-        case WeaviateEx.Client.request(
-               client,
-               :post,
-               "/v1/batch/references",
-               formatted_refs,
-               opts
-             ) do
-          {:ok, ref_results} when is_list(ref_results) ->
-            ref_processed = process_reference_results(ref_results)
-            {:ok, merge_results(results, ref_processed), batcher}
+      {:error, error} ->
+        {:error, error}
+    end
+  end
 
-          {:error, error} ->
-            {:error, error}
-        end
-      else
-        if Keyword.get(opts, :on_flush), do: Keyword.get(opts, :on_flush).(results)
-        {:ok, results, batcher}
-      end
+  defp flush_references_list(_client, [], results, batcher, opts) do
+    if Keyword.get(opts, :on_flush), do: Keyword.get(opts, :on_flush).(results)
+    {:ok, results, batcher}
+  end
+
+  defp flush_references_list(client, references, results, batcher, opts) do
+    formatted_refs = format_references(references)
+
+    case WeaviateEx.Client.request(
+           client,
+           :post,
+           "/v1/batch/references",
+           formatted_refs,
+           opts
+         ) do
+      {:ok, ref_results} when is_list(ref_results) ->
+        ref_processed = process_reference_results(ref_results)
+        {:ok, merge_results(results, ref_processed), batcher}
+
+      {:error, error} ->
+        {:error, error}
     end
   end
 

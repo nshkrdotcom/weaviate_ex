@@ -45,7 +45,7 @@ defmodule WeaviateEx.ConnectTest do
 
       assert config.base_url == "http://localhost:8080"
       assert config.grpc_host == "localhost"
-      assert config.grpc_port == 50051
+      assert config.grpc_port == 50_051
     end
 
     test "accepts custom host and port" do
@@ -55,9 +55,9 @@ defmodule WeaviateEx.ConnectTest do
     end
 
     test "accepts custom grpc port" do
-      config = Connect.to_local(grpc_port: 50052)
+      config = Connect.to_local(grpc_port: 50_052)
 
-      assert config.grpc_port == 50052
+      assert config.grpc_port == 50_052
     end
 
     test "accepts API key" do
@@ -96,12 +96,12 @@ defmodule WeaviateEx.ConnectTest do
           http_host: "custom.host.com",
           http_port: 8080,
           grpc_host: "grpc.custom.host.com",
-          grpc_port: 50051,
+          grpc_port: 50_051,
           grpc_secure: true
         )
 
       assert config.grpc_host == "grpc.custom.host.com"
-      assert config.grpc_port == 50051
+      assert config.grpc_port == 50_051
       assert config.grpc_secure == true
     end
   end

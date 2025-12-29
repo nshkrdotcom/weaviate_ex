@@ -10,10 +10,10 @@ defmodule WeaviateEx.Query.QueryFeaturesTest do
   import Mox
   import WeaviateEx.Test.Mocks
 
-  alias WeaviateEx.Query
-  alias WeaviateEx.Query.Sort
-  alias WeaviateEx.Query.QueryReference
   alias WeaviateEx.Protocol.Mock
+  alias WeaviateEx.Query
+  alias WeaviateEx.Query.QueryReference
+  alias WeaviateEx.Query.Sort
 
   setup :verify_on_exit!
   setup :setup_test_client

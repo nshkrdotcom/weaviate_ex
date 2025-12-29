@@ -4,8 +4,8 @@ defmodule WeaviateEx.Batch.RateLimitedTest do
   import Mox
   import WeaviateEx.Test.Mocks
 
-  alias WeaviateEx.Batch.RateLimited
   alias WeaviateEx.Batch.ErrorTracking.Results
+  alias WeaviateEx.Batch.RateLimited
   alias WeaviateEx.Protocol.Mock
 
   setup :verify_on_exit!
@@ -154,7 +154,7 @@ defmodule WeaviateEx.Batch.RateLimitedTest do
       end)
 
       # High rate limit to avoid waiting
-      {:ok, pid} = RateLimited.start(client: client, requests_per_minute: 10000, batch_size: 5)
+      {:ok, pid} = RateLimited.start(client: client, requests_per_minute: 10_000, batch_size: 5)
 
       # Add enough objects for 3 batches
       for i <- 1..15 do
@@ -215,7 +215,7 @@ defmodule WeaviateEx.Batch.RateLimitedTest do
       end)
 
       # High rate limit so requests complete quickly
-      {:ok, pid} = RateLimited.start(client: client, requests_per_minute: 10000)
+      {:ok, pid} = RateLimited.start(client: client, requests_per_minute: 10_000)
 
       initial = RateLimited.get_remaining_requests(pid)
 

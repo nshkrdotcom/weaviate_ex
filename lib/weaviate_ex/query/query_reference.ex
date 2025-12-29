@@ -86,9 +86,7 @@ defmodule WeaviateEx.Query.QueryReference do
   """
   @spec list_to_graphql([t()]) :: String.t()
   def list_to_graphql(refs) when is_list(refs) do
-    refs
-    |> Enum.map(&to_graphql/1)
-    |> Enum.join("\n")
+    Enum.map_join(refs, "\n", &to_graphql/1)
   end
 
   # Private helpers
@@ -125,9 +123,7 @@ defmodule WeaviateEx.Query.QueryReference do
   defp build_nested_refs_section(%__MODULE__{return_references: nil}), do: nil
 
   defp build_nested_refs_section(%__MODULE__{return_references: refs}) do
-    refs
-    |> Enum.map(&build_reference_graphql/1)
-    |> Enum.join("\n")
+    Enum.map_join(refs, "\n", &build_reference_graphql/1)
   end
 
   # Infer class name from reference property (e.g., "hasAuthor" -> "Author")

@@ -138,8 +138,7 @@ defmodule WeaviateEx.Query.TargetVectors do
 
     weights_str =
       weights
-      |> Enum.map(fn {name, weight} -> ~s("#{name}": #{weight}) end)
-      |> Enum.join(", ")
+      |> Enum.map_join(", ", fn {name, weight} -> ~s("#{name}": #{weight}) end)
 
     "{targetVectors: [#{vectors_str}], combinationMethod: #{method}, weights: {#{weights_str}}}"
   end

@@ -180,7 +180,7 @@ defmodule WeaviateEx.Generative.Parameters do
 
     parts =
       if param.images do
-        images_str = param.images |> Enum.map(&~s("#{&1}")) |> Enum.join(", ")
+        images_str = Enum.map_join(param.images, ", ", &~s("#{&1}"))
         parts ++ ["images: [#{images_str}]"]
       else
         parts
@@ -188,7 +188,7 @@ defmodule WeaviateEx.Generative.Parameters do
 
     parts =
       if param.image_properties do
-        props_str = param.image_properties |> Enum.map(&~s("#{&1}")) |> Enum.join(", ")
+        props_str = Enum.map_join(param.image_properties, ", ", &~s("#{&1}"))
         parts ++ ["imageProperties: [#{props_str}]"]
       else
         parts
@@ -196,7 +196,7 @@ defmodule WeaviateEx.Generative.Parameters do
 
     parts =
       if param.non_blob_properties do
-        props_str = param.non_blob_properties |> Enum.map(&~s("#{&1}")) |> Enum.join(", ")
+        props_str = Enum.map_join(param.non_blob_properties, ", ", &~s("#{&1}"))
         parts ++ ["nonBlobProperties: [#{props_str}]"]
       else
         parts
