@@ -22,6 +22,8 @@ defmodule Mix.Tasks.Weaviate.Stop do
   use Mix.Task
   require Logger
 
+  alias WeaviateEx.DevSupport.Compose
+
   @shortdoc "Stop local Weaviate Docker container"
 
   @impl Mix.Task
@@ -42,9 +44,7 @@ defmodule Mix.Tasks.Weaviate.Stop do
     ensure_docker!()
 
     {_, status} =
-      WeaviateEx.DevSupport.Compose.run_script("stop_weaviate.sh", [version],
-        into: IO.stream(:stdio, :line)
-      )
+      Compose.run_script("stop_weaviate.sh", [version], into: IO.stream(:stdio, :line))
 
     if status == 0 do
       if remove_volumes?, do: remove_volumes()
@@ -87,9 +87,7 @@ defmodule Mix.Tasks.Weaviate.Stop do
     """)
 
     {_, status} =
-      WeaviateEx.DevSupport.Compose.exec_all(["down", "--remove-orphans", "-v"],
-        into: IO.stream(:stdio, :line)
-      )
+      Compose.exec_all(["down", "--remove-orphans", "-v"], into: IO.stream(:stdio, :line))
 
     if status == 0 do
       Mix.shell().info("\n✓ Volumes removed")

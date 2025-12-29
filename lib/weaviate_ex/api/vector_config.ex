@@ -62,12 +62,30 @@ defmodule WeaviateEx.API.VectorConfig do
     }
   end
 
-  @doc "Configure text2vec-cohere vectorizer"
+  @doc """
+  Configure text2vec-cohere vectorizer.
+
+  ## Options
+    - `:model` - Model to use (optional)
+    - `:dimensions` - Output dimensions (optional, new in Python client)
+    - `:truncate` - Truncation mode (optional)
+    - `:base_url` - Base URL for API (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
   def text2vec_cohere(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("dimensions", Keyword.get(opts, :dimensions))
+      |> maybe_put("truncate", Keyword.get(opts, :truncate))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
     %{
       "vectorizer" => "text2vec-cohere",
       "moduleConfig" => %{
-        "text2vec-cohere" => build_module_opts(opts)
+        "text2vec-cohere" => config
       }
     }
   end
@@ -112,7 +130,9 @@ defmodule WeaviateEx.API.VectorConfig do
     }
   end
 
-  @doc "Configure text2vec-palm vectorizer"
+  @doc """
+  Configure text2vec-palm vectorizer (deprecated, use text2vec_google_vertex or text2vec_google_gemini).
+  """
   def text2vec_palm(opts \\ []) do
     %{
       "vectorizer" => "text2vec-palm",
@@ -122,12 +142,154 @@ defmodule WeaviateEx.API.VectorConfig do
     }
   end
 
-  @doc "Configure text2vec-aws vectorizer"
+  @doc """
+  Configure text2vec-google with Google Vertex AI.
+
+  ## Options
+    - `:project_id` - Google Cloud project ID (required)
+    - `:api_endpoint` - API endpoint (optional)
+    - `:model` - Model to use (optional)
+    - `:dimensions` - Output dimensions (optional)
+    - `:title_property` - Property to use as title (optional)
+    - `:task_type` - Task type for embeddings (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+
+  ## Example
+
+      VectorConfig.text2vec_google_vertex(
+        project_id: "my-project",
+        model: "textembedding-gecko@001"
+      )
+  """
+  def text2vec_google_vertex(opts) do
+    config =
+      %{
+        "projectId" => Keyword.fetch!(opts, :project_id),
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("apiEndpoint", Keyword.get(opts, :api_endpoint))
+      |> maybe_put("modelId", Keyword.get(opts, :model))
+      |> maybe_put("dimensions", Keyword.get(opts, :dimensions))
+      |> maybe_put("titleProperty", Keyword.get(opts, :title_property))
+      |> maybe_put("taskType", Keyword.get(opts, :task_type))
+
+    %{
+      "vectorizer" => "text2vec-palm",
+      "moduleConfig" => %{
+        "text2vec-palm" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-google with Google AI Studio (Gemini).
+
+  ## Options
+    - `:model` - Model to use (optional)
+    - `:dimensions` - Output dimensions (optional)
+    - `:title_property` - Property to use as title (optional)
+    - `:task_type` - Task type for embeddings (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+
+  ## Example
+
+      VectorConfig.text2vec_google_gemini(model: "text-embedding-004")
+  """
+  def text2vec_google_gemini(opts \\ []) do
+    config =
+      %{
+        "apiEndpoint" => "generativelanguage.googleapis.com",
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("modelId", Keyword.get(opts, :model))
+      |> maybe_put("dimensions", Keyword.get(opts, :dimensions))
+      |> maybe_put("titleProperty", Keyword.get(opts, :title_property))
+      |> maybe_put("taskType", Keyword.get(opts, :task_type))
+
+    %{
+      "vectorizer" => "text2vec-palm",
+      "moduleConfig" => %{
+        "text2vec-palm" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-aws vectorizer (deprecated, use text2vec_aws_bedrock or text2vec_aws_sagemaker).
+  """
   def text2vec_aws(opts \\ []) do
     %{
       "vectorizer" => "text2vec-aws",
       "moduleConfig" => %{
         "text2vec-aws" => build_module_opts(opts)
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-aws with AWS Bedrock service.
+
+  ## Options
+    - `:model` - The model to use (required, e.g., "amazon.titan-embed-text-v1")
+    - `:region` - AWS region (required)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+
+  ## Example
+
+      VectorConfig.text2vec_aws_bedrock(
+        model: "amazon.titan-embed-text-v1",
+        region: "us-east-1"
+      )
+  """
+  def text2vec_aws_bedrock(opts) do
+    config =
+      %{
+        "model" => Keyword.fetch!(opts, :model),
+        "region" => Keyword.fetch!(opts, :region),
+        "service" => "bedrock",
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+
+    %{
+      "vectorizer" => "text2vec-aws",
+      "moduleConfig" => %{
+        "text2vec-aws" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-aws with AWS SageMaker service.
+
+  ## Options
+    - `:endpoint` - The SageMaker endpoint (required)
+    - `:region` - AWS region (required)
+    - `:target_model` - Target model (optional)
+    - `:target_variant` - Target variant (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+
+  ## Example
+
+      VectorConfig.text2vec_aws_sagemaker(
+        endpoint: "my-endpoint",
+        region: "us-east-1"
+      )
+  """
+  def text2vec_aws_sagemaker(opts) do
+    config =
+      %{
+        "endpoint" => Keyword.fetch!(opts, :endpoint),
+        "region" => Keyword.fetch!(opts, :region),
+        "service" => "sagemaker",
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("targetModel", Keyword.get(opts, :target_model))
+      |> maybe_put("targetVariant", Keyword.get(opts, :target_variant))
+
+    %{
+      "vectorizer" => "text2vec-aws",
+      "moduleConfig" => %{
+        "text2vec-aws" => config
       }
     }
   end
@@ -305,23 +467,21 @@ defmodule WeaviateEx.API.VectorConfig do
 
   @doc "Add vectorizer to configuration"
   def with_vectorizer(config, vectorizer, opts \\ []) do
-    vectorizer_config =
-      case vectorizer do
-        :text2vec_openai -> text2vec_openai(opts)
-        :text2vec_cohere -> text2vec_cohere(opts)
-        :text2vec_huggingface -> text2vec_huggingface(opts)
-        :text2vec_transformers -> text2vec_transformers(opts)
-        :text2vec_contextionary -> text2vec_contextionary(opts)
-        :text2vec_gpt4all -> text2vec_gpt4all(opts)
-        :text2vec_palm -> text2vec_palm(opts)
-        :text2vec_aws -> text2vec_aws(opts)
-        :multi2vec_clip -> multi2vec_clip(opts)
-        :multi2vec_bind -> multi2vec_bind(opts)
-        :none -> none()
-      end
-
+    vectorizer_config = vectorizer_config_for(vectorizer, opts)
     Map.merge(config, vectorizer_config)
   end
+
+  defp vectorizer_config_for(:text2vec_openai, opts), do: text2vec_openai(opts)
+  defp vectorizer_config_for(:text2vec_cohere, opts), do: text2vec_cohere(opts)
+  defp vectorizer_config_for(:text2vec_huggingface, opts), do: text2vec_huggingface(opts)
+  defp vectorizer_config_for(:text2vec_transformers, opts), do: text2vec_transformers(opts)
+  defp vectorizer_config_for(:text2vec_contextionary, opts), do: text2vec_contextionary(opts)
+  defp vectorizer_config_for(:text2vec_gpt4all, opts), do: text2vec_gpt4all(opts)
+  defp vectorizer_config_for(:text2vec_palm, opts), do: text2vec_palm(opts)
+  defp vectorizer_config_for(:text2vec_aws, opts), do: text2vec_aws(opts)
+  defp vectorizer_config_for(:multi2vec_clip, opts), do: multi2vec_clip(opts)
+  defp vectorizer_config_for(:multi2vec_bind, opts), do: multi2vec_bind(opts)
+  defp vectorizer_config_for(:none, _opts), do: none()
 
   @doc "Add HNSW index to configuration"
   def with_hnsw_index(config, opts \\ []) do
@@ -417,6 +577,147 @@ defmodule WeaviateEx.API.VectorConfig do
     Map.put(config, "multiTenancyConfig", mt_config)
   end
 
+  ## New Vectorizers (Python client sync Dec 2025)
+
+  @doc """
+  Configure text2vec-voyageai vectorizer.
+
+  ## Options
+    - `:model` - Model to use (e.g., "voyage-3.5", "voyage-3-large", "voyage-context-3")
+    - `:base_url` - Base URL for API (optional)
+    - `:truncation` - Whether to truncate (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_voyageai(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("truncation", Keyword.get(opts, :truncation))
+
+    %{
+      "vectorizer" => "text2vec-voyageai",
+      "moduleConfig" => %{
+        "text2vec-voyageai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-morph vectorizer.
+
+  ## Options
+    - `:model` - Model to use
+    - `:base_url` - Base URL for API (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_morph(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "vectorizer" => "text2vec-morph",
+      "moduleConfig" => %{
+        "text2vec-morph" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-model2vec vectorizer.
+
+  ## Options
+    - `:inference_url` - URL for inference service (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_model2vec(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("inferenceUrl", Keyword.get(opts, :inference_url))
+
+    %{
+      "vectorizer" => "text2vec-model2vec",
+      "moduleConfig" => %{
+        "text2vec-model2vec" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2colbert-jinaai vectorizer (multi-vector).
+
+  ## Options
+    - `:model` - Model to use
+    - `:dimensions` - Output dimensions (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2colbert_jinaai(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("dimensions", Keyword.get(opts, :dimensions))
+
+    %{
+      "vectorizer" => "text2colbert-jinaai",
+      "moduleConfig" => %{
+        "text2colbert-jinaai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2multivec-jinaai vectorizer.
+
+  ## Options
+    - `:model` - Model to use
+    - `:base_url` - Base URL for API (optional)
+    - `:image_fields` - List of image property names (optional)
+    - `:text_fields` - List of text property names (optional)
+  """
+  def multi2multivec_jinaai(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("imageFields", Keyword.get(opts, :image_fields))
+      |> maybe_put("textFields", Keyword.get(opts, :text_fields))
+
+    %{
+      "vectorizer" => "multi2multivec-jinaai",
+      "moduleConfig" => %{
+        "multi2multivec-jinaai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure reranker-cohere module.
+
+  ## Options
+    - `:model` - Model to use (optional)
+    - `:base_url` - Base URL for API (optional)
+  """
+  def reranker_cohere(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "reranker-cohere" => config
+    }
+  end
+
   ## Helper Functions
 
   @doc "List all supported vectorizers"
@@ -458,6 +759,9 @@ defmodule WeaviateEx.API.VectorConfig do
   end
 
   defp lcfirst(<<first::utf8, rest::binary>>), do: String.downcase(<<first::utf8>>) <> rest
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp distance_to_string(:cosine), do: "cosine"
   defp distance_to_string(:dot), do: "dot"

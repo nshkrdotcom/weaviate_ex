@@ -27,6 +27,8 @@ defmodule Mix.Tasks.Weaviate.Logs do
   use Mix.Task
   require Logger
 
+  alias WeaviateEx.DevSupport.Compose
+
   @shortdoc "Show logs from local Weaviate Docker container"
 
   @impl Mix.Task
@@ -55,7 +57,7 @@ defmodule Mix.Tasks.Weaviate.Logs do
 
     files =
       case file_filter do
-        nil -> WeaviateEx.DevSupport.Compose.compose_files()
+        nil -> Compose.compose_files()
         file -> [file]
       end
 
@@ -77,7 +79,7 @@ defmodule Mix.Tasks.Weaviate.Logs do
     Enum.each(files, fn file ->
       Mix.shell().info("\n== #{file} ==")
 
-      case WeaviateEx.DevSupport.Compose.exec_for_file(file, args, into: IO.stream(:stdio, :line)) do
+      case Compose.exec_for_file(file, args, into: IO.stream(:stdio, :line)) do
         {_, 0} ->
           :ok
 

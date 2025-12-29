@@ -93,7 +93,7 @@ defmodule WeaviateEx.Embedded do
        version: Keyword.get(opts, :version, @default_version),
        hostname: Keyword.get(opts, :hostname, "127.0.0.1"),
        port: Keyword.get(opts, :port, 8079),
-       grpc_port: Keyword.get(opts, :grpc_port, 50060),
+       grpc_port: Keyword.get(opts, :grpc_port, 50_060),
        binary_path: Keyword.get(opts, :binary_path, default_binary_path()),
        persistence_data_path:
          Keyword.get(opts, :persistence_data_path, default_persistence_path()),
@@ -103,9 +103,8 @@ defmodule WeaviateEx.Embedded do
   end
 
   defp ensure_directories(%{binary_path: binary_path, persistence_data_path: data_path}) do
-    with :ok <- File.mkdir_p(binary_path),
-         :ok <- File.mkdir_p(data_path) do
-      :ok
+    with :ok <- File.mkdir_p(binary_path) do
+      File.mkdir_p(data_path)
     end
   end
 
@@ -115,7 +114,6 @@ defmodule WeaviateEx.Embedded do
       {:unix, :linux} -> :ok
       {:unix, _} -> :ok
       {:win32, _} -> {:error, "Embedded Weaviate is not supported on Windows"}
-      other -> {:error, "Unsupported platform #{inspect(other)}"}
     end
   end
 
@@ -310,9 +308,8 @@ defmodule WeaviateEx.Embedded do
   defp wait_until_ready(host, port, grpc_port, timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
 
-    with :ok <- wait_http_ready(host, port, deadline),
-         :ok <- wait_tcp_ready(host, grpc_port, deadline) do
-      :ok
+    with :ok <- wait_http_ready(host, port, deadline) do
+      wait_tcp_ready(host, grpc_port, deadline)
     end
   end
 
@@ -361,8 +358,8 @@ defmodule WeaviateEx.Embedded do
 
   defp hashed_binary_name(parsed_version) do
     hash =
-      parsed_version
-      |> :crypto.hash(:sha256)
+      :sha256
+      |> :crypto.hash(parsed_version)
       |> Base.encode16(case: :lower)
 
     "weaviate-#{parsed_version}-#{hash}"

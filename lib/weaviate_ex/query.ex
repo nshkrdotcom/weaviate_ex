@@ -352,11 +352,10 @@ defmodule WeaviateEx.Query do
   defp map_to_graphql(value) when is_map(value) do
     entries =
       value
-      |> Enum.map(fn {k, v} ->
+      |> Enum.map_join(", ", fn {k, v} ->
         key_str = to_string(k)
         "#{key_str}: #{map_to_graphql(v, key_str)}"
       end)
-      |> Enum.join(", ")
 
     "{#{entries}}"
   end
@@ -364,8 +363,7 @@ defmodule WeaviateEx.Query do
   defp map_to_graphql(value) when is_list(value) do
     items =
       value
-      |> Enum.map(&map_to_graphql(&1, nil))
-      |> Enum.join(", ")
+      |> Enum.map_join(", ", &map_to_graphql(&1, nil))
 
     "[#{items}]"
   end
@@ -395,11 +393,10 @@ defmodule WeaviateEx.Query do
   defp map_to_graphql(value, _key) when is_map(value) do
     entries =
       value
-      |> Enum.map(fn {k, v} ->
+      |> Enum.map_join(", ", fn {k, v} ->
         key_str = to_string(k)
         "#{key_str}: #{map_to_graphql(v, key_str)}"
       end)
-      |> Enum.join(", ")
 
     "{#{entries}}"
   end
@@ -407,8 +404,7 @@ defmodule WeaviateEx.Query do
   defp map_to_graphql(value, _key) when is_list(value) do
     items =
       value
-      |> Enum.map(&map_to_graphql(&1, nil))
-      |> Enum.join(", ")
+      |> Enum.map_join(", ", &map_to_graphql(&1, nil))
 
     "[#{items}]"
   end

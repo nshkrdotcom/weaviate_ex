@@ -281,16 +281,14 @@ defmodule WeaviateEx.Objects do
     params =
       opts
       |> Enum.filter(fn {key, _value} -> key in allowed_keys end)
-      |> Enum.map(fn {key, value} -> "#{key}=#{encode_query_value(value)}" end)
-      |> Enum.join("&")
+      |> Enum.map_join("&", fn {key, value} -> "#{key}=#{encode_query_value(value)}" end)
 
     if params == "", do: "", else: "?#{params}"
   end
 
   defp encode_query_value(value) when is_list(value) do
     value
-    |> Enum.map(&to_string/1)
-    |> Enum.join(",")
+    |> Enum.map_join(",", &to_string/1)
     |> URI.encode_www_form()
   end
 

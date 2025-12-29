@@ -195,7 +195,5 @@ defmodule WeaviateEx.Health do
     """
   end
 
-  defp format_error(%{status: status, body: body}), do: "HTTP #{status}: #{inspect(body)}"
-  defp format_error({:error, reason}), do: inspect(reason)
-  defp format_error(reason), do: inspect(reason)
+  defp format_error(%WeaviateEx.Error{message: msg, type: type}), do: "#{type}: #{msg}"
 end

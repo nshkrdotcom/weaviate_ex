@@ -239,7 +239,7 @@ defmodule WeaviateEx.API.Aggregate do
     # Add meta metrics (count, etc.)
     parts =
       if metrics = Keyword.get(opts, :metrics) do
-        meta_fields = Enum.map(metrics, &metric_to_string/1) |> Enum.join("\n        ")
+        meta_fields = Enum.map_join(metrics, "\n        ", &metric_to_string/1)
         ["meta {\n        #{meta_fields}\n      }" | parts]
       else
         parts
@@ -274,7 +274,7 @@ defmodule WeaviateEx.API.Aggregate do
     prop_name = if is_atom(property), do: Atom.to_string(property), else: property
 
     metrics_str =
-      Enum.map(metrics, fn metric ->
+      Enum.map_join(metrics, "\n        ", fn metric ->
         case metric do
           :topOccurrences ->
             limit = Keyword.get(opts, :limit, 5)
@@ -284,7 +284,6 @@ defmodule WeaviateEx.API.Aggregate do
             metric_to_string(other)
         end
       end)
-      |> Enum.join("\n        ")
 
     "#{prop_name} {\n        #{metrics_str}\n      }"
   end

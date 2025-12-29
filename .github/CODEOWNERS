@@ -1,0 +1,9 @@
+# CI and infrastructure
+/ci/ @nshkrdotcom
+/.github/ @nshkrdotcom
+
+# Core library
+/lib/ @nshkrdotcom
+
+# Tests
+/test/ @nshkrdotcom

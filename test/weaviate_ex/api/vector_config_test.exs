@@ -290,6 +290,140 @@ defmodule WeaviateEx.API.VectorConfigTest do
     end
   end
 
+  describe "AWS service-specific methods" do
+    test "text2vec_aws_bedrock creates proper config" do
+      config =
+        VectorConfig.text2vec_aws_bedrock(
+          model: "amazon.titan-embed-text-v1",
+          region: "us-east-1"
+        )
+
+      assert config["vectorizer"] == "text2vec-aws"
+      assert config["moduleConfig"]["text2vec-aws"]["model"] == "amazon.titan-embed-text-v1"
+      assert config["moduleConfig"]["text2vec-aws"]["region"] == "us-east-1"
+      assert config["moduleConfig"]["text2vec-aws"]["service"] == "bedrock"
+      assert config["moduleConfig"]["text2vec-aws"]["vectorizeClassName"] == true
+    end
+
+    test "text2vec_aws_bedrock raises when model missing" do
+      assert_raise KeyError, fn ->
+        VectorConfig.text2vec_aws_bedrock(region: "us-east-1")
+      end
+    end
+
+    test "text2vec_aws_sagemaker creates proper config" do
+      config =
+        VectorConfig.text2vec_aws_sagemaker(
+          endpoint: "my-endpoint",
+          region: "us-west-2",
+          target_model: "model-v1",
+          target_variant: "variant-a"
+        )
+
+      assert config["vectorizer"] == "text2vec-aws"
+      assert config["moduleConfig"]["text2vec-aws"]["endpoint"] == "my-endpoint"
+      assert config["moduleConfig"]["text2vec-aws"]["region"] == "us-west-2"
+      assert config["moduleConfig"]["text2vec-aws"]["service"] == "sagemaker"
+      assert config["moduleConfig"]["text2vec-aws"]["targetModel"] == "model-v1"
+      assert config["moduleConfig"]["text2vec-aws"]["targetVariant"] == "variant-a"
+    end
+  end
+
+  describe "Google service-specific methods" do
+    test "text2vec_google_vertex creates proper config" do
+      config =
+        VectorConfig.text2vec_google_vertex(
+          project_id: "my-project",
+          model: "textembedding-gecko@001",
+          dimensions: 768
+        )
+
+      assert config["vectorizer"] == "text2vec-palm"
+      assert config["moduleConfig"]["text2vec-palm"]["projectId"] == "my-project"
+      assert config["moduleConfig"]["text2vec-palm"]["modelId"] == "textembedding-gecko@001"
+      assert config["moduleConfig"]["text2vec-palm"]["dimensions"] == 768
+    end
+
+    test "text2vec_google_gemini creates config with default endpoint" do
+      config = VectorConfig.text2vec_google_gemini(model: "text-embedding-004")
+
+      assert config["vectorizer"] == "text2vec-palm"
+
+      assert config["moduleConfig"]["text2vec-palm"]["apiEndpoint"] ==
+               "generativelanguage.googleapis.com"
+
+      assert config["moduleConfig"]["text2vec-palm"]["modelId"] == "text-embedding-004"
+    end
+  end
+
+  describe "new vectorizers Dec 2025" do
+    test "text2vec_cohere includes dimensions parameter" do
+      config = VectorConfig.text2vec_cohere(model: "embed-english-v3.0", dimensions: 1024)
+
+      assert config["moduleConfig"]["text2vec-cohere"]["dimensions"] == 1024
+    end
+
+    test "text2vec_voyageai configuration" do
+      config = VectorConfig.text2vec_voyageai(model: "voyage-3.5")
+
+      assert config["vectorizer"] == "text2vec-voyageai"
+      assert config["moduleConfig"]["text2vec-voyageai"]["model"] == "voyage-3.5"
+    end
+
+    test "text2vec_morph configuration" do
+      config = VectorConfig.text2vec_morph(model: "morph-base")
+
+      assert config["vectorizer"] == "text2vec-morph"
+      assert config["moduleConfig"]["text2vec-morph"]["model"] == "morph-base"
+    end
+
+    test "text2vec_model2vec configuration" do
+      config = VectorConfig.text2vec_model2vec(inference_url: "http://localhost:8000")
+
+      assert config["vectorizer"] == "text2vec-model2vec"
+
+      assert config["moduleConfig"]["text2vec-model2vec"]["inferenceUrl"] ==
+               "http://localhost:8000"
+    end
+
+    test "text2colbert_jinaai configuration" do
+      config = VectorConfig.text2colbert_jinaai(model: "jina-colbert-v2", dimensions: 128)
+
+      assert config["vectorizer"] == "text2colbert-jinaai"
+      assert config["moduleConfig"]["text2colbert-jinaai"]["model"] == "jina-colbert-v2"
+      assert config["moduleConfig"]["text2colbert-jinaai"]["dimensions"] == 128
+    end
+
+    test "multi2multivec_jinaai configuration" do
+      config =
+        VectorConfig.multi2multivec_jinaai(
+          model: "jina-clip-v1",
+          image_fields: ["image"],
+          text_fields: ["title", "description"]
+        )
+
+      assert config["vectorizer"] == "multi2multivec-jinaai"
+      assert config["moduleConfig"]["multi2multivec-jinaai"]["model"] == "jina-clip-v1"
+      assert config["moduleConfig"]["multi2multivec-jinaai"]["imageFields"] == ["image"]
+
+      assert config["moduleConfig"]["multi2multivec-jinaai"]["textFields"] == [
+               "title",
+               "description"
+             ]
+    end
+
+    test "reranker_cohere with base_url" do
+      config =
+        VectorConfig.reranker_cohere(
+          model: "rerank-english-v3.0",
+          base_url: "https://custom.cohere.ai"
+        )
+
+      assert config["reranker-cohere"]["model"] == "rerank-english-v3.0"
+      assert config["reranker-cohere"]["baseURL"] == "https://custom.cohere.ai"
+    end
+  end
+
   describe "helper functions" do
     test "lists all supported vectorizers" do
       vectorizers = VectorConfig.supported_vectorizers()

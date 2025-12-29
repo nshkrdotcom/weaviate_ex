@@ -1,6 +1,8 @@
 services:
   weaviate:
-    image: cr.weaviate.io/semitechnologies/weaviate:1.28.1
+    # Updated to 1.28.14 for Object TTL and other new features
+    # Note: 1.35+ required for full Object TTL support when available
+    image: cr.weaviate.io/semitechnologies/weaviate:1.28.14
     ports:
       - "8080:8080"
       - "40051:50051"
@@ -11,6 +13,8 @@ services:
       DEFAULT_VECTORIZER_MODULE: 'none'
       ENABLE_MODULES: ''
       CLUSTER_HOSTNAME: 'node1'
+      # Enable gRPC for better performance
+      ENABLE_GRPC: 'true'
     volumes:
       - weaviate_data:/var/lib/weaviate
     restart: "no"

@@ -12,7 +12,7 @@ defmodule WeaviateEx.Test.Mocks do
       config: %WeaviateEx.Client.Config{
         base_url: "http://localhost:8080",
         grpc_host: "localhost",
-        grpc_port: 50051,
+        grpc_port: 50_051,
         api_key: nil
       },
       protocol_impl: WeaviateEx.Protocol.Mock

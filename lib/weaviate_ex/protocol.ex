@@ -5,9 +5,9 @@ defmodule WeaviateEx.Protocol do
 
   @type method :: :get | :post | :put | :patch | :delete | :head
   @type path :: String.t()
-  @type body :: map() | nil
+  @type body :: map() | list() | nil
   @type opts :: keyword()
-  @type response :: {:ok, map()} | {:error, WeaviateEx.Error.t()}
+  @type response :: {:ok, map() | list()} | {:error, WeaviateEx.Error.t()}
 
   @callback request(client :: term(), method(), path(), body(), opts()) :: response()
 end

@@ -62,16 +62,18 @@ defmodule WeaviateEx.Application do
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
-        # Perform health check after supervisor starts (skip in test mode)
-        if Mix.env() != :test do
-          strict = Application.get_env(:weaviate_ex, :strict, true)
-          Task.start(fn -> perform_health_check(strict) end)
-        end
-
+        maybe_perform_health_check()
         {:ok, pid}
 
       error ->
         error
+    end
+  end
+
+  defp maybe_perform_health_check do
+    unless Mix.env() == :test do
+      strict = Application.get_env(:weaviate_ex, :strict, true)
+      Task.start(fn -> perform_health_check(strict) end)
     end
   end
 

@@ -174,8 +174,7 @@ defmodule WeaviateEx.Batch do
     params =
       opts
       |> Enum.filter(fn {key, _value} -> key in allowed_keys end)
-      |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
-      |> Enum.join("&")
+      |> Enum.map_join("&", fn {key, value} -> "#{key}=#{value}" end)
 
     if params == "", do: "", else: "?#{params}"
   end

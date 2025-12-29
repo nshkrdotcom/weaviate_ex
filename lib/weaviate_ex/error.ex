@@ -39,19 +39,15 @@ defmodule WeaviateEx.Error do
     }
   end
 
-  defp status_to_type(code) do
-    case code do
-      400 -> :bad_request
-      401 -> :authentication_failed
-      403 -> :forbidden
-      404 -> :not_found
-      409 -> :conflict
-      422 -> :validation_error
-      500 -> :server_error
-      503 -> :service_unavailable
-      _ -> :unknown_error
-    end
-  end
+  defp status_to_type(400), do: :bad_request
+  defp status_to_type(401), do: :authentication_failed
+  defp status_to_type(403), do: :forbidden
+  defp status_to_type(404), do: :not_found
+  defp status_to_type(409), do: :conflict
+  defp status_to_type(422), do: :validation_error
+  defp status_to_type(500), do: :server_error
+  defp status_to_type(503), do: :service_unavailable
+  defp status_to_type(_), do: :unknown_error
 
   defp extract_message(body) when is_map(body) do
     body["message"] || body["error"] || "Request failed"

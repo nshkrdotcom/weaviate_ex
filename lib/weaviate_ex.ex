@@ -153,7 +153,7 @@ defmodule WeaviateEx do
   ## HTTP Client
 
   @doc false
-  @spec request(atom(), String.t(), map() | nil, Keyword.t()) :: api_response()
+  @spec request(atom(), String.t(), map() | list() | nil, Keyword.t()) :: api_response()
   def request(method, path, body \\ nil, opts \\ []) do
     # Create a client using the configured protocol implementation
     {:ok, client} =

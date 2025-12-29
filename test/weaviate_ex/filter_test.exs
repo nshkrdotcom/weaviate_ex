@@ -107,8 +107,8 @@ defmodule WeaviateEx.FilterTest do
       assert filter[:operator] == :contains_all
     end
 
-    test "is_null operator" do
-      filter = Filter.is_null("description")
+    test "null? operator" do
+      filter = Filter.null?("description")
       assert filter[:operator] == :is_null
     end
   end

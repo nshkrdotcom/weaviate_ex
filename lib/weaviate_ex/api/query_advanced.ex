@@ -135,13 +135,7 @@ defmodule WeaviateEx.API.QueryAdvanced do
           {:ok, [map()]} | {:error, Error.t()}
   def near_media(client, collection_name, media_type, media_data, opts \\ []) do
     # Validate media type
-    unless media_type in [:audio, :video, :image, :depth, :thermal, :imu] do
-      {:error,
-       %Error{
-         type: :validation_error,
-         message: "Unsupported media type: #{media_type}"
-       }}
-    else
+    if media_type in [:audio, :video, :image, :depth, :thermal, :imu] do
       # Extract options
       limit = Keyword.get(opts, :limit, 10)
       fields = Keyword.get(opts, :fields, ["_additional { distance }"])
@@ -178,6 +172,12 @@ defmodule WeaviateEx.API.QueryAdvanced do
         {:error, _} = error ->
           error
       end
+    else
+      {:error,
+       %Error{
+         type: :validation_error,
+         message: "Unsupported media type: #{media_type}"
+       }}
     end
   end
 

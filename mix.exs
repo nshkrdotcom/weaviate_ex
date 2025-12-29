@@ -14,6 +14,7 @@ defmodule WeaviateEx.MixProject do
       description: description(),
       package: package(),
       docs: docs(),
+      dialyzer: dialyzer(),
       name: "WeaviateEx",
       source_url: @source_url,
       elixirc_paths: elixirc_paths(Mix.env())
@@ -25,8 +26,15 @@ defmodule WeaviateEx.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :inets, :ssl, :crypto, :public_key],
       mod: {WeaviateEx.Application, []}
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_add_apps: [:mix],
+      ignore_warnings: ".dialyzer_ignore.exs"
     ]
   end
 

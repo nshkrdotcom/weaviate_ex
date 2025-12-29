@@ -1,6 +1,6 @@
 defmodule WeaviateEx.Integration.QueryTest do
   use ExUnit.Case, async: false
-  alias WeaviateEx.{Collections, Query, Batch}
+  alias WeaviateEx.{Batch, Collections, Query}
 
   @moduletag :integration
 

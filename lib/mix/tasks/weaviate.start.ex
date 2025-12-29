@@ -27,6 +27,8 @@ defmodule Mix.Tasks.Weaviate.Start do
   use Mix.Task
   require Logger
 
+  alias WeaviateEx.DevSupport.Compose
+
   @shortdoc "Start local Weaviate Docker container"
 
   @impl Mix.Task
@@ -44,7 +46,7 @@ defmodule Mix.Tasks.Weaviate.Start do
       |> case do
         "async" -> :async
         "full" -> :full
-        other -> Mix.raise("Unknown profile #{inspect(other)}. Use \"full\" or \"async\".")
+        other -> Mix.raise(~s(Unknown profile #{inspect(other)}. Use "full" or "async".))
       end
 
     version = Keyword.get(opts, :version, System.get_env("WEAVIATE_VERSION") || "latest")
@@ -60,7 +62,7 @@ defmodule Mix.Tasks.Weaviate.Start do
       end
 
     {_, status} =
-      WeaviateEx.DevSupport.Compose.run_script(script, [version], into: IO.stream(:stdio, :line))
+      Compose.run_script(script, [version], into: IO.stream(:stdio, :line))
 
     if status == 0 do
       Mix.shell().info("\n✓ All Weaviate containers are running")

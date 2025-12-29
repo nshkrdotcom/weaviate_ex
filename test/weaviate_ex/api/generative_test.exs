@@ -305,13 +305,16 @@ defmodule WeaviateEx.API.GenerativeTest do
   end
 
   describe "all AI providers" do
-    test "supports all 13+ AI providers", %{client: client} do
+    test "supports all 17+ AI providers", %{client: client} do
       providers = [
         :openai,
         :anthropic,
         :cohere,
         :palm,
+        :google_vertex,
+        :google_gemini,
         :aws_bedrock,
+        :aws_sagemaker,
         :azure_openai,
         :anyscale,
         :huggingface,
@@ -319,7 +322,9 @@ defmodule WeaviateEx.API.GenerativeTest do
         :ollama,
         :octoai,
         :together,
-        :voyage
+        :voyage,
+        :xai,
+        :contextualai
       ]
 
       for provider <- providers do
@@ -460,6 +465,197 @@ defmodule WeaviateEx.API.GenerativeTest do
                prompt: "Summarize {title}",
                provider: :openai
              }
+    end
+  end
+
+  describe "OpenAI O1/O3 reasoning parameters" do
+    test "supports verbosity parameter for reasoning models", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "verbosity"
+        assert body["query"] =~ "medium"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "Result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :openai,
+                 model: "o3",
+                 verbosity: "medium"
+               )
+    end
+
+    test "supports reasoning_effort parameter for reasoning models", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "reasoningEffort"
+        assert body["query"] =~ "high"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "Result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :openai,
+                 model: "o1-preview",
+                 reasoning_effort: "high"
+               )
+    end
+  end
+
+  describe "ContextualAI provider" do
+    test "supports system_prompt parameter", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "contextualai"
+        assert body["query"] =~ "systemPrompt"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "ContextualAI result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :contextualai,
+                 system_prompt: "You are a helpful assistant"
+               )
+    end
+
+    test "supports avoid_commentary parameter", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "avoidCommentary"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "Result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :contextualai,
+                 avoid_commentary: true
+               )
+    end
+
+    test "supports max_new_tokens parameter", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "maxNewTokens"
+        assert body["query"] =~ "1024"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "Result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :contextualai,
+                 max_new_tokens: 1024
+               )
+    end
+  end
+
+  describe "XAI provider" do
+    test "supports xai provider with topP", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "xai"
+        assert body["query"] =~ "topP"
+        assert body["query"] =~ "0.95"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "Grok generated this"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :xai,
+                 model: "grok-2",
+                 top_p: 0.95
+               )
+
+      assert result["singleResult"] =~ "Grok"
     end
   end
 

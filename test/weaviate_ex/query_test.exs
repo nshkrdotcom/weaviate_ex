@@ -2,7 +2,7 @@ defmodule WeaviateEx.QueryTest do
   use ExUnit.Case, async: true
   import Mox
   import WeaviateEx.Test.Mocks
-  alias WeaviateEx.{Query, Fixtures}
+  alias WeaviateEx.{Fixtures, Query}
   alias WeaviateEx.Protocol.Mock
 
   setup :verify_on_exit!

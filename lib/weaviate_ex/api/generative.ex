@@ -2,12 +2,12 @@ defmodule WeaviateEx.API.Generative do
   @moduledoc """
   Generative Search (RAG) operations for Phase 2.3.
 
-  Provides AI-powered generation capabilities with 13+ provider integrations:
-  - OpenAI (GPT-4, GPT-3.5, etc.)
+  Provides AI-powered generation capabilities with 15+ provider integrations:
+  - OpenAI (GPT-4, GPT-3.5, O1, O3 reasoning models, etc.)
   - Anthropic (Claude 3.5 Sonnet, etc.)
   - Cohere
-  - Google PaLM
-  - AWS Bedrock
+  - Google PaLM / Vertex AI / Gemini
+  - AWS Bedrock / SageMaker
   - Azure OpenAI
   - Anyscale
   - Hugging Face
@@ -16,6 +16,8 @@ defmodule WeaviateEx.API.Generative do
   - OctoAI
   - Together AI
   - Voyage AI
+  - XAI (Grok)
+  - ContextualAI
   """
 
   alias WeaviateEx.Client
@@ -29,7 +31,10 @@ defmodule WeaviateEx.API.Generative do
           | :anthropic
           | :cohere
           | :palm
+          | :google_vertex
+          | :google_gemini
           | :aws_bedrock
+          | :aws_sagemaker
           | :azure_openai
           | :anyscale
           | :huggingface
@@ -38,13 +43,18 @@ defmodule WeaviateEx.API.Generative do
           | :octoai
           | :together
           | :voyage
+          | :xai
+          | :contextualai
 
   @valid_providers [
     :openai,
     :anthropic,
     :cohere,
     :palm,
+    :google_vertex,
+    :google_gemini,
     :aws_bedrock,
+    :aws_sagemaker,
     :azure_openai,
     :anyscale,
     :huggingface,
@@ -52,7 +62,9 @@ defmodule WeaviateEx.API.Generative do
     :ollama,
     :octoai,
     :together,
-    :voyage
+    :voyage,
+    :xai,
+    :contextualai
   ]
 
   ## Single Prompt Generation
@@ -312,20 +324,10 @@ defmodule WeaviateEx.API.Generative do
 
   defp build_generate_clause(prompt, type, opts) do
     provider = Keyword.get(opts, :provider, :openai)
-    model = Keyword.get(opts, :model)
-    temperature = Keyword.get(opts, :temperature)
-    max_tokens = Keyword.get(opts, :max_tokens)
-    top_p = Keyword.get(opts, :top_p)
-
     result_field = if type == :single, do: "singleResult", else: "groupedResult"
 
     # Build provider-specific parameters
-    params = []
-
-    params = if model, do: [~s(model: "#{model}") | params], else: params
-    params = if temperature, do: ["temperature: #{temperature}" | params], else: params
-    params = if max_tokens, do: ["maxTokens: #{max_tokens}" | params], else: params
-    params = if top_p, do: ["topP: #{top_p}" | params], else: params
+    params = build_provider_params(provider, opts)
 
     provider_str = provider_to_string(provider)
 
@@ -346,11 +348,55 @@ defmodule WeaviateEx.API.Generative do
     """
   end
 
+  # Build parameters for different providers
+  defp build_provider_params(:openai, opts) do
+    params = build_common_params(opts)
+    # OpenAI-specific: verbosity and reasoningEffort for O1/O3 models
+    params = maybe_add_param(params, opts, :verbosity, "verbosity", &quote_string/1)
+    maybe_add_param(params, opts, :reasoning_effort, "reasoningEffort", &quote_string/1)
+  end
+
+  defp build_provider_params(:contextualai, opts) do
+    params = build_common_params(opts)
+    params = maybe_add_param(params, opts, :system_prompt, "systemPrompt", &quote_string/1)
+    params = maybe_add_param(params, opts, :avoid_commentary, "avoidCommentary", &to_string/1)
+    maybe_add_param(params, opts, :max_new_tokens, "maxNewTokens", &to_string/1)
+  end
+
+  defp build_provider_params(:xai, opts) do
+    # XAI supports topP in addition to common params
+    build_common_params(opts)
+  end
+
+  defp build_provider_params(_provider, opts) do
+    build_common_params(opts)
+  end
+
+  defp build_common_params(opts) do
+    params = []
+    params = maybe_add_param(params, opts, :model, "model", &quote_string/1)
+    params = maybe_add_param(params, opts, :temperature, "temperature", &to_string/1)
+    params = maybe_add_param(params, opts, :max_tokens, "maxTokens", &to_string/1)
+    maybe_add_param(params, opts, :top_p, "topP", &to_string/1)
+  end
+
+  defp maybe_add_param(params, opts, key, graphql_key, formatter) do
+    case Keyword.get(opts, key) do
+      nil -> params
+      value -> ["#{graphql_key}: #{formatter.(value)}" | params]
+    end
+  end
+
+  defp quote_string(value), do: ~s("#{value}")
+
   defp provider_to_string(:openai), do: "openai"
   defp provider_to_string(:anthropic), do: "anthropic"
   defp provider_to_string(:cohere), do: "cohere"
   defp provider_to_string(:palm), do: "palm"
+  defp provider_to_string(:google_vertex), do: "google"
+  defp provider_to_string(:google_gemini), do: "google"
   defp provider_to_string(:aws_bedrock), do: "aws"
+  defp provider_to_string(:aws_sagemaker), do: "aws"
   defp provider_to_string(:azure_openai), do: "azureOpenAI"
   defp provider_to_string(:anyscale), do: "anyscale"
   defp provider_to_string(:huggingface), do: "huggingface"
@@ -359,6 +405,8 @@ defmodule WeaviateEx.API.Generative do
   defp provider_to_string(:octoai), do: "octoai"
   defp provider_to_string(:together), do: "together"
   defp provider_to_string(:voyage), do: "voyage"
+  defp provider_to_string(:xai), do: "xai"
+  defp provider_to_string(:contextualai), do: "contextualai"
 
   defp validate_provider(nil) do
     {:error, %Error{type: :validation_error, message: "Provider is required"}}

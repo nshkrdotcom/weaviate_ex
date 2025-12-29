@@ -136,9 +136,9 @@ defmodule WeaviateEx.Filter do
     }
   end
 
-  @doc "Is null operator"
-  @spec is_null(String.t()) :: filter()
-  def is_null(property) do
+  @doc "Null check operator"
+  @spec null?(String.t()) :: filter()
+  def null?(property) do
     %{
       path: [property],
       operator: :is_null,

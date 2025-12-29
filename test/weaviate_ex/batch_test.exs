@@ -104,7 +104,7 @@ defmodule WeaviateEx.BatchTest do
         "output" => "minimal",
         "results" => %{
           "matches" => 5,
-          "limit" => 10000,
+          "limit" => 10_000,
           "successful" => 5,
           "failed" => 0
         }

@@ -31,8 +31,7 @@ defmodule WeaviateEx.DevSupport.Compose do
     args =
       args
       |> List.wrap()
-      |> Enum.map(&quote_arg/1)
-      |> Enum.join(" ")
+      |> Enum.map_join(" ", &quote_arg/1)
 
     command =
       if args == "" do

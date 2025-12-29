@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Object TTL Configuration** (`WeaviateEx.Config.ObjectTTL`)
+  - `delete_by_update_time/2` - Expire objects by last update time
+  - `delete_by_creation_time/2` - Expire objects by creation time
+  - `delete_by_date_property/3` - Expire objects by custom date property
+  - `disable/0` - Disable TTL
+- **New Generative Providers**:
+  - ContextualAI with `system_prompt`, `avoid_commentary`, `max_new_tokens`
+  - XAI (Grok) with `top_p` support
+  - Google Vertex AI and Google Gemini
+  - AWS SageMaker
+- **AWS Service-Specific Vectorizers**:
+  - `text2vec_aws_bedrock/1` - AWS Bedrock embeddings
+  - `text2vec_aws_sagemaker/1` - AWS SageMaker endpoints
+- **Google Service-Specific Vectorizers**:
+  - `text2vec_google_vertex/1` - Google Vertex AI
+  - `text2vec_google_gemini/1` - Google AI Studio (Gemini)
+- **New Vectorizers** (Dec 2025 Python client sync):
+  - `text2vec_voyageai/1` - VoyageAI (voyage-3.5, voyage-3-large, voyage-context-3)
+  - `text2vec_morph/1` - Morph embeddings
+  - `text2vec_model2vec/1` - Model2Vec embeddings
+  - `text2colbert_jinaai/1` - ColBERT multi-vector
+  - `multi2multivec_jinaai/1` - Jina multi-modal
+  - `reranker_cohere/1` - Cohere reranker with baseURL
+- **OpenAI O1/O3 Support**: `verbosity` and `reasoning_effort` parameters
+- **Cohere Enhancements**: `dimensions` parameter for embeddings
+- **CI Infrastructure**: Full GitHub Actions workflow (lint, dialyzer, unit tests, integration tests, publishing)
+- **Documentation**: CONTRIBUTING.md, RELEASING.md, updated CHANGELOG.md
+
+### Changed
+- Updated Docker Compose to Weaviate 1.28.14
+- Copied full CI infrastructure from Python client (`ci/` directory)
+- Added default version to CI start/stop scripts
+- Removed obsolete `version:` from Docker Compose files
+
 ## [0.2.0] - 2025-10-19
 
 ### Added
@@ -26,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Examples Overhaul**: All 8 examples updated with improved error handling, cleaner output, and better demonstrations
 - **README Improvements**: Expanded documentation with embedded mode, Mix tasks, Docker management, and comprehensive usage guides
-- **Mix Tasks Refactored**: Cleaner implementation using `WeaviateEx.DevSupport.Compose` module for shared logic
+- **Mix Tasks Refactored**: Cleaner implementation using WeaviateEx.DevSupport.Compose module for shared logic
 - **Test Coverage**: Added tests for batch operations, collections API, and data operations
 
 ### Fixed

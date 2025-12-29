@@ -107,7 +107,8 @@ defmodule WeaviateEx.API.Batch do
   end
 
   defp extract_objects(%{"results" => %{"objects" => objects}}) when is_list(objects), do: objects
-  defp extract_objects(%{"results" => objects}) when is_list(objects), do: objects
+  defp extract_objects(%{"results" => results}) when is_list(results), do: results
+  defp extract_objects(%{} = response) when not is_struct(response), do: []
   defp extract_objects(objects) when is_list(objects), do: objects
   defp extract_objects(_), do: []
 
@@ -148,16 +149,14 @@ defmodule WeaviateEx.API.Batch do
     params =
       opts
       |> Enum.filter(fn {key, _} -> key in allowed_keys end)
-      |> Enum.map(fn {key, value} -> "#{key}=#{encode_value(value)}" end)
-      |> Enum.join("&")
+      |> Enum.map_join("&", fn {key, value} -> "#{key}=#{encode_value(value)}" end)
 
     if params == "", do: "", else: "?" <> params
   end
 
   defp encode_value(value) when is_list(value) do
     value
-    |> Enum.map(&to_string/1)
-    |> Enum.join(",")
+    |> Enum.map_join(",", &to_string/1)
     |> URI.encode_www_form()
   end
 

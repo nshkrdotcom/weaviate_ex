@@ -129,40 +129,44 @@ defmodule WeaviateEx.API.Collections do
   def delete_all(client) do
     case list(client) do
       {:ok, collections} ->
-        results =
-          Enum.map(collections, fn collection_name ->
-            case delete(client, collection_name) do
-              {:ok, _} -> {:ok, collection_name}
-              {:error, error} -> {:error, collection_name, error}
-            end
-          end)
-
-        deleted = Enum.count(results, &match?({:ok, _}, &1))
-        failures = Enum.filter(results, &match?({:error, _, _}, &1))
-        failed_count = length(failures)
-
-        result = [deleted_count: deleted]
-
-        result =
-          if failed_count > 0, do: Keyword.put(result, :failed_count, failed_count), else: result
-
-        result =
-          if failed_count > 0 do
-            failure_details =
-              Enum.map(failures, fn {:error, name, error} ->
-                [collection: name, error: error]
-              end)
-
-            Keyword.put(result, :failures, failure_details)
-          else
-            result
-          end
-
-        {:ok, result}
+        {:ok, build_delete_result(client, collections)}
 
       {:error, error} ->
         {:error, error}
     end
+  end
+
+  defp build_delete_result(client, collections) do
+    results = Enum.map(collections, &delete_collection(client, &1))
+
+    deleted = Enum.count(results, &match?({:ok, _}, &1))
+    failures = Enum.filter(results, &match?({:error, _, _}, &1))
+    failed_count = length(failures)
+
+    [deleted_count: deleted]
+    |> maybe_add_failed_count(failed_count)
+    |> maybe_add_failures(failures, failed_count)
+  end
+
+  defp delete_collection(client, collection_name) do
+    case delete(client, collection_name) do
+      {:ok, _} -> {:ok, collection_name}
+      {:error, error} -> {:error, collection_name, error}
+    end
+  end
+
+  defp maybe_add_failed_count(result, 0), do: result
+  defp maybe_add_failed_count(result, count), do: Keyword.put(result, :failed_count, count)
+
+  defp maybe_add_failures(result, _failures, 0), do: result
+
+  defp maybe_add_failures(result, failures, _count) do
+    failure_details =
+      Enum.map(failures, fn {:error, name, error} ->
+        [collection: name, error: error]
+      end)
+
+    Keyword.put(result, :failures, failure_details)
   end
 
   @doc """
@@ -229,8 +233,7 @@ defmodule WeaviateEx.API.Collections do
 
   defp encode_value(value) when is_list(value) do
     value
-    |> Enum.map(&to_string/1)
-    |> Enum.join(",")
+    |> Enum.map_join(",", &to_string/1)
     |> URI.encode_www_form()
   end
 

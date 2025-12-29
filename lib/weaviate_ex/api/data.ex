@@ -334,8 +334,7 @@ defmodule WeaviateEx.API.Data do
 
   defp encode_value(value) when is_list(value) do
     value
-    |> Enum.map(&to_string/1)
-    |> Enum.join(",")
+    |> Enum.map_join(",", &to_string/1)
     |> URI.encode_www_form()
   end
 

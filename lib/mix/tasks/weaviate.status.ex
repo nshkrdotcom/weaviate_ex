@@ -16,6 +16,8 @@ defmodule Mix.Tasks.Weaviate.Status do
   use Mix.Task
   require Logger
 
+  alias WeaviateEx.DevSupport.Compose
+
   @shortdoc "Show status of local Weaviate Docker container"
 
   @impl Mix.Task
@@ -36,37 +38,45 @@ defmodule Mix.Tasks.Weaviate.Status do
   end
 
   defp show_status do
-    files = WeaviateEx.DevSupport.Compose.compose_files()
+    files = Compose.compose_files()
 
     if files == [] do
-      Mix.shell().info("""
-      No docker-compose files found under ci/weaviate/.
-
-      Ensure you've copied the assets from the Python client.
-      """)
+      show_no_files_message()
     else
-      Enum.each(files, fn file ->
-        Mix.shell().info("== #{file} ==")
-
-        case WeaviateEx.DevSupport.Compose.exec_for_file(file, ["ps"],
-               into: IO.stream(:stdio, :line)
-             ) do
-          {_, 0} ->
-            Mix.shell().info("")
-
-          {_, exit_code} ->
-            Mix.shell().error(
-              "docker compose ps failed for #{file} (exit #{exit_code}). Review the output above."
-            )
-        end
-      end)
-
+      show_file_statuses(files)
       display_ports()
     end
   end
 
+  defp show_no_files_message do
+    Mix.shell().info("""
+    No docker-compose files found under ci/weaviate/.
+
+    Ensure you've copied the assets from the Python client.
+    """)
+  end
+
+  defp show_file_statuses(files) do
+    Enum.each(files, fn file ->
+      Mix.shell().info("== #{file} ==")
+      show_file_ps_result(file)
+    end)
+  end
+
+  defp show_file_ps_result(file) do
+    case Compose.exec_for_file(file, ["ps"], into: IO.stream(:stdio, :line)) do
+      {_, 0} ->
+        Mix.shell().info("")
+
+      {_, exit_code} ->
+        Mix.shell().error(
+          "docker compose ps failed for #{file} (exit #{exit_code}). Review the output above."
+        )
+    end
+  end
+
   defp display_ports do
-    ports = WeaviateEx.DevSupport.Compose.all_ports()
+    ports = Compose.all_ports()
 
     Mix.shell().info("Exposed HTTP ports (ready when /v1/.well-known/ready returns 200):")
 
