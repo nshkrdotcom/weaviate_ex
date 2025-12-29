@@ -129,6 +129,94 @@ defmodule WeaviateEx.QueryTest do
     end
   end
 
+  describe "near_text with Move" do
+    alias WeaviateEx.Query.Move
+
+    test "builds near_text query with move_to", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "nearText"
+        assert body_str =~ "moveTo"
+        assert body_str =~ "summer"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      move_to = Move.to(0.5, concepts: ["summer", "beach"])
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("vacation", move_to: move_to)
+        |> Query.fields(["title"])
+        |> Query.limit(5)
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds near_text query with move_away", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "nearText"
+        assert body_str =~ "moveAwayFrom"
+        assert body_str =~ "winter"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      move_away = Move.to(0.3, concepts: ["winter", "cold"])
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("vacation", move_away: move_away)
+        |> Query.fields(["title"])
+        |> Query.limit(5)
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds near_text query with both move_to and move_away", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "nearText"
+        assert body_str =~ "moveTo"
+        assert body_str =~ "moveAwayFrom"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      move_to = Move.to(0.5, concepts: ["summer"])
+      move_away = Move.to(0.25, concepts: ["winter"])
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("vacation",
+          certainty: 0.7,
+          move_to: move_to,
+          move_away: move_away
+        )
+        |> Query.fields(["title"])
+        |> Query.limit(5)
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds near_text query with move_to using objects", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "nearText"
+        assert body_str =~ "moveTo"
+        assert body_str =~ "objects"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      move_to = Move.to(0.5, objects: ["550e8400-e29b-41d4-a716-446655440000"])
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("vacation", move_to: move_to)
+        |> Query.fields(["title"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+  end
+
   describe "integration tests" do
     @tag :integration
     test "executes real GraphQL query" do

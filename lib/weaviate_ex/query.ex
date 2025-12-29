@@ -44,6 +44,7 @@ defmodule WeaviateEx.Query do
   alias WeaviateEx.Client
   alias WeaviateEx.GRPC.Services.Search, as: GRPCSearch
   alias WeaviateEx.Query.GroupBy
+  alias WeaviateEx.Query.Move
   alias WeaviateEx.Query.QueryReference
   alias WeaviateEx.Query.Rerank
   alias WeaviateEx.Query.Sort
@@ -142,19 +143,41 @@ defmodule WeaviateEx.Query do
 
   - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
   - `:distance` - Maximum distance threshold
-  - `:move_to` - Concepts to move towards
-  - `:move_away_from` - Concepts to move away from
+  - `:move_to` - Move struct to shift results towards concepts/objects
+  - `:move_away` - Move struct to shift results away from concepts/objects
 
   ## Examples
 
+      # Simple near_text query
       query
       |> WeaviateEx.Query.near_text("artificial intelligence", certainty: 0.7)
+
+      # With move_to to shift towards concepts
+      alias WeaviateEx.Query.Move
+      move_to = Move.to(0.5, concepts: ["summer", "beach"])
+      query
+      |> WeaviateEx.Query.near_text("vacation", move_to: move_to)
+
+      # With move_away to shift away from concepts
+      move_away = Move.to(0.3, concepts: ["winter", "cold"])
+      query
+      |> WeaviateEx.Query.near_text("vacation", move_away: move_away)
+
+      # With both move_to and move_away
+      query
+      |> WeaviateEx.Query.near_text("vacation",
+        certainty: 0.7,
+        move_to: Move.to(0.5, concepts: ["summer"]),
+        move_away: Move.to(0.25, concepts: ["winter"])
+      )
   """
   @spec near_text(t(), String.t(), Keyword.t()) :: t()
   def near_text(%__MODULE__{} = query, concepts, opts \\ []) do
     params = %{concepts: [concepts]}
     params = if opts[:certainty], do: Map.put(params, :certainty, opts[:certainty]), else: params
     params = if opts[:distance], do: Map.put(params, :distance, opts[:distance]), else: params
+    params = if opts[:move_to], do: Map.put(params, :move_to, opts[:move_to]), else: params
+    params = if opts[:move_away], do: Map.put(params, :move_away, opts[:move_away]), else: params
 
     %{query | near_text: params}
   end
@@ -904,7 +927,47 @@ defmodule WeaviateEx.Query do
   defp maybe_add_near_text(args, nil), do: args
 
   defp maybe_add_near_text(args, params) do
-    args ++ ["nearText: #{map_to_graphql(params)}"]
+    # Build nearText parameters, handling Move structs specially
+    near_text_parts = []
+
+    # Add concepts
+    concepts = params[:concepts] || []
+    concepts_str = Enum.map_join(concepts, ", ", &~s("#{&1}"))
+    near_text_parts = near_text_parts ++ ["concepts: [#{concepts_str}]"]
+
+    # Add certainty if present
+    near_text_parts =
+      if params[:certainty] do
+        near_text_parts ++ ["certainty: #{params[:certainty]}"]
+      else
+        near_text_parts
+      end
+
+    # Add distance if present
+    near_text_parts =
+      if params[:distance] do
+        near_text_parts ++ ["distance: #{params[:distance]}"]
+      else
+        near_text_parts
+      end
+
+    # Add moveTo if present (Move struct)
+    near_text_parts =
+      if params[:move_to] do
+        near_text_parts ++ ["moveTo: #{Move.to_graphql(params[:move_to])}"]
+      else
+        near_text_parts
+      end
+
+    # Add moveAwayFrom if present (Move struct)
+    near_text_parts =
+      if params[:move_away] do
+        near_text_parts ++ ["moveAwayFrom: #{Move.to_graphql(params[:move_away])}"]
+      else
+        near_text_parts
+      end
+
+    args ++ ["nearText: {#{Enum.join(near_text_parts, ", ")}}"]
   end
 
   defp maybe_add_near_vector(args, nil), do: args

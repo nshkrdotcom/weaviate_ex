@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-28
+
+### Added
+
+#### Proxy Support
+- **Proxy Configuration** (`WeaviateEx.Config.Proxy`) - HTTP, HTTPS, and gRPC proxy support:
+  - `new/1` - Create proxy config with explicit options
+  - `from_env/0` - Read from environment variables (HTTP_PROXY, HTTPS_PROXY, GRPC_PROXY)
+  - `configured?/1` - Check if any proxy is configured
+  - `http_proxy_for/2` - Get appropriate proxy for a URL scheme
+  - `to_finch_opts/1` - Convert to Finch HTTP client options
+  - `to_grpc_opts/1` - Convert to gRPC channel options
+- Environment variable reading with case-insensitive support (uppercase takes precedence)
+- Automatic fallback from HTTPS to HTTP proxy when HTTPS not configured
+
+#### Inverted Index Configuration
+- **Inverted Index Config** (`WeaviateEx.API.InvertedIndexConfig`) - Collection index configuration:
+  - `bm25/1` - BM25 algorithm configuration with `b` and `k1` parameters
+  - `stopwords/1` - Stopwords configuration with preset, additions, and removals
+  - `index_timestamps/1` - Enable/disable timestamp indexing
+  - `index_property_length/1` - Enable/disable property length indexing
+  - `index_null_state/1` - Enable/disable null state indexing
+  - `cleanup_interval_seconds/1` - Set cleanup interval
+  - `build/1` - Build complete inverted index configuration
+  - `merge/2` - Merge two configurations
+  - `validate/1` - Validate configuration values
+- Supported stopwords presets: `en`, `none`
+- BM25 parameter validation (b: 0-1, k1: positive)
+
+#### Generative Search Configuration
+- **Generative Config** (`WeaviateEx.API.GenerativeConfig`) - 13+ provider configurations:
+  - `openai/1` - OpenAI GPT models
+  - `azure_openai/1` - Azure OpenAI deployments
+  - `cohere/1` - Cohere Command models
+  - `anthropic/1` - Anthropic Claude models
+  - `mistral/1` - Mistral AI models
+  - `google/1` - Google Gemini/PaLM models
+  - `aws/1` - AWS Bedrock/SageMaker models
+  - `ollama/1` - Ollama local models
+  - `databricks/1` - Databricks endpoints
+  - `nvidia/1` - NVIDIA NIM models
+  - `friendliai/1` - FriendliAI models
+  - `xai/1` - XAI Grok models
+  - `anyscale/1` - Anyscale models
+  - `contextualai/1` - ContextualAI models
+- `providers/0` - List all supported providers
+- `provider_module/1` - Get Weaviate module name for provider
+- Full parameter support: model, temperature, maxTokens, baseURL, topK, topP
+
+#### Collection Aliases API
+- **Aliases API** (`WeaviateEx.API.Aliases`) - Zero-downtime collection management (requires Weaviate v1.32.0+):
+  - `create/3` - Create an alias for a collection
+  - `delete/2` - Delete an alias
+  - `update/3` - Update alias to point to different collection
+  - `get/2` - Get alias details
+  - `list/2` - List all aliases (optionally filter by collection)
+  - `exists?/2` - Check if alias exists
+  - `minimum_version/0` - Get minimum required Weaviate version
+- **Alias Struct** (`WeaviateEx.API.Aliases.Alias`):
+  - `from_api/1` - Parse API response to struct
+  - Fields: `alias`, `collection`
+
+#### ZSTD Compression Options
+- **Extended Compression** (`WeaviateEx.Backup.Compression`) - Additional compression algorithms:
+  - `:zstd_default` - Balanced ZSTD compression
+  - `:zstd_best_speed` - Fast ZSTD compression
+  - `:zstd_best_compression` - Maximum ZSTD compression
+  - `:no_compression` - Disable compression
+  - `gzip?/1` - Check if compression level uses GZIP
+  - `zstd?/1` - Check if compression level uses ZSTD
+- ZSTD provides faster compression with better ratios than GZIP
+
+#### Query Move Integration
+- **Move in near_text** (`WeaviateEx.Query`) - Semantic direction control:
+  - `near_text/3` now supports `:move_to` and `:move_away` options
+  - Move concepts toward or away from specific terms
+  - Accepts `WeaviateEx.Query.Move` structs or keyword options
+  - Proper GraphQL generation for move parameters
+- Example: `Query.near_text("technology", move_to: [concepts: ["AI"], force: 0.8])`
+
+### Changed
+- Updated test count to 1575 tests
+- Enhanced Query module with Move struct integration
+- Extended Backup.Compression with ZSTD support while maintaining backward compatibility
+
+### Stats
+- 6 new feature modules
+- Full test coverage for all new features
+- Backward compatible with v0.4.0
+
 ## [0.4.0] - 2025-12-28
 
 ### Added

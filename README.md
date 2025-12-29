@@ -111,7 +111,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.4.0"}
+    {:weaviate_ex, "~> 0.5.0"}
   ]
 end
 ```
@@ -274,6 +274,38 @@ The gRPC connection is automatically established when you create a client:
 client.grpc_channel  # => gRPC channel for data operations
 client.config        # => Configuration for HTTP operations
 ```
+
+### Proxy Configuration (v0.5.0+)
+
+WeaviateEx supports HTTP, HTTPS, and gRPC proxy configuration:
+
+```elixir
+alias WeaviateEx.Config.Proxy
+
+# Read from environment variables (HTTP_PROXY, HTTPS_PROXY, GRPC_PROXY)
+proxy = Proxy.from_env()
+
+# Or configure explicitly
+proxy = Proxy.new(
+  http: "http://proxy.example.com:8080",
+  https: "https://proxy.example.com:8443",
+  grpc: "http://grpc-proxy.example.com:8080"
+)
+
+# Check if proxy is configured
+Proxy.configured?(proxy)  # => true
+
+# Get Finch HTTP client options
+Proxy.to_finch_opts(proxy)  # => [proxy: {:https, "proxy.example.com", 8443, []}]
+
+# Get gRPC channel options
+Proxy.to_grpc_opts(proxy)   # => [http_proxy: "http://grpc-proxy.example.com:8080"]
+```
+
+Environment variables are read case-insensitively (uppercase takes precedence):
+- `HTTP_PROXY` / `http_proxy` - HTTP proxy URL
+- `HTTPS_PROXY` / `https_proxy` - HTTPS proxy URL
+- `GRPC_PROXY` / `grpc_proxy` - gRPC proxy URL
 
 ### Runtime Configuration (Recommended for Production)
 
@@ -524,6 +556,16 @@ query = Query.get("Article")
 
 {:ok, results} = Query.execute(query)
 
+# Semantic direction with Move (v0.5.0+)
+query = Query.get("Article")
+  |> Query.near_text("technology",
+       move_to: [concepts: ["artificial intelligence", "machine learning"], force: 0.8],
+       move_away: [concepts: ["politics", "sports"], force: 0.5]
+     )
+  |> Query.fields(["title", "content"])
+
+{:ok, results} = Query.execute(query)
+
 # Queries with filters (WHERE clause)
 query = Query.get("Article")
   |> Query.where(%{
@@ -656,6 +698,40 @@ config = VectorConfig.new("ExactSearch")
   |> VectorConfig.with_flat_index(distance: :dot)
 ```
 
+### Inverted Index Configuration (v0.5.0+)
+
+Configure BM25 and stopwords for full-text search:
+
+```elixir
+alias WeaviateEx.API.InvertedIndexConfig
+
+# Configure BM25 algorithm parameters
+bm25_config = InvertedIndexConfig.bm25(b: 0.75, k1: 1.2)
+
+# Configure stopwords with English preset and customizations
+stopwords = InvertedIndexConfig.stopwords(
+  preset: :en,
+  additions: ["foo", "bar"],
+  removals: ["the"]
+)
+
+# Build complete inverted index configuration
+config = InvertedIndexConfig.build(
+  bm25: [b: 0.8, k1: 1.5],
+  stopwords: [preset: :en],
+  index_timestamps: true,
+  index_property_length: true,
+  index_null_state: false,
+  cleanup_interval_seconds: 60
+)
+
+# Validate configuration
+{:ok, validated} = InvertedIndexConfig.validate(config)
+
+# Merge configurations
+merged = InvertedIndexConfig.merge(base_config, override_config)
+```
+
 ### Backup & Restore
 
 Complete backup and restore operations with multiple storage backends:
@@ -703,6 +779,29 @@ IO.puts("Status: #{status.status}")  # :started, :transferring, :success, etc.
 | `:gcs` | Google Cloud Storage | Bucket, project ID, credentials |
 | `:azure` | Azure Blob Storage | Container, connection string |
 
+#### Compression Options (v0.5.0+)
+
+```elixir
+alias WeaviateEx.Backup.{Config, Compression}
+
+# GZIP compression (default)
+Config.create(compression: :default)          # Balanced GZIP
+Config.create(compression: :best_speed)       # Fast GZIP
+Config.create(compression: :best_compression) # Max GZIP
+
+# ZSTD compression (faster, better ratios)
+Config.create(compression: :zstd_default)          # Balanced ZSTD
+Config.create(compression: :zstd_best_speed)       # Fast ZSTD
+Config.create(compression: :zstd_best_compression) # Max ZSTD
+
+# No compression
+Config.create(compression: :no_compression)
+
+# Check compression type
+Compression.gzip?(:default)  # => true
+Compression.zstd?(:zstd_default)  # => true
+```
+
 #### Location Configuration (Advanced)
 
 ```elixir
@@ -724,6 +823,34 @@ gcs_loc = Location.gcs("my-bucket", "/backups",
 azure_loc = Location.azure("my-container", "/backups",
   connection_string: "..."
 )
+```
+
+### Collection Aliases (v0.5.0+)
+
+Aliases allow zero-downtime collection updates by providing alternative names:
+
+```elixir
+alias WeaviateEx.API.Aliases
+
+# Create an alias (requires Weaviate v1.32.0+)
+{:ok, _} = Aliases.create(client, "articles", "Article_v1")
+
+# List all aliases
+{:ok, aliases} = Aliases.list(client)
+# => [%Alias{alias: "articles", collection: "Article_v1"}]
+
+# Update alias to point to new collection (blue-green deployment)
+{:ok, _} = Aliases.update(client, "articles", "Article_v2")
+
+# Get alias details
+{:ok, alias_info} = Aliases.get(client, "articles")
+# => %Alias{alias: "articles", collection: "Article_v2"}
+
+# Check if alias exists
+{:ok, true} = Aliases.exists?(client, "articles")
+
+# Delete alias (underlying collection remains)
+{:ok, true} = Aliases.delete(client, "articles")
 ```
 
 ### Multi-Tenancy
@@ -963,7 +1090,7 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 - ✅ Uses Mox to mock HTTP/Protocol and gRPC responses
 - ✅ No Weaviate instance required
 - ✅ Fast execution (~0.2 seconds)
-- ✅ 881 unit tests
+- ✅ 1575 unit tests
 - ✅ Perfect for TDD and CI/CD
 
 **Integration Mode** - Real Weaviate testing:
@@ -1045,7 +1172,7 @@ Current test coverage by module:
 - ✅ **gRPC Services**: 50+ tests - Channel management, search, batch, aggregate, tenants, health
 - ✅ **gRPC Error Handling**: 30+ tests - Status code mapping, retryable errors
 
-**Total: 881 tests passing**
+**Total: 1575 tests passing**
 
 ## Mix Tasks
 
