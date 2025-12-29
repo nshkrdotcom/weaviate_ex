@@ -809,6 +809,48 @@ alias WeaviateEx.GRPC.Services.BatchStream
 :ok = BatchStream.close(stream_handle)
 ```
 
+### Background Batch Processing (v0.7.0+)
+
+For high-throughput scenarios, use the background batcher for continuous async processing:
+
+```elixir
+alias WeaviateEx.Batch.Background
+
+# Start a background batch processor
+{:ok, batcher} = WeaviateEx.Batch.background(client, "Article",
+  batch_size: 100,
+  concurrent_requests: 2,
+  flush_interval: 1000
+)
+
+# Add objects asynchronously (non-blocking)
+for article <- articles do
+  :ok = Background.add_object(batcher, %{
+    title: article.title,
+    content: article.content
+  })
+end
+
+# Add objects with explicit UUID and vector
+:ok = Background.add_object(batcher, %{title: "Test"},
+  uuid: "550e8400-e29b-41d4-a716-446655440000",
+  vector: [0.1, 0.2, 0.3]
+)
+
+# Add references (automatically ordered after related objects)
+:ok = Background.add_reference(batcher, article_uuid, "hasAuthor", author_uuid)
+
+# Force immediate flush
+:ok = Background.flush(batcher)
+
+# Get current results
+results = Background.get_results(batcher)
+IO.puts("Imported #{map_size(results.successful_uuids)} objects")
+
+# Stop and get final results (with flush)
+results = Background.stop(batcher, flush: true)
+```
+
 ### Queries & Vector Search
 
 Powerful query capabilities with semantic search:
@@ -874,6 +916,73 @@ query = Query.get("Article")
   |> Query.sort([%{path: ["publishedAt"], order: "desc"}])
 
 {:ok, results} = Query.execute(query)
+```
+
+### Multi-Vector Collections (v0.7.0+)
+
+Query collections with multiple named vectors:
+
+```elixir
+alias WeaviateEx.Query
+alias WeaviateEx.Query.TargetVectors
+
+# Single target vector
+query = Query.get("MultiVectorCollection")
+  |> Query.near_text("search term", target_vectors: "content_vector")
+  |> Query.fields(["title", "content"])
+
+{:ok, results} = Query.execute(query, client)
+
+# Combined vectors with average method
+target = TargetVectors.combine(["title_vector", "content_vector"], method: :average)
+
+query = Query.get("MultiVectorCollection")
+  |> Query.near_vector(embedding, target_vectors: target)
+  |> Query.fields(["title"])
+
+{:ok, results} = Query.execute(query, client)
+
+# Weighted combination
+target = TargetVectors.weighted(%{
+  "title_vector" => 0.7,
+  "content_vector" => 0.3
+})
+
+query = Query.get("MultiVectorCollection")
+  |> Query.near_text("search", target_vectors: target)
+  |> Query.fields(["title", "content"])
+
+{:ok, results} = Query.execute(query, client)
+```
+
+### Advanced Hybrid Search (v0.7.0+)
+
+Use HybridVector for sophisticated hybrid queries with Move operations:
+
+```elixir
+alias WeaviateEx.Query
+alias WeaviateEx.Query.{HybridVector, Move}
+
+# Text sub-search with Move operations
+hv = HybridVector.near_text("machine learning",
+  move_to: Move.to(0.5, concepts: ["AI", "neural networks"]),
+  move_away_from: Move.to(0.3, concepts: ["biology"])
+)
+
+query = Query.get("Article")
+  |> Query.hybrid("search term", vector: hv, alpha: 0.7)
+  |> Query.fields(["title", "content"])
+
+{:ok, results} = Query.execute(query, client)
+
+# Vector sub-search with target vectors
+hv = HybridVector.near_vector(embedding, target_vectors: "content_vector")
+
+query = Query.get("Article")
+  |> Query.hybrid("search", vector: hv, fusion_type: :relative_score)
+  |> Query.fields(["title"])
+
+{:ok, results} = Query.execute(query, client)
 ```
 
 ### Multimodal Search
@@ -1884,6 +1993,34 @@ grpc_pool = Pool.default_grpc()   # Optimized for gRPC (fewer connections)
 # Convert to client options
 finch_opts = Pool.to_finch_opts(http_pool)
 grpc_opts = Pool.to_grpc_opts(grpc_pool)
+```
+
+### Simplified Connection Config (v0.7.0+)
+
+For high-load scenarios, use the new Connection config:
+
+```elixir
+alias WeaviateEx.Config.Connection
+
+# Create connection config with custom settings
+config = Connection.new(
+  pool_size: 20,           # Connections per pool
+  max_connections: 200,    # Maximum total connections
+  pool_timeout: 10_000,    # Pool checkout timeout (ms)
+  max_idle_time: 60_000    # Max idle time before close (ms)
+)
+
+# Use in client creation
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: "http://localhost:8080",
+  connection: config
+)
+
+# Or pass options directly
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: "http://localhost:8080",
+  connection: [pool_size: 20, max_connections: 200]
+)
 ```
 
 ### Client Lifecycle Management (v0.6.0+)

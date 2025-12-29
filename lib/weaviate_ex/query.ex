@@ -45,6 +45,7 @@ defmodule WeaviateEx.Query do
   alias WeaviateEx.GRPC.Services.Search, as: GRPCSearch
   alias WeaviateEx.Query.Generate
   alias WeaviateEx.Query.GroupBy
+  alias WeaviateEx.Query.HybridVector
   alias WeaviateEx.Query.Move
   alias WeaviateEx.Query.NearImage
   alias WeaviateEx.Query.NearMedia
@@ -150,6 +151,7 @@ defmodule WeaviateEx.Query do
   - `:distance` - Maximum distance threshold
   - `:move_to` - Move struct to shift results towards concepts/objects
   - `:move_away` - Move struct to shift results away from concepts/objects
+  - `:target_vectors` - Target vectors for multi-vector collections
 
   ## Examples
 
@@ -175,6 +177,10 @@ defmodule WeaviateEx.Query do
         move_to: Move.to(0.5, concepts: ["summer"]),
         move_away: Move.to(0.25, concepts: ["winter"])
       )
+
+      # With target vectors for multi-vector collections
+      query
+      |> WeaviateEx.Query.near_text("machine learning", target_vectors: "content_vector")
   """
   @spec near_text(t(), String.t(), Keyword.t()) :: t()
   def near_text(%__MODULE__{} = query, concepts, opts \\ []) do
@@ -184,16 +190,40 @@ defmodule WeaviateEx.Query do
     params = if opts[:move_to], do: Map.put(params, :move_to, opts[:move_to]), else: params
     params = if opts[:move_away], do: Map.put(params, :move_away, opts[:move_away]), else: params
 
+    params =
+      if opts[:target_vectors],
+        do: Map.put(params, :target_vectors, opts[:target_vectors]),
+        else: params
+
     %{query | near_text: params}
   end
 
   @doc """
   Performs vector similarity search.
 
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
   ## Examples
 
+      # Single vector collection
       query
       |> WeaviateEx.Query.near_vector([0.1, 0.2, 0.3, ...], certainty: 0.8)
+
+      # Multi-vector collection with single target
+      query
+      |> WeaviateEx.Query.near_vector([0.1, 0.2, 0.3],
+        target_vectors: "title_vector",
+        distance: 0.2
+      )
+
+      # Combined target vectors
+      target = TargetVectors.combine(["vec1", "vec2"], method: :average)
+      query
+      |> WeaviateEx.Query.near_vector(vector, target_vectors: target)
   """
   @spec near_vector(t(), list(float()), Keyword.t()) :: t()
   def near_vector(%__MODULE__{} = query, vector, opts \\ []) when is_list(vector) do
@@ -201,22 +231,44 @@ defmodule WeaviateEx.Query do
     params = if opts[:certainty], do: Map.put(params, :certainty, opts[:certainty]), else: params
     params = if opts[:distance], do: Map.put(params, :distance, opts[:distance]), else: params
 
+    params =
+      if opts[:target_vectors],
+        do: Map.put(params, :target_vectors, opts[:target_vectors]),
+        else: params
+
     %{query | near_vector: params}
   end
 
   @doc """
   Finds objects similar to a specific object.
 
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
   ## Examples
 
       query
       |> WeaviateEx.Query.near_object("550e8400-e29b-41d4-a716-446655440000", certainty: 0.7)
+
+      # With target vectors
+      query
+      |> WeaviateEx.Query.near_object("550e8400-e29b-41d4-a716-446655440000",
+        target_vectors: "title_vector"
+      )
   """
   @spec near_object(t(), String.t(), Keyword.t()) :: t()
   def near_object(%__MODULE__{} = query, id, opts \\ []) do
     params = %{id: id}
     params = if opts[:certainty], do: Map.put(params, :certainty, opts[:certainty]), else: params
     params = if opts[:distance], do: Map.put(params, :distance, opts[:distance]), else: params
+
+    params =
+      if opts[:target_vectors],
+        do: Map.put(params, :target_vectors, opts[:target_vectors]),
+        else: params
 
     %{query | near_object: params}
   end
@@ -304,23 +356,51 @@ defmodule WeaviateEx.Query do
   ## Options
 
   - `:alpha` - Balance between keyword (0.0) and vector (1.0) search, default: 0.5
-  - `:fusion_type` - Fusion algorithm ("rankedFusion" or "relativeScoreFusion")
+  - `:vector` - HybridVector configuration for advanced vector search
+  - `:fusion_type` - Fusion algorithm: `:ranked` or `:relative_score`
+  - `:properties` - Properties to search for BM25 component
+  - `:target_vectors` - Target vectors for multi-vector collections
 
   ## Examples
 
+      # Basic hybrid search
       query
       |> WeaviateEx.Query.hybrid("machine learning", alpha: 0.75)
+
+      # With HybridVector for advanced vector search
+      hv = HybridVector.near_text("concepts",
+        move_to: Move.to(0.5, concepts: ["AI"])
+      )
+      query
+      |> WeaviateEx.Query.hybrid("search term", vector: hv, alpha: 0.7)
+
+      # With explicit vector
+      hv = HybridVector.near_vector(embedding)
+      query
+      |> WeaviateEx.Query.hybrid("search", vector: hv, fusion_type: :relative_score)
   """
   @spec hybrid(t(), String.t(), Keyword.t()) :: t()
   def hybrid(%__MODULE__{} = query, search_query, opts \\ []) do
-    params = %{query: search_query}
-    params = if opts[:alpha], do: Map.put(params, :alpha, opts[:alpha]), else: params
+    vector = normalize_hybrid_vector(Keyword.get(opts, :vector))
 
     params =
-      if opts[:fusion_type], do: Map.put(params, :fusionType, opts[:fusion_type]), else: params
+      %{query: search_query}
+      |> put_if_present(:alpha, opts[:alpha])
+      |> put_if_present(:fusion_type, opts[:fusion_type])
+      |> put_if_present(:fusionType, opts[:fusion_type])
+      |> put_if_present(:vector, vector)
+      |> put_if_present(:properties, opts[:properties])
+      |> put_if_present(:target_vectors, opts[:target_vectors])
 
     %{query | hybrid: params}
   end
+
+  defp normalize_hybrid_vector(nil), do: nil
+  defp normalize_hybrid_vector(%HybridVector{} = hv), do: hv
+  defp normalize_hybrid_vector(vec) when is_list(vec), do: HybridVector.near_vector(vec)
+
+  defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
 
   @doc """
   Performs BM25 keyword search.

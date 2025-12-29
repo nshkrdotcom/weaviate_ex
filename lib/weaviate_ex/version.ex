@@ -153,4 +153,28 @@ defmodule WeaviateEx.Version do
   def format_version({major, minor, patch}) do
     "#{major}.#{minor}.#{patch}"
   end
+
+  @doc """
+  Extract gRPC max message size from meta response.
+
+  Weaviate returns the maximum gRPC message size in the meta endpoint.
+
+  ## Examples
+
+      Version.get_grpc_max_message_size(%{"grpcMaxMessageSize" => 104858000})
+      # => {:ok, 104858000}
+
+      Version.get_grpc_max_message_size(%{})
+      # => :default
+  """
+  @spec get_grpc_max_message_size(map()) :: {:ok, pos_integer()} | :default
+  def get_grpc_max_message_size(%{"grpcMaxMessageSize" => size}) when is_integer(size) do
+    {:ok, size}
+  end
+
+  def get_grpc_max_message_size(%{"grpcMaxMessageSize" => size}) when is_binary(size) do
+    {:ok, String.to_integer(size)}
+  end
+
+  def get_grpc_max_message_size(_), do: :default
 end

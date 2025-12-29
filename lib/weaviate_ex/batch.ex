@@ -63,7 +63,7 @@ defmodule WeaviateEx.Batch do
   import WeaviateEx, only: [request: 4]
   alias WeaviateEx.API.Batch, as: BatchAPI
   alias WeaviateEx.API.Cluster
-  alias WeaviateEx.Batch.{Dynamic, FixedSize, RateLimited}
+  alias WeaviateEx.Batch.{Background, Dynamic, FixedSize, RateLimited}
   alias WeaviateEx.Batch.ErrorTracking.Results
   alias WeaviateEx.Cluster.Shard
 
@@ -334,6 +334,41 @@ defmodule WeaviateEx.Batch do
 
   defp filter_shards(shards, target_names) do
     Enum.filter(shards, fn shard -> shard.name in target_names end)
+  end
+
+  @doc """
+  Start a background batch processor.
+
+  Unlike the synchronous `with_batch/3`, this returns immediately and
+  processes objects asynchronously in the background.
+
+  ## Options
+
+    * `:batch_size` - Objects per batch (default: 100)
+    * `:concurrent_requests` - Max concurrent requests (default: 2)
+    * `:flush_interval` - Auto-flush interval in ms (default: 1000)
+    * `:on_flush` - Callback on each flush completion
+    * `:on_error` - Callback on each error
+    * `:tenant` - Tenant name for multi-tenancy
+
+  ## Examples
+
+      {:ok, batcher} = Batch.background(client, "Article",
+        batch_size: 100,
+        concurrent_requests: 2
+      )
+
+      for article <- articles do
+        :ok = Batch.Background.add_object(batcher, article)
+      end
+
+      results = Batch.Background.stop(batcher, flush: true)
+  """
+  @spec background(WeaviateEx.Client.t(), String.t(), keyword()) ::
+          {:ok, pid()} | {:error, term()}
+  def background(client, collection, opts \\ []) do
+    opts = Keyword.merge(opts, client: client, collection: collection)
+    Background.start_link(opts)
   end
 
   # Helper to build query strings

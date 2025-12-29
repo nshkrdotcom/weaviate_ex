@@ -51,6 +51,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Client and no-client variants for flexibility
   - Returns `{:ok, true}` or `{:ok, false}` for consistent handling
 
+#### Background Batch Processing (Phase 2)
+- **Background Batcher** (`WeaviateEx.Batch.Background`) - Process-based async batching:
+  - `start_link/1` - Start background batcher with configuration
+  - `add_object/3` - Queue object for background processing
+  - `add_reference/5` - Queue reference with UUID tracking
+  - `flush/1` - Trigger immediate flush
+  - `get_results/1` - Get accumulated results
+  - `stop/2` - Stop with optional final flush
+  - Automatic flushing based on batch size or time interval
+  - Concurrent request management with configurable limits
+  - UUID tracking for reference ordering
+  - Error tracking and callback support
+- **Batch Module Integration**:
+  - `Batch.background/3` - Convenience function to start background batcher
+
+#### Named Vector Query Integration (Phase 2)
+- **TargetVectors Enhancements** (`WeaviateEx.Query.TargetVectors`):
+  - `combine/2` - Create combined target vectors with method (`:sum`, `:average`, `:minimum`)
+  - `weighted/1` - Create manually weighted target vectors
+  - `normalize/1` - Normalize various input formats to Config struct
+  - `to_grpc/1` - Convert to gRPC format
+  - `Config` struct for structured target vector configuration
+- **Query Builder Integration**:
+  - `Query.near_vector/3` now accepts `:target_vectors` option
+  - `Query.near_text/3` now accepts `:target_vectors` option
+  - `Query.near_object/3` now accepts `:target_vectors` option
+
+#### Advanced Hybrid Search (Phase 2)
+- **HybridVector Enhancements** (`WeaviateEx.Query.HybridVector`):
+  - `near_text/2` - Text-based vector search with Move operations
+  - `near_vector/2` - Vector-based search with target vectors
+  - `to_grpc/1` - Convert to gRPC format for query execution
+  - Support for `:move_to`, `:move_away_from`, `:target_vectors` options
+  - `query` field for better naming consistency
+- **Query.hybrid/3** Enhancements:
+  - `:vector` option accepts HybridVector configuration
+  - `:properties` option for BM25 component
+  - `:target_vectors` option for multi-vector collections
+
+#### Connection Pool Configuration (Phase 2)
+- **Connection Config** (`WeaviateEx.Config.Connection`) - Fine-tune connection settings:
+  - `new/1` - Create pool config with size, max connections, timeouts
+  - `to_finch_opts/1` - Convert to Finch HTTP client options
+  - `to_grpc_opts/1` - Convert to gRPC channel options
+  - Options: `:pool_size`, `:max_connections`, `:pool_timeout`, `:max_idle_time`
+
+#### Azure OIDC Support (Phase 2)
+- **Azure Authentication** (`WeaviateEx.Auth.Azure`) - Azure-specific OIDC handling:
+  - `azure_endpoint?/1` - Detect Azure/Microsoft token endpoints
+  - `default_scopes/1` - Generate Azure-style `.default` scopes
+  - `apply_azure_defaults/1` - Auto-configure Azure authentication
+  - `detect_version/1` - Detect Azure v1/v2 endpoint version
+  - `build_token_params/2` - Build Azure-specific token parameters
+
+#### Dynamic gRPC Message Size (Phase 2)
+- **Version Module** (`WeaviateEx.Version`):
+  - `get_grpc_max_message_size/1` - Extract gRPC max message size from server meta
+
 ### Changed
 - Updated Query struct to include `near_image` and `near_media` fields
 - Enhanced GraphQL query building with nearImage and nearMedia support

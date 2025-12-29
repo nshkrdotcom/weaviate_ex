@@ -56,31 +56,59 @@ defmodule WeaviateEx.Query.HybridVectorTest do
     end
   end
 
-  describe "to_graphql/1" do
-    test "converts near_text to graphql" do
+  describe "to_graphql_string/1" do
+    test "converts near_text to graphql string" do
       sub = HybridVector.near_text("espresso brewing")
-      graphql = HybridVector.to_graphql(sub)
+      graphql = HybridVector.to_graphql_string(sub)
 
       assert graphql =~ "nearText:"
       assert graphql =~ ~s("espresso brewing")
     end
 
-    test "converts near_text with move_to to graphql" do
+    test "converts near_text with move_to to graphql string" do
       move_to = Move.to(0.5, concepts: ["barista"])
       sub = HybridVector.near_text("espresso brewing", move_to: move_to)
-      graphql = HybridVector.to_graphql(sub)
+      graphql = HybridVector.to_graphql_string(sub)
 
       assert graphql =~ "moveTo:"
       assert graphql =~ "force: 0.5"
     end
 
-    test "converts near_vector to graphql" do
+    test "converts near_vector to graphql string" do
       sub = HybridVector.near_vector([0.1, 0.2, 0.3], distance: 0.5)
-      graphql = HybridVector.to_graphql(sub)
+      graphql = HybridVector.to_graphql_string(sub)
 
       assert graphql =~ "nearVector:"
       assert graphql =~ "vector:"
       assert graphql =~ "distance: 0.5"
+    end
+  end
+
+  describe "to_graphql/1" do
+    test "converts near_text to graphql map" do
+      sub = HybridVector.near_text("espresso brewing")
+      result = HybridVector.to_graphql(sub)
+
+      assert result == %{"nearText" => %{"concepts" => ["espresso brewing"]}}
+    end
+
+    test "converts near_text with options to graphql map" do
+      move_to = Move.to(0.5, concepts: ["barista"])
+      sub = HybridVector.near_text("espresso brewing", move_to: move_to, certainty: 0.8)
+      result = HybridVector.to_graphql(sub)
+
+      assert result["nearText"]["concepts"] == ["espresso brewing"]
+      assert result["nearText"]["certainty"] == 0.8
+      assert result["nearText"]["moveTo"]["force"] == 0.5
+      assert result["nearText"]["moveTo"]["concepts"] == ["barista"]
+    end
+
+    test "converts near_vector to graphql map" do
+      sub = HybridVector.near_vector([0.1, 0.2, 0.3], distance: 0.5)
+      result = HybridVector.to_graphql(sub)
+
+      assert result["nearVector"]["vector"] == [0.1, 0.2, 0.3]
+      assert result["nearVector"]["distance"] == 0.5
     end
   end
 end
