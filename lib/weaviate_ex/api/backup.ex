@@ -46,7 +46,7 @@ defmodule WeaviateEx.API.Backup do
       :ok = Backup.cancel(client, "my-backup", :filesystem)
   """
 
-  alias WeaviateEx.Backup.{Config, Status, Storage}
+  alias WeaviateEx.Backup.{Config, Location, Status, Storage}
   alias WeaviateEx.Client
   alias WeaviateEx.Error
 
@@ -55,6 +55,9 @@ defmodule WeaviateEx.API.Backup do
 
   @doc """
   Create a new backup.
+
+  The backend can be either an atom (`:filesystem`, `:s3`, `:gcs`, `:azure`) or
+  a `WeaviateEx.Backup.Location` struct for dynamic configuration.
 
   ## Options
 
@@ -69,15 +72,39 @@ defmodule WeaviateEx.API.Backup do
 
       {:ok, status} = Backup.create(client, "daily-backup", :filesystem)
 
+      # Using dynamic location
+      {:ok, status} = Backup.create(client, "daily-backup",
+        Location.s3("my-bucket", "/backups", region: "us-west-2"),
+        wait_for_completion: true
+      )
+
       {:ok, status} = Backup.create(client, "daily-backup", :s3,
         include_collections: ["Article"],
         wait_for_completion: true,
         config: Config.create(compression: :best_speed)
       )
   """
-  @spec create(Client.t(), String.t(), Storage.t(), keyword()) ::
+  @spec create(Client.t(), String.t(), Storage.t() | Location.t(), keyword()) ::
           {:ok, Status.CreateResponse.t()} | {:error, Error.t()}
-  def create(client, backup_id, backend, opts \\ []) do
+  def create(client, backup_id, backend, opts \\ [])
+
+  def create(client, backup_id, %Location.Filesystem{} = location, opts) do
+    do_create_with_location(client, backup_id, :filesystem, location, opts)
+  end
+
+  def create(client, backup_id, %Location.S3{} = location, opts) do
+    do_create_with_location(client, backup_id, :s3, location, opts)
+  end
+
+  def create(client, backup_id, %Location.GCS{} = location, opts) do
+    do_create_with_location(client, backup_id, :gcs, location, opts)
+  end
+
+  def create(client, backup_id, %Location.Azure{} = location, opts) do
+    do_create_with_location(client, backup_id, :azure, location, opts)
+  end
+
+  def create(client, backup_id, backend, opts) when is_atom(backend) do
     if Storage.valid?(backend) do
       do_create(client, backup_id, backend, opts)
     else
@@ -92,6 +119,19 @@ defmodule WeaviateEx.API.Backup do
     case Client.request(client, :post, path, body, []) do
       {:ok, response} ->
         handle_create_response(client, backup_id, backend, response, opts)
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp do_create_with_location(client, backup_id, backend_type, location, opts) do
+    path = "/v1/backups/#{Storage.to_api_path(backend_type)}"
+    body = build_create_body_with_location(backup_id, location, opts)
+
+    case Client.request(client, :post, path, body, []) do
+      {:ok, response} ->
+        handle_create_response(client, backup_id, backend_type, response, opts)
 
       {:error, error} ->
         {:error, error}
@@ -135,6 +175,9 @@ defmodule WeaviateEx.API.Backup do
   @doc """
   Restore a backup.
 
+  The backend can be either an atom (`:filesystem`, `:s3`, `:gcs`, `:azure`) or
+  a `WeaviateEx.Backup.Location` struct for dynamic configuration.
+
   ## Options
 
   - `:include_collections` - List of collections to restore (default: all)
@@ -143,19 +186,51 @@ defmodule WeaviateEx.API.Backup do
   - `:config` - Restore configuration (see `WeaviateEx.Backup.Config`)
   - `:poll_interval` - Status poll interval in ms (default: 1000)
   - `:timeout` - Maximum wait time in ms (default: 300000)
+  - `:roles_restore` - RBAC roles restore option: `:all`, `:none`, or list of role names
+  - `:users_restore` - RBAC users restore option: `:all`, `:none`, or list of user IDs
+  - `:overwrite_alias` - Whether to overwrite existing aliases (default: false)
 
   ## Examples
 
       {:ok, status} = Backup.restore(client, "daily-backup", :filesystem)
 
+      # Using dynamic location
+      {:ok, status} = Backup.restore(client, "daily-backup",
+        Location.s3("my-bucket", "/backups", region: "eu-west-1"))
+
       {:ok, status} = Backup.restore(client, "daily-backup", :s3,
         include_collections: ["Article"],
         wait_for_completion: true
       )
+
+      # With RBAC options
+      {:ok, status} = Backup.restore(client, "daily-backup", :filesystem,
+        roles_restore: :all,
+        users_restore: ["admin@example.com"],
+        overwrite_alias: true
+      )
   """
-  @spec restore(Client.t(), String.t(), Storage.t(), keyword()) ::
+  @spec restore(Client.t(), String.t(), Storage.t() | Location.t(), keyword()) ::
           {:ok, Status.RestoreResponse.t()} | {:error, Error.t()}
-  def restore(client, backup_id, backend, opts \\ []) do
+  def restore(client, backup_id, backend, opts \\ [])
+
+  def restore(client, backup_id, %Location.Filesystem{} = location, opts) do
+    do_restore_with_location(client, backup_id, :filesystem, location, opts)
+  end
+
+  def restore(client, backup_id, %Location.S3{} = location, opts) do
+    do_restore_with_location(client, backup_id, :s3, location, opts)
+  end
+
+  def restore(client, backup_id, %Location.GCS{} = location, opts) do
+    do_restore_with_location(client, backup_id, :gcs, location, opts)
+  end
+
+  def restore(client, backup_id, %Location.Azure{} = location, opts) do
+    do_restore_with_location(client, backup_id, :azure, location, opts)
+  end
+
+  def restore(client, backup_id, backend, opts) when is_atom(backend) do
     if Storage.valid?(backend) do
       do_restore(client, backup_id, backend, opts)
     else
@@ -170,6 +245,19 @@ defmodule WeaviateEx.API.Backup do
     case Client.request(client, :post, path, body, []) do
       {:ok, response} ->
         handle_restore_response(client, backup_id, backend, response, opts)
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp do_restore_with_location(client, backup_id, backend_type, location, opts) do
+    path = "/v1/backups/#{Storage.to_api_path(backend_type)}/#{backup_id}/restore"
+    body = build_restore_body_with_location(location, opts)
+
+    case Client.request(client, :post, path, body, []) do
+      {:ok, response} ->
+        handle_restore_response(client, backup_id, backend_type, response, opts)
 
       {:error, error} ->
         {:error, error}
@@ -385,23 +473,54 @@ defmodule WeaviateEx.API.Backup do
   ## Examples
 
       body = Backup.build_restore_body(include_collections: ["Article"])
+      body = Backup.build_restore_body(roles_restore: :all, users_restore: :none)
   """
   @spec build_restore_body(keyword()) :: map()
   def build_restore_body(opts) do
-    body = %{}
+    %{}
+    |> add_collection_opts(opts)
+    |> add_rbac_opts(opts)
+    |> add_restore_config(opts)
+  end
 
-    body =
-      case Keyword.get(opts, :include_collections) do
-        nil -> body
-        collections -> Map.put(body, "include", collections)
-      end
+  @doc false
+  def build_create_body_with_location(backup_id, location, opts) do
+    body = build_create_body(backup_id, opts)
+    location_config = Location.to_api(location)
 
-    body =
-      case Keyword.get(opts, :exclude_collections) do
-        nil -> body
-        collections -> Map.put(body, "exclude", collections)
-      end
+    existing_config = Map.get(body, "config", %{})
+    merged_config = Map.merge(location_config, existing_config)
 
+    Map.put(body, "config", merged_config)
+  end
+
+  @doc false
+  def build_restore_body_with_location(location, opts) do
+    body = build_restore_body(opts)
+    location_config = Location.to_api(location)
+
+    existing_config = Map.get(body, "config", %{})
+    merged_config = Map.merge(location_config, existing_config)
+
+    Map.put(body, "config", merged_config)
+  end
+
+  # Helper functions for building request bodies
+
+  defp add_collection_opts(body, opts) do
+    body
+    |> maybe_put_opt("include", Keyword.get(opts, :include_collections))
+    |> maybe_put_opt("exclude", Keyword.get(opts, :exclude_collections))
+  end
+
+  defp add_rbac_opts(body, opts) do
+    body
+    |> maybe_put_rbac_opt("rolesRestore", Keyword.get(opts, :roles_restore))
+    |> maybe_put_rbac_opt("usersRestore", Keyword.get(opts, :users_restore))
+    |> maybe_put_opt("overwriteAlias", Keyword.get(opts, :overwrite_alias))
+  end
+
+  defp add_restore_config(body, opts) do
     case Keyword.get(opts, :config) do
       nil ->
         body
@@ -416,4 +535,12 @@ defmodule WeaviateEx.API.Backup do
         end
     end
   end
+
+  defp maybe_put_opt(body, _key, nil), do: body
+  defp maybe_put_opt(body, key, value), do: Map.put(body, key, value)
+
+  defp maybe_put_rbac_opt(body, _key, nil), do: body
+  defp maybe_put_rbac_opt(body, key, :all), do: Map.put(body, key, "all")
+  defp maybe_put_rbac_opt(body, key, :none), do: Map.put(body, key, "none")
+  defp maybe_put_rbac_opt(body, key, list) when is_list(list), do: Map.put(body, key, list)
 end

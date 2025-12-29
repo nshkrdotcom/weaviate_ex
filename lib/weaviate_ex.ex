@@ -451,4 +451,38 @@ defmodule WeaviateEx do
       :ok = WeaviateEx.wait_for_replications(client, timeout: 60_000)
   """
   defdelegate wait_for_replications(client, opts \\ []), to: WeaviateEx.API.Cluster
+
+  ## Debug Convenience Functions
+
+  @doc """
+  Retrieve object via REST API (bypasses gRPC for debugging).
+
+  Delegates to `WeaviateEx.Debug.get_object_rest/4`.
+
+  ## Examples
+
+      {:ok, object} = WeaviateEx.debug_get_rest(client, "Article", uuid)
+      {:ok, object} = WeaviateEx.debug_get_rest(client, "Article", uuid, tenant: "tenant-a")
+  """
+  defdelegate debug_get_rest(client, collection, uuid, opts \\ []),
+    to: WeaviateEx.Debug,
+    as: :get_object_rest
+
+  @doc """
+  Compare object retrieval via REST and gRPC protocols.
+
+  Delegates to `WeaviateEx.Debug.compare_protocols/4`.
+
+  ## Examples
+
+      {:ok, result} = WeaviateEx.debug_compare(client, "Article", uuid)
+      if result.match do
+        IO.puts("Protocols return identical results")
+      else
+        IO.puts(WeaviateEx.Debug.ObjectCompare.format_diff(result.differences))
+      end
+  """
+  defdelegate debug_compare(client, collection, uuid, opts \\ []),
+    to: WeaviateEx.Debug,
+    as: :compare_protocols
 end

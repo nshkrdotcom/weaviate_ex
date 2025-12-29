@@ -212,6 +212,37 @@ defmodule WeaviateEx.GRPC.Services.Search do
     execute_search(channel, request, opts)
   end
 
+  @doc """
+  Perform a generic search with a filter request map.
+
+  This is a lower-level function used by the Debug module for protocol comparison.
+
+  ## Options
+
+    * `:metadata` - gRPC metadata headers
+
+  ## Examples
+
+      request = %{collection: "Article", filters: %{...}, limit: 1}
+      {:ok, results} = Search.search(channel, "Article", request, metadata: metadata)
+  """
+  @spec search(GRPC.Channel.t(), String.t(), map(), keyword()) ::
+          {:ok, struct()} | {:error, Error.t()}
+  def search(channel, collection, request, opts \\ []) do
+    # Build a search request from the request map
+    search_request = %SearchRequest{
+      collection: collection,
+      tenant: Map.get(request, :tenant, ""),
+      limit: Map.get(request, :limit, 10),
+      offset: Map.get(request, :offset, 0),
+      properties: build_properties_request([]),
+      metadata: build_metadata_request(return_metadata: [:uuid, :vector]),
+      uses_127_api: true
+    }
+
+    execute_search(channel, search_request, opts)
+  end
+
   # Private functions
 
   defp build_search_request(collection, opts) do

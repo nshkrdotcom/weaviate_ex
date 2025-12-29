@@ -209,6 +209,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Centroid calculation method (mean)
   - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
 
+#### Debug Module
+- **Debug API** (`WeaviateEx.Debug`) - Protocol comparison and troubleshooting:
+  - `get_object_rest/4` - Fetch object via REST/HTTP protocol
+  - `get_object_grpc/4` - Fetch object via gRPC protocol
+  - `compare_protocols/4` - Compare REST and gRPC responses with detailed diff
+  - `connection_info/1` - Get HTTP and gRPC connection diagnostics
+- **ObjectCompare** (`WeaviateEx.Debug.ObjectCompare`) - Deep object comparison:
+  - `compare/2` - Compare two objects and detect differences
+  - `diff/2` - Generate list of differences between objects
+  - `format_diff/1` - Format differences as human-readable report
+- **RequestLogger** (`WeaviateEx.Debug.RequestLogger`) - Request logging GenServer:
+  - `start_link/1` - Start logger with optional name
+  - `enable/1`, `disable/1` - Toggle request logging
+  - `log_request/2` - Log HTTP/gRPC request details
+  - `get_logs/2` - Retrieve logs with optional filters (protocol, min_duration_ms)
+  - `export_logs/3` - Export logs to file (JSON or text format)
+  - `clear_logs/1` - Clear all logged requests
+- **Main Module Integration**:
+  - `WeaviateEx.debug_get_rest/4` - Convenience delegate to Debug.get_object_rest
+  - `WeaviateEx.debug_compare/4` - Convenience delegate to Debug.compare_protocols
+
+#### Backup Enhancements
+- **RBAC Restore Options** (`WeaviateEx.API.Backup`):
+  - `roles_restore` option - Restore role definitions from backup
+  - `users_restore` option - Restore user role assignments from backup
+  - `overwrite_alias` option - Overwrite existing collection aliases during restore
+- **Location Struct Support** (`WeaviateEx.API.Backup`):
+  - `create/4` now accepts Location structs (Filesystem, S3, GCS, Azure) directly
+  - `restore/4` now accepts Location structs directly
+  - Dynamic location configuration for programmatic backend selection
+- **Backup Config Enhancement** (`WeaviateEx.Backup.Config.Create`):
+  - Added `chunk_size` option - Configure backup chunk size in megabytes
+
+#### Connection Management
+- **Pool Configuration** (`WeaviateEx.Client.Pool`) - Connection pool settings:
+  - `new/1` - Create pool config with size, overflow, strategy, timeouts
+  - `default/0` - Default pool configuration
+  - `default_http/0` - HTTP-optimized pool (larger pool for parallel requests)
+  - `default_grpc/0` - gRPC-optimized pool (smaller pool due to multiplexing)
+  - `to_finch_opts/1` - Convert to Finch HTTP client options
+  - `to_grpc_opts/1` - Convert to gRPC channel options
+  - Configurable: size, overflow, strategy (:fifo/:lifo), timeout, idle_timeout, max_age
+- **Client State Tracking** (`WeaviateEx.Client.State`) - Lifecycle state management:
+  - `new/0` - Create initial state with timestamps
+  - `connected/1`, `disconnected/2`, `closed/1` - State transitions
+  - `record_request/1` - Track successful requests
+  - `record_error/2` - Track errors with details
+  - Status tracking: `:initializing`, `:connected`, `:disconnected`, `:closed`
+  - Statistics: request_count, error_count, created_at, last_used_at, last_error
+- **Client Lifecycle** (`WeaviateEx.Client`):
+  - `close/1` - Close client and release all connections
+  - `closed?/1` - Check if client has been closed
+  - `status/1` - Get current client status
+  - `stats/1` - Get client statistics (request/error counts, timestamps)
+  - `with_client/2` - Execute function with auto-managed client lifecycle
+  - Added `state` field to client struct for tracking lifecycle
+- **ClosedClientError** (`WeaviateEx.Error.ClosedClientError`) - Exception for closed client:
+  - Raised when operations are attempted on a closed client
+  - Includes `closed_at` timestamp for debugging
+
 ## [0.5.0] - 2025-12-28
 
 ### Added

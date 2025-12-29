@@ -429,3 +429,41 @@ defmodule WeaviateEx.Error do
     }
   end
 end
+
+defmodule WeaviateEx.Error.ClosedClientError do
+  @moduledoc """
+  Raised when operations are attempted on a closed client.
+
+  This error indicates that the client has been explicitly closed
+  and can no longer be used for operations.
+
+  ## Example
+
+      client = Client.new(base_url: "http://localhost:8080")
+      Client.close(client)
+
+      # This will raise ClosedClientError
+      Client.request(client, :get, "/v1/meta", nil, [])
+  """
+
+  defexception [:message, :closed_at]
+
+  @type t :: %__MODULE__{
+          message: String.t(),
+          closed_at: DateTime.t() | nil
+        }
+
+  @impl true
+  def exception(opts) do
+    closed_at = Keyword.get(opts, :closed_at)
+
+    msg =
+      if closed_at do
+        "Client was closed at #{DateTime.to_string(closed_at)}. Create a new client to continue."
+      else
+        "Client was closed. Create a new client to continue."
+      end
+
+    %__MODULE__{message: msg, closed_at: closed_at}
+  end
+end

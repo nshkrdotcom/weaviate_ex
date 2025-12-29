@@ -131,7 +131,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
 
   - `:consistency_level` - Consistency level (:all, :quorum, :one)
   """
-  @spec start_message(keyword()) :: Weaviate.V1.BatchStreamRequest.t()
+  @spec start_message(keyword()) :: struct()
   def start_message(opts \\ []) do
     consistency = Keyword.get(opts, :consistency_level)
 
@@ -145,7 +145,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
   @doc """
   Creates a Stop message for gracefully closing the batch stream.
   """
-  @spec stop_message() :: Weaviate.V1.BatchStreamRequest.t()
+  @spec stop_message() :: struct()
   def stop_message do
     %Weaviate.V1.BatchStreamRequest{
       message: {:stop, %Weaviate.V1.BatchStreamRequest.Stop{}}
@@ -155,7 +155,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
   @doc """
   Creates a Data message containing objects and/or references.
   """
-  @spec data_message([object()], [batch_ref()]) :: Weaviate.V1.BatchStreamRequest.t()
+  @spec data_message([object()], [batch_ref()]) :: struct()
   def data_message(objects, references) do
     objects_data =
       case objects do
@@ -190,7 +190,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
   @doc """
   Builds a BatchObject from a map.
   """
-  @spec build_batch_object(object()) :: Weaviate.V1.BatchObject.t()
+  @spec build_batch_object(object()) :: struct()
   def build_batch_object(obj) do
     properties = build_properties(Map.get(obj, :properties, %{}))
 
@@ -207,7 +207,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
   @doc """
   Builds a BatchReference from a map.
   """
-  @spec build_batch_reference(batch_ref()) :: Weaviate.V1.BatchReference.t()
+  @spec build_batch_reference(batch_ref()) :: struct()
   def build_batch_reference(ref) do
     %Weaviate.V1.BatchReference{
       name: Map.get(ref, :name) || Map.get(ref, "name"),
@@ -222,7 +222,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
   @doc """
   Parses a BatchStreamReply into a more usable format.
   """
-  @spec parse_reply(Weaviate.V1.BatchStreamReply.t()) :: {atom(), map()}
+  @spec parse_reply(struct()) :: {atom(), map()}
   def parse_reply(%Weaviate.V1.BatchStreamReply{message: message}) do
     case message do
       {:started, _} ->

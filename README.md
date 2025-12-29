@@ -73,6 +73,8 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - [Mix Tasks](#mix-tasks)
 - [Docker Management](#docker-management)
 - [Authentication](#authentication)
+- [Connection Management](#connection-management)
+- [Debug & Troubleshooting](#debug--troubleshooting)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
@@ -1084,26 +1086,67 @@ Compression.gzip?(:default)  # => true
 Compression.zstd?(:zstd_default)  # => true
 ```
 
-#### Location Configuration (Advanced)
+#### RBAC Restore Options (v0.6.0+)
+
+Restore backups with fine-grained control over RBAC data:
 
 ```elixir
-alias WeaviateEx.Backup.Location
+alias WeaviateEx.Backup
 
-# Create location configs for cloud backends
+# Restore with RBAC options
+{:ok, status} = Backup.restore(client, "daily-backup", :s3,
+  roles_restore: true,          # Restore role definitions
+  users_restore: true,          # Restore user assignments
+  overwrite_alias: true,        # Overwrite existing aliases
+  wait_for_completion: true
+)
+
+# Selective RBAC restore - roles only
+{:ok, status} = Backup.restore(client, "daily-backup", :filesystem,
+  roles_restore: true,
+  users_restore: false
+)
+```
+
+#### Location Configuration (Advanced)
+
+Use typed location structs for cloud backend configuration:
+
+```elixir
+alias WeaviateEx.Backup.{Location, Config}
+
+# Filesystem location
+fs_loc = Location.filesystem("/var/backups/weaviate")
+
+# S3 location with full configuration
 s3_loc = Location.s3("my-bucket", "/backups",
   endpoint: "s3.us-west-2.amazonaws.com",
   region: "us-west-2",
   access_key_id: "...",
-  secret_access_key: "..."
+  secret_access_key: "...",
+  use_ssl: true
 )
 
+# GCS location
 gcs_loc = Location.gcs("my-bucket", "/backups",
   project_id: "my-project",
   credentials: %{...}
 )
 
+# Azure location
 azure_loc = Location.azure("my-container", "/backups",
   connection_string: "..."
+)
+
+# Use location structs directly in backup operations
+{:ok, status} = Backup.create(client, "backup-001", s3_loc,
+  include_collections: ["Article"],
+  config: Config.create(chunk_size: 128, compression: :zstd_default)
+)
+
+# Restore from location struct
+{:ok, status} = Backup.restore(client, "backup-001", s3_loc,
+  roles_restore: true
 )
 ```
 
@@ -1648,6 +1691,203 @@ config :weaviate_ex,
 - ✅ Use `System.fetch_env!/1` to fail fast on missing keys
 - ✅ Store production secrets in secure vaults (e.g., AWS Secrets Manager)
 - ✅ Use different keys for dev/staging/production
+
+## Connection Management
+
+### Connection Pool Configuration (v0.6.0+)
+
+Configure HTTP and gRPC connection pools for optimal performance:
+
+```elixir
+alias WeaviateEx.Client.Pool
+
+# Create custom pool configuration
+http_pool = Pool.new(
+  size: 20,              # Number of connections in pool
+  overflow: 10,          # Maximum overflow connections
+  strategy: :lifo,       # Connection selection (:fifo or :lifo)
+  timeout: 5000,         # Checkout timeout in ms
+  idle_timeout: 60_000,  # Idle connection timeout in ms
+  max_age: nil           # Max connection age (nil = no limit)
+)
+
+# Use preset configurations
+http_pool = Pool.default_http()   # Optimized for HTTP/Finch
+grpc_pool = Pool.default_grpc()   # Optimized for gRPC (fewer connections)
+
+# Convert to client options
+finch_opts = Pool.to_finch_opts(http_pool)
+grpc_opts = Pool.to_grpc_opts(grpc_pool)
+```
+
+### Client Lifecycle Management (v0.6.0+)
+
+Manage client connections with explicit lifecycle control:
+
+```elixir
+alias WeaviateEx.Client
+
+# Create and use a client
+{:ok, client} = Client.new(base_url: "http://localhost:8080")
+
+# Check client status
+Client.status(client)   # => :connected, :initializing, :disconnected, :closed
+
+# Check if client is closed
+Client.closed?(client)  # => false
+
+# Get client statistics
+stats = Client.stats(client)
+IO.puts("Requests: #{stats.request_count}")
+IO.puts("Errors: #{stats.error_count}")
+IO.puts("Created: #{stats.created_at}")
+
+# Close the client when done
+:ok = Client.close(client)
+Client.closed?(client)  # => true
+```
+
+### Resource Management with `with_client/2`
+
+Automatic client lifecycle management with guaranteed cleanup:
+
+```elixir
+alias WeaviateEx.Client
+
+# with_client ensures cleanup even on errors
+result = Client.with_client([base_url: "http://localhost:8080"], fn client ->
+  # Use client for operations
+  {:ok, meta} = WeaviateEx.health_check(client)
+  {:ok, collections} = WeaviateEx.Collections.list(client)
+
+  # Return your result
+  {:ok, %{version: meta["version"], collections: length(collections)}}
+end)
+
+# Client is automatically closed after the function returns
+case result do
+  {:ok, data} -> IO.puts("Version: #{data.version}")
+  {:error, reason} -> IO.puts("Error: #{inspect(reason)}")
+end
+
+# Even if the function raises, client is closed
+try do
+  Client.with_client([base_url: url], fn client ->
+    raise "Something went wrong"
+  end)
+rescue
+  e -> IO.puts("Caught: #{e.message}")
+  # Client was still properly closed
+end
+```
+
+## Debug & Troubleshooting
+
+### Debug Module (v0.6.0+)
+
+Compare REST and gRPC protocol responses for debugging:
+
+```elixir
+alias WeaviateEx.Debug
+
+# Get an object via REST (HTTP)
+{:ok, rest_obj} = Debug.get_object_rest(client, "Article", uuid)
+
+# Get the same object via gRPC
+{:ok, grpc_obj} = Debug.get_object_grpc(client, "Article", uuid)
+
+# Compare both protocols and get a detailed diff
+{:ok, comparison} = Debug.compare_protocols(client, "Article", uuid)
+
+# Check comparison results
+comparison.match?           # => true or false
+comparison.rest_object      # => %{...}
+comparison.grpc_object      # => %{...}
+comparison.differences      # => [] or list of differences
+
+# Get connection diagnostics
+{:ok, info} = Debug.connection_info(client)
+IO.puts("HTTP Base URL: #{info.http_base_url}")
+IO.puts("gRPC Connected: #{info.grpc_connected}")
+IO.puts("gRPC Host: #{info.grpc_host}:#{info.grpc_port}")
+```
+
+### Object Comparison
+
+Deep comparison of objects from different sources:
+
+```elixir
+alias WeaviateEx.Debug.ObjectCompare
+
+# Compare two objects
+result = ObjectCompare.compare(rest_object, grpc_object)
+
+result.match?        # => true if objects are equivalent
+result.differences   # => list of differences found
+
+# Get a formatted diff report
+diff_list = ObjectCompare.diff(rest_object, grpc_object)
+report = ObjectCompare.format_diff(diff_list)
+IO.puts(report)
+# Output:
+# - properties.title: "REST Title" vs "gRPC Title"
+# - _additional.vector: [0.1, 0.2, ...] vs [0.1, 0.2, ...]
+```
+
+### Request Logging
+
+Log and analyze HTTP/gRPC requests for debugging:
+
+```elixir
+alias WeaviateEx.Debug.RequestLogger
+
+# Start the request logger
+{:ok, logger} = RequestLogger.start_link(name: :my_logger)
+
+# Enable logging
+RequestLogger.enable(logger)
+
+# Log requests manually or via middleware
+RequestLogger.log_request(logger, %{
+  method: :get,
+  path: "/v1/schema",
+  protocol: :http,
+  duration_ms: 45,
+  status: 200
+})
+
+# Get recent logs
+logs = RequestLogger.get_logs(logger)
+for log <- logs do
+  IO.puts("#{log.protocol} #{log.method} #{log.path} - #{log.status} (#{log.duration_ms}ms)")
+end
+
+# Filter logs
+http_logs = RequestLogger.get_logs(logger, protocol: :http)
+slow_logs = RequestLogger.get_logs(logger, min_duration_ms: 100)
+
+# Export logs for analysis
+RequestLogger.export_logs(logger, "/tmp/weaviate_requests.json", :json)
+RequestLogger.export_logs(logger, "/tmp/weaviate_requests.txt", :text)
+
+# Clear logs
+RequestLogger.clear_logs(logger)
+
+# Disable when done
+RequestLogger.disable(logger)
+```
+
+### Main Module Debug Helpers
+
+Quick access to debug functions from the main module:
+
+```elixir
+# Get object via REST
+{:ok, obj} = WeaviateEx.debug_get_rest(client, "Article", uuid)
+
+# Compare protocols
+{:ok, comparison} = WeaviateEx.debug_compare(client, "Article", uuid)
+```
 
 ## Documentation
 

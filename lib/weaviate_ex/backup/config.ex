@@ -36,26 +36,37 @@ defmodule WeaviateEx.Backup.Config do
 
     @type t :: %__MODULE__{
             cpu_percentage: pos_integer() | nil,
+            chunk_size: pos_integer() | nil,
             compression: Compression.t() | nil
           }
 
-    defstruct [:cpu_percentage, :compression]
+    defstruct [:cpu_percentage, :chunk_size, :compression]
 
     @doc """
     Create new backup create config.
 
+    ## Options
+
+    - `:cpu_percentage` - Maximum CPU percentage to use (1-100)
+    - `:chunk_size` - Chunk size in bytes (default: 128MB)
+    - `:compression` - Compression level (`:default`, `:best_speed`, `:best_compression`)
+
     ## Examples
 
         iex> Config.Create.new(cpu_percentage: 50, compression: :best_speed)
-        %Config.Create{cpu_percentage: 50, compression: :best_speed}
+        %Config.Create{cpu_percentage: 50, chunk_size: nil, compression: :best_speed}
+
+        iex> Config.Create.new(chunk_size: 134_217_728)
+        %Config.Create{cpu_percentage: nil, chunk_size: 134_217_728, compression: nil}
 
         iex> Config.Create.new()
-        %Config.Create{cpu_percentage: nil, compression: nil}
+        %Config.Create{cpu_percentage: nil, chunk_size: nil, compression: nil}
     """
     @spec new(keyword()) :: t()
     def new(opts \\ []) do
       %__MODULE__{
         cpu_percentage: Keyword.get(opts, :cpu_percentage),
+        chunk_size: Keyword.get(opts, :chunk_size),
         compression: Keyword.get(opts, :compression)
       }
     end
@@ -70,6 +81,9 @@ defmodule WeaviateEx.Backup.Config do
         iex> Config.Create.to_api(%Config.Create{cpu_percentage: 50, compression: :best_speed})
         %{CPUPercentage: 50, CompressionLevel: "BestSpeed"}
 
+        iex> Config.Create.to_api(%Config.Create{chunk_size: 268_435_456})
+        %{ChunkSize: 268_435_456}
+
         iex> Config.Create.to_api(%Config.Create{})
         %{}
     """
@@ -77,6 +91,7 @@ defmodule WeaviateEx.Backup.Config do
     def to_api(%__MODULE__{} = config) do
       %{}
       |> maybe_put(:CPUPercentage, config.cpu_percentage)
+      |> maybe_put(:ChunkSize, config.chunk_size)
       |> maybe_put(
         :CompressionLevel,
         config.compression && Compression.to_api(config.compression)
