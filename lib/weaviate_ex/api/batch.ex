@@ -1,13 +1,17 @@
 defmodule WeaviateEx.API.Batch do
   @moduledoc """
-  Low-level batch API helpers for Weaviate.
+  Batch API for Weaviate with gRPC support.
 
   This module powers the public `WeaviateEx.Batch` wrapper while providing
   structured summaries for batch create/delete operations.
+
+  When used with a client that has an active gRPC connection, operations
+  use gRPC for optimal performance. Falls back to HTTP otherwise.
   """
 
   alias WeaviateEx.Client
   alias WeaviateEx.Error
+  alias WeaviateEx.GRPC.Services.Batch, as: GRPCBatch
 
   defmodule Result do
     @moduledoc """
@@ -42,7 +46,9 @@ defmodule WeaviateEx.API.Batch do
   @doc """
   Create objects in batch.
 
-  Pass `summary: true` to receive a `%WeaviateEx.API.Batch{}` summary instead of the raw payload.
+  Uses gRPC when available for optimal performance, falls back to HTTP otherwise.
+
+  Pass `summary: true` to receive a `%WeaviateEx.API.Batch.Result{}` summary instead of the raw payload.
   """
   @spec create_objects(Client.t(), objects_payload(), opts()) ::
           {:ok, map() | Result.t()} | {:error, Error.t()}
@@ -50,27 +56,178 @@ defmodule WeaviateEx.API.Batch do
     summary? = Keyword.get(opts, :summary, false)
     request_opts = Keyword.drop(opts, [:summary])
 
+    result =
+      if grpc_available?(client) do
+        create_objects_grpc(client, objects, request_opts)
+      else
+        create_objects_http(client, objects, request_opts)
+      end
+
+    case result do
+      {:ok, response} when summary? -> {:ok, build_summary(response)}
+      {:ok, response} -> {:ok, normalize_batch_response(response)}
+      error -> error
+    end
+  end
+
+  defp grpc_available?(client) do
+    channel = Client.grpc_channel(client)
+    not is_nil(channel)
+  end
+
+  defp create_objects_grpc(client, objects, opts) do
+    with {:ok, channel} <- get_grpc_channel(client),
+         grpc_objects = convert_objects_to_grpc(objects, opts),
+         grpc_opts = build_grpc_opts(client, opts),
+         {:ok, reply} <- GRPCBatch.insert_objects(channel, grpc_objects, grpc_opts) do
+      parsed = GRPCBatch.parse_result(reply)
+      {:ok, %{"results" => build_http_compatible_results(grpc_objects, parsed)}}
+    end
+  end
+
+  defp get_grpc_channel(client) do
+    case Client.grpc_channel(client) do
+      nil ->
+        {:error, Error.exception(type: :connection_error, message: "gRPC channel not available")}
+
+      channel ->
+        {:ok, channel}
+    end
+  end
+
+  defp convert_objects_to_grpc(objects, opts) do
+    default_tenant = Keyword.get(opts, :tenant)
+    Enum.map(objects, &convert_single_object_to_grpc(&1, default_tenant))
+  end
+
+  defp convert_single_object_to_grpc(obj, default_tenant) do
+    %{
+      collection: obj["class"] || obj[:class],
+      properties: obj["properties"] || obj[:properties] || %{},
+      uuid: obj["id"] || obj[:id],
+      vector: obj["vector"] || obj[:vector],
+      tenant: obj["tenant"] || obj[:tenant] || default_tenant
+    }
+  end
+
+  defp build_grpc_opts(client, opts) do
+    [
+      consistency_level: map_consistency_level(Keyword.get(opts, :consistency_level)),
+      api_key: client.config.api_key,
+      timeout: Keyword.get(opts, :timeout, 90_000)
+    ]
+  end
+
+  defp create_objects_http(client, objects, opts) do
     path =
       "/v1/batch/objects" <>
-        build_query(request_opts, [:tenant, :consistency_level, :wait_for_completion])
+        build_query(opts, [:tenant, :consistency_level, :wait_for_completion])
 
     body = %{"objects" => objects}
+    Client.request(client, :post, path, body, opts)
+  end
 
-    with {:ok, response} <- Client.request(client, :post, path, body, request_opts) do
-      if summary? do
-        {:ok, build_summary(response)}
-      else
-        {:ok, normalize_batch_response(response)}
-      end
+  defp map_consistency_level(nil), do: nil
+  defp map_consistency_level(:one), do: :one
+  defp map_consistency_level(:quorum), do: :quorum
+  defp map_consistency_level(:all), do: :all
+  defp map_consistency_level("ONE"), do: :one
+  defp map_consistency_level("QUORUM"), do: :quorum
+  defp map_consistency_level("ALL"), do: :all
+  defp map_consistency_level(_), do: nil
+
+  defp build_http_compatible_results(objects, %{errors: errors}) do
+    error_map = build_error_map(errors)
+
+    objects
+    |> Enum.with_index()
+    |> Enum.map(fn {obj, idx} -> build_object_result(obj, idx, error_map) end)
+  end
+
+  defp build_error_map(errors) do
+    Map.new(errors, fn e -> {e.index, e.error} end)
+  end
+
+  defp build_object_result(obj, idx, error_map) do
+    case Map.fetch(error_map, idx) do
+      {:ok, error_message} -> build_failed_result(obj, error_message)
+      :error -> build_success_result(obj)
     end
+  end
+
+  defp build_failed_result(obj, error_message) do
+    %{
+      "id" => obj.uuid,
+      "class" => obj.collection,
+      "status" => "FAILED",
+      "result" => %{"errors" => [%{"message" => error_message}]}
+    }
+  end
+
+  defp build_success_result(obj) do
+    %{
+      "id" => obj.uuid,
+      "class" => obj.collection,
+      "status" => "SUCCESS"
+    }
   end
 
   @doc """
   Delete objects in batch using match criteria.
+
+  Uses gRPC when available for optimal performance, falls back to HTTP otherwise.
   """
   @spec delete_objects(Client.t(), delete_payload(), opts()) ::
           {:ok, map()} | {:error, Error.t()}
   def delete_objects(client, criteria, opts \\ []) when is_map(criteria) do
+    if grpc_available?(client) do
+      delete_objects_grpc(client, criteria, opts)
+    else
+      delete_objects_http(client, criteria, opts)
+    end
+  end
+
+  defp delete_objects_grpc(client, criteria, opts) do
+    case Client.grpc_channel(client) do
+      nil ->
+        {:error, Error.exception(type: :connection_error, message: "gRPC channel not available")}
+
+      channel ->
+        collection = criteria["class"] || criteria[:class]
+        filter = criteria["where"] || criteria[:where]
+
+        grpc_opts = [
+          consistency_level: map_consistency_level(Keyword.get(opts, :consistency_level)),
+          tenant: Keyword.get(opts, :tenant),
+          verbose: Keyword.get(opts, :verbose, false),
+          dry_run: Keyword.get(opts, :dry_run, false),
+          api_key: client.config.api_key,
+          timeout: Keyword.get(opts, :timeout, 90_000)
+        ]
+
+        # Convert where filter to gRPC format
+        grpc_filter = convert_where_filter(filter)
+
+        case GRPCBatch.delete_objects(channel, collection, grpc_filter, grpc_opts) do
+          {:ok, reply} ->
+            # Convert gRPC reply to HTTP-like format
+            {:ok,
+             %{
+               "results" => %{
+                 "matches" => reply.matches,
+                 "successful" => reply.successful,
+                 "failed" => reply.failed,
+                 "dryRun" => reply.dry_run
+               }
+             }}
+
+          {:error, error} ->
+            {:error, error}
+        end
+    end
+  end
+
+  defp delete_objects_http(client, criteria, opts) do
     path =
       "/v1/batch/objects" <>
         build_query(opts, [:tenant, :consistency_level, :wait_for_completion])
@@ -78,6 +235,52 @@ defmodule WeaviateEx.API.Batch do
     body = %{"match" => criteria}
     Client.request(client, :delete, path, body, opts)
   end
+
+  defp convert_where_filter(nil), do: nil
+
+  defp convert_where_filter(filter) when is_map(filter) do
+    %{
+      path: get_filter_field(filter, [:path, "path"], []),
+      operator: convert_operator(get_filter_field(filter, [:operator, "operator"], nil)),
+      value_text: get_filter_value(filter, :text),
+      value_int: get_filter_value(filter, :int),
+      value_number: get_filter_value(filter, :number),
+      value_boolean: get_filter_value(filter, :boolean)
+    }
+  end
+
+  defp get_filter_field(filter, keys, default) do
+    Enum.find_value(keys, default, fn key -> filter[key] end)
+  end
+
+  defp get_filter_value(filter, :text) do
+    get_filter_field(filter, ["valueText", :valueText, :value_text], nil)
+  end
+
+  defp get_filter_value(filter, :int) do
+    get_filter_field(filter, ["valueInt", :valueInt, :value_int], nil)
+  end
+
+  defp get_filter_value(filter, :number) do
+    get_filter_field(filter, ["valueNumber", :valueNumber, :value_number], nil)
+  end
+
+  defp get_filter_value(filter, :boolean) do
+    get_filter_field(filter, ["valueBoolean", :valueBoolean, :value_boolean], nil)
+  end
+
+  defp convert_operator("Equal"), do: :equal
+  defp convert_operator("NotEqual"), do: :not_equal
+  defp convert_operator("GreaterThan"), do: :greater_than
+  defp convert_operator("GreaterThanEqual"), do: :greater_than_equal
+  defp convert_operator("LessThan"), do: :less_than
+  defp convert_operator("LessThanEqual"), do: :less_than_equal
+  defp convert_operator("Like"), do: :like
+  defp convert_operator("IsNull"), do: :is_null
+  defp convert_operator("ContainsAny"), do: :contains_any
+  defp convert_operator("ContainsAll"), do: :contains_all
+  defp convert_operator(op) when is_atom(op), do: op
+  defp convert_operator(_), do: nil
 
   defp build_summary(response) do
     objects = extract_objects(response)

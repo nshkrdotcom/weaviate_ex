@@ -1,16 +1,20 @@
 defmodule WeaviateEx.API.Tenants do
   @moduledoc """
-  Multi-tenancy operations for Phase 2.5.
+  Multi-tenancy operations with gRPC support.
 
   Provides complete tenant management:
   - CRUD operations (list, get, create, update, delete)
   - Activity status management (HOT, COLD, FROZEN)
   - Tenant isolation and filtering
   - Batch operations
+
+  Uses gRPC for list/get operations when available for optimal performance.
+  Create, update, and delete operations use HTTP as they're not available via gRPC.
   """
 
   alias WeaviateEx.Client
   alias WeaviateEx.Error
+  alias WeaviateEx.GRPC.Services.Tenants, as: GRPCTenants
 
   @type collection_name :: String.t()
   @type tenant_name :: String.t()
@@ -20,6 +24,8 @@ defmodule WeaviateEx.API.Tenants do
 
   @doc """
   List all tenants for a collection.
+
+  Uses gRPC when available for optimal performance, falls back to HTTP otherwise.
 
   ## Examples
 
@@ -31,11 +37,67 @@ defmodule WeaviateEx.API.Tenants do
   """
   @spec list(Client.t(), collection_name()) :: {:ok, [map()]} | {:error, Error.t()}
   def list(client, collection_name) do
+    if grpc_available?(client) do
+      list_grpc(client, collection_name)
+    else
+      list_http(client, collection_name)
+    end
+  end
+
+  defp grpc_available?(client) do
+    channel = Client.grpc_channel(client)
+    not is_nil(channel)
+  end
+
+  defp list_grpc(client, collection_name) do
+    case Client.grpc_channel(client) do
+      nil ->
+        {:error, Error.exception(type: :connection_error, message: "gRPC channel not available")}
+
+      channel ->
+        grpc_opts = [
+          api_key: client.config.api_key
+        ]
+
+        case GRPCTenants.list(channel, collection_name, grpc_opts) do
+          {:ok, reply} ->
+            tenants = Enum.map(reply.tenants, &convert_grpc_tenant/1)
+            {:ok, tenants}
+
+          {:error, error} ->
+            {:error, error}
+        end
+    end
+  end
+
+  defp list_http(client, collection_name) do
     Client.request(client, :get, "/v1/schema/#{collection_name}/tenants", nil, [])
   end
 
+  defp convert_grpc_tenant(tenant) do
+    status = GRPCTenants.parse_status(tenant.activity_status)
+
+    %{
+      "name" => tenant.name,
+      "activityStatus" => status_to_string(status)
+    }
+  end
+
+  defp status_to_string(:hot), do: "HOT"
+  defp status_to_string(:cold), do: "COLD"
+  defp status_to_string(:warm), do: "WARM"
+  defp status_to_string(:frozen), do: "FROZEN"
+  defp status_to_string(:unfreezing), do: "UNFREEZING"
+  defp status_to_string(:freezing), do: "FREEZING"
+  defp status_to_string(:offloaded), do: "OFFLOADED"
+  defp status_to_string(:offloading), do: "OFFLOADING"
+  defp status_to_string(:onloading), do: "ONLOADING"
+  defp status_to_string(_), do: "UNKNOWN"
+
   @doc """
   Get specific tenant information.
+
+  Uses gRPC when available for optimal performance, falls back to HTTP otherwise.
 
   ## Examples
 
@@ -48,6 +110,37 @@ defmodule WeaviateEx.API.Tenants do
   @spec get(Client.t(), collection_name(), tenant_name()) ::
           {:ok, map()} | {:error, Error.t()}
   def get(client, collection_name, tenant_name) do
+    if grpc_available?(client) do
+      get_grpc(client, collection_name, tenant_name)
+    else
+      get_http(client, collection_name, tenant_name)
+    end
+  end
+
+  defp get_grpc(client, collection_name, tenant_name) do
+    case Client.grpc_channel(client) do
+      nil ->
+        {:error, Error.exception(type: :connection_error, message: "gRPC channel not available")}
+
+      channel ->
+        grpc_opts = [api_key: client.config.api_key]
+        fetch_tenant_via_grpc(channel, collection_name, tenant_name, grpc_opts)
+    end
+  end
+
+  defp fetch_tenant_via_grpc(channel, collection_name, tenant_name, grpc_opts) do
+    case GRPCTenants.get(channel, collection_name, tenant_name, grpc_opts) do
+      {:ok, reply} -> extract_tenant_from_reply(reply)
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp extract_tenant_from_reply(%{tenants: [tenant | _]}), do: {:ok, convert_grpc_tenant(tenant)}
+
+  defp extract_tenant_from_reply(%{tenants: []}),
+    do: {:error, Error.exception(type: :not_found, message: "Tenant not found")}
+
+  defp get_http(client, collection_name, tenant_name) do
     Client.request(client, :get, "/v1/schema/#{collection_name}/tenants/#{tenant_name}", nil, [])
   end
 

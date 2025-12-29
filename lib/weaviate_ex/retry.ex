@@ -37,6 +37,13 @@ defmodule WeaviateEx.Retry do
   # Retryable error reasons
   @retryable_reasons [:timeout, :econnrefused, :econnreset, :closed, :nxdomain]
 
+  # Retryable gRPC status codes (as atoms)
+  @retryable_grpc_statuses [:unavailable, :resource_exhausted, :aborted, :deadline_exceeded]
+
+  # Retryable gRPC status codes (as integers)
+  # 4 = DEADLINE_EXCEEDED, 8 = RESOURCE_EXHAUSTED, 10 = ABORTED, 14 = UNAVAILABLE
+  @retryable_grpc_codes [4, 8, 10, 14]
+
   @doc """
   Execute function with exponential backoff retry.
 
@@ -76,6 +83,10 @@ defmodule WeaviateEx.Retry do
   - HTTP 502 (Bad Gateway)
   - HTTP 503 (Service Unavailable)
   - HTTP 504 (Gateway Timeout)
+  - gRPC UNAVAILABLE (14)
+  - gRPC RESOURCE_EXHAUSTED (8)
+  - gRPC ABORTED (10)
+  - gRPC DEADLINE_EXCEEDED (4)
   - Connection errors (timeout, connection refused, etc.)
 
   ## Examples
@@ -88,11 +99,50 @@ defmodule WeaviateEx.Retry do
 
       Retry.retryable?(%{reason: :timeout})
       # => true
+
+      Retry.retryable?(%GRPC.RPCError{status: 14})
+      # => true
   """
   @spec retryable?(error()) :: boolean()
-  def retryable?(%{status: status}) when status in @retryable_statuses, do: true
+  # HTTP status codes
+  def retryable?(%{status: status}) when is_integer(status) and status in @retryable_statuses,
+    do: true
+
+  # Connection error reasons
   def retryable?(%{reason: reason}) when reason in @retryable_reasons, do: true
+  # gRPC.RPCError with integer status
+  def retryable?(%GRPC.RPCError{status: status}) when status in @retryable_grpc_codes, do: true
+  # WeaviateEx.Error with grpc_status in details
+  def retryable?(%WeaviateEx.Error{details: %{grpc_status: status}})
+      when status in @retryable_grpc_statuses,
+      do: true
+
+  # Error type atoms from WeaviateEx.Error
+  def retryable?(%WeaviateEx.Error{type: type})
+      when type in [:service_unavailable, :rate_limited, :timeout_error],
+      do: true
+
+  # Fallback
   def retryable?(_error), do: false
+
+  @doc """
+  Check if a gRPC status code is retryable.
+
+  ## Examples
+
+      Retry.grpc_retryable?(:unavailable)
+      # => true
+
+      Retry.grpc_retryable?(:not_found)
+      # => false
+
+      Retry.grpc_retryable?(14)
+      # => true
+  """
+  @spec grpc_retryable?(atom() | integer()) :: boolean()
+  def grpc_retryable?(status) when status in @retryable_grpc_statuses, do: true
+  def grpc_retryable?(status) when status in @retryable_grpc_codes, do: true
+  def grpc_retryable?(_), do: false
 
   @doc """
   Calculate delay for retry attempt with jitter.

@@ -120,6 +120,94 @@ defmodule WeaviateEx.RetryTest do
     test "returns false for 500 internal server error" do
       assert Retry.retryable?(%{status: 500}) == false
     end
+
+    # gRPC error tests
+    test "returns true for gRPC UNAVAILABLE (14)" do
+      assert Retry.retryable?(%GRPC.RPCError{status: 14, message: "Unavailable"}) == true
+    end
+
+    test "returns true for gRPC RESOURCE_EXHAUSTED (8)" do
+      assert Retry.retryable?(%GRPC.RPCError{status: 8, message: "Rate limited"}) == true
+    end
+
+    test "returns true for gRPC ABORTED (10)" do
+      assert Retry.retryable?(%GRPC.RPCError{status: 10, message: "Aborted"}) == true
+    end
+
+    test "returns true for gRPC DEADLINE_EXCEEDED (4)" do
+      assert Retry.retryable?(%GRPC.RPCError{status: 4, message: "Timeout"}) == true
+    end
+
+    test "returns false for gRPC NOT_FOUND (5)" do
+      assert Retry.retryable?(%GRPC.RPCError{status: 5, message: "Not found"}) == false
+    end
+
+    test "returns false for gRPC INVALID_ARGUMENT (3)" do
+      assert Retry.retryable?(%GRPC.RPCError{status: 3, message: "Invalid"}) == false
+    end
+
+    test "returns true for WeaviateEx.Error with grpc_status :unavailable" do
+      error = %WeaviateEx.Error{
+        type: :service_unavailable,
+        message: "Unavailable",
+        details: %{grpc_status: :unavailable}
+      }
+
+      assert Retry.retryable?(error) == true
+    end
+
+    test "returns true for WeaviateEx.Error with type :rate_limited" do
+      error = %WeaviateEx.Error{type: :rate_limited, message: "Rate limited", details: %{}}
+      assert Retry.retryable?(error) == true
+    end
+
+    test "returns true for WeaviateEx.Error with type :timeout_error" do
+      error = %WeaviateEx.Error{type: :timeout_error, message: "Timeout", details: %{}}
+      assert Retry.retryable?(error) == true
+    end
+
+    test "returns false for WeaviateEx.Error with type :not_found" do
+      error = %WeaviateEx.Error{type: :not_found, message: "Not found", details: %{}}
+      assert Retry.retryable?(error) == false
+    end
+  end
+
+  describe "grpc_retryable?/1" do
+    test "returns true for :unavailable" do
+      assert Retry.grpc_retryable?(:unavailable) == true
+    end
+
+    test "returns true for :resource_exhausted" do
+      assert Retry.grpc_retryable?(:resource_exhausted) == true
+    end
+
+    test "returns true for :aborted" do
+      assert Retry.grpc_retryable?(:aborted) == true
+    end
+
+    test "returns true for :deadline_exceeded" do
+      assert Retry.grpc_retryable?(:deadline_exceeded) == true
+    end
+
+    test "returns true for integer 14 (UNAVAILABLE)" do
+      assert Retry.grpc_retryable?(14) == true
+    end
+
+    test "returns true for integer 8 (RESOURCE_EXHAUSTED)" do
+      assert Retry.grpc_retryable?(8) == true
+    end
+
+    test "returns false for :not_found" do
+      assert Retry.grpc_retryable?(:not_found) == false
+    end
+
+    test "returns false for :invalid_argument" do
+      assert Retry.grpc_retryable?(:invalid_argument) == false
+    end
+
+    test "returns false for integer 5 (NOT_FOUND)" do
+      assert Retry.grpc_retryable?(5) == false
+    end
   end
 
   describe "calculate_delay/3" do

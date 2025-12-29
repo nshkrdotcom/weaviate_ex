@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-12-28
+
+### Added
+
+#### gRPC Protocol Support
+- **gRPC Channel Management** (`WeaviateEx.GRPC.Channel`) - Persistent connection management:
+  - `connect/3` - Establish gRPC channel with TLS support
+  - `disconnect/1` - Clean channel shutdown
+  - `build_metadata/1` - Auth metadata for gRPC calls
+  - Automatic reconnection handling
+- **gRPC Services** - High-performance data operations:
+  - `WeaviateEx.GRPC.Services.Search` - Vector similarity search (near_vector, near_text, near_object, bm25, hybrid)
+  - `WeaviateEx.GRPC.Services.Batch` - Batch insert, delete, and reference operations
+  - `WeaviateEx.GRPC.Services.Aggregate` - Count and group_by aggregations
+  - `WeaviateEx.GRPC.Services.Tenants` - Multi-tenancy operations
+  - `WeaviateEx.GRPC.Services.Health` - gRPC health checks
+- **Protocol Buffer Definitions** - Generated from Weaviate v1 protos:
+  - 11 proto files in `priv/protos/v1/`
+  - Generated Elixir modules in `lib/weaviate_ex/grpc/generated/v1/`
+- **gRPC Error Handling** (`WeaviateEx.Error`):
+  - `from_grpc_status/3` - Map gRPC status codes to error types
+  - `from_grpc_error/1` - Convert gRPC errors to WeaviateEx.Error
+  - `grpc_retryable?/1` - Identify retryable gRPC errors
+- **gRPC Retry Logic** (`WeaviateEx.Retry`):
+  - Retry on UNAVAILABLE, RESOURCE_EXHAUSTED, ABORTED status codes
+  - Exponential backoff with jitter
+- **Client Configuration** (`WeaviateEx.Client.Config`):
+  - `grpc_host` - gRPC endpoint hostname
+  - `grpc_port` - gRPC port (default: 50051)
+  - `grpc_max_message_size` - Maximum message size for gRPC calls
+  - `use_tls?/1` - TLS detection for gRPC connections
+
+### Changed
+- **Hybrid Architecture**: gRPC for data operations (queries, batch, aggregations), HTTP retained for schema operations (Weaviate gRPC API doesn't support schema management)
+- **Client Connection** (`WeaviateEx.Client`):
+  - `connect/1` now establishes both HTTP (Finch) and gRPC channels
+  - New `grpc_channel` field in client struct
+  - Automatic gRPC fallback to HTTP when channel unavailable
+- **Query Execution** (`WeaviateEx.Query`):
+  - `execute/2` with client uses gRPC when available
+  - `execute/1` without client uses HTTP (backwards compatible)
+- **Batch Operations** (`WeaviateEx.API.Batch`):
+  - `create_objects/3` uses gRPC when client has gRPC channel
+  - `delete_objects/2` uses gRPC for batch deletes
+- **Aggregations** (`WeaviateEx.API.Aggregate`):
+  - Simple count/group_by use gRPC
+  - Complex aggregations (multiple properties) use GraphQL
+- **Tenants** (`WeaviateEx.API.Tenants`):
+  - `list/2`, `get/3`, `exists?/3` use gRPC
+  - Create/update/delete remain HTTP (not in gRPC API)
+
+### Dependencies
+- Added `{:grpc, "~> 0.9"}` - Elixir gRPC client
+- Added `{:protobuf, "~> 0.13"}` - Protocol Buffer support
+- Retained `{:finch, "~> 0.18"}` - For schema operations and HTTP fallback
+
+### Stats
+- **881 tests passing** (up from 694)
+- Full gRPC support for data operations
+- Backwards compatible - existing code continues to work
+
 ## [0.3.0] - 2025-12-28
 
 ### Added

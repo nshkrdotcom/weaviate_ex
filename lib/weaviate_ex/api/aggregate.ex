@@ -1,6 +1,6 @@
 defmodule WeaviateEx.API.Aggregate do
   @moduledoc """
-  Aggregation operations for Phase 2.2.
+  Aggregation operations with gRPC support.
 
   Provides statistical aggregation capabilities including:
   - Count, sum, mean, median, mode
@@ -9,10 +9,13 @@ defmodule WeaviateEx.API.Aggregate do
   - Percentage true/false for boolean fields
   - GroupBy aggregations
   - Aggregation with semantic search context
+
+  Uses gRPC when available for optimal performance, falls back to GraphQL otherwise.
   """
 
   alias WeaviateEx.Client
   alias WeaviateEx.Error
+  alias WeaviateEx.GRPC.Services.Aggregate, as: GRPCAggregate
 
   @type collection_name :: String.t()
   @type opts :: keyword()
@@ -198,6 +201,94 @@ defmodule WeaviateEx.API.Aggregate do
   ## Private Implementation
 
   defp execute_aggregate(client, collection_name, search_type, search_param, filter, opts) do
+    if grpc_available?(client) and simple_aggregate?(opts) do
+      execute_aggregate_grpc(client, collection_name, search_type, search_param, filter, opts)
+    else
+      execute_aggregate_http(client, collection_name, search_type, search_param, filter, opts)
+    end
+  end
+
+  defp grpc_available?(client) do
+    channel = Client.grpc_channel(client)
+    not is_nil(channel)
+  end
+
+  # Check if this is a simple aggregate that gRPC can handle
+  defp simple_aggregate?(opts) do
+    properties = Keyword.get(opts, :properties)
+    group_by = Keyword.get(opts, :group_by_path)
+
+    # gRPC supports count, and group_by with property aggregation
+    # For complex property aggregations, fall back to GraphQL
+    is_nil(properties) or (group_by != nil and is_nil(properties))
+  end
+
+  defp execute_aggregate_grpc(client, collection_name, search_type, search_param, _filter, opts) do
+    channel = Client.grpc_channel(client)
+
+    grpc_opts = [
+      api_key: client.config.api_key,
+      timeout: Keyword.get(opts, :timeout, 30_000)
+    ]
+
+    # Add search parameters
+    grpc_opts =
+      case search_type do
+        :near_text ->
+          grpc_opts
+          |> Keyword.put(:near_text, search_param)
+          |> Keyword.put(:certainty, Keyword.get(opts, :certainty))
+          |> Keyword.put(:distance, Keyword.get(opts, :distance))
+
+        :near_vector ->
+          grpc_opts
+          |> Keyword.put(:near_vector, search_param)
+          |> Keyword.put(:certainty, Keyword.get(opts, :certainty))
+          |> Keyword.put(:distance, Keyword.get(opts, :distance))
+
+        _ ->
+          grpc_opts
+      end
+
+    # Check if group_by is requested
+    group_by_path = Keyword.get(opts, :group_by_path)
+
+    result =
+      if group_by_path do
+        property = hd(group_by_path)
+        GRPCAggregate.group_by(channel, collection_name, property, grpc_opts)
+      else
+        GRPCAggregate.count(channel, collection_name, grpc_opts)
+      end
+
+    case result do
+      {:ok, reply} ->
+        {:ok, convert_grpc_aggregate_reply(reply, group_by_path)}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp convert_grpc_aggregate_reply(reply, nil) do
+    # Simple count response
+    [%{"meta" => %{"count" => reply.count}}]
+  end
+
+  defp convert_grpc_aggregate_reply(reply, group_by_path) do
+    # Group by response
+    Enum.map(reply.groups || [], fn group ->
+      %{
+        "groupedBy" => %{
+          "path" => group_by_path,
+          "value" => group.value
+        },
+        "meta" => %{"count" => group.count}
+      }
+    end)
+  end
+
+  defp execute_aggregate_http(client, collection_name, search_type, search_param, filter, opts) do
     # Build the fields to aggregate
     fields = build_aggregate_fields(opts)
 

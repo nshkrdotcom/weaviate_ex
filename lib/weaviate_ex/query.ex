@@ -1,8 +1,9 @@
 defmodule WeaviateEx.Query do
   @moduledoc """
-  GraphQL query builder for Weaviate.
+  Query builder for Weaviate using gRPC.
 
-  Provides a fluent interface for building GraphQL queries.
+  Provides a fluent interface for building search queries that execute
+  via gRPC for optimal performance.
 
   ## Examples
 
@@ -11,7 +12,7 @@ defmodule WeaviateEx.Query do
         |> WeaviateEx.Query.fields(["title", "content"])
         |> WeaviateEx.Query.limit(10)
 
-      {:ok, results} = WeaviateEx.Query.execute(query)
+      {:ok, results} = WeaviateEx.Query.execute(query, client)
 
       # Vector search
       query = WeaviateEx.Query.get("Article")
@@ -19,14 +20,14 @@ defmodule WeaviateEx.Query do
         |> WeaviateEx.Query.fields(["title", "content"])
         |> WeaviateEx.Query.limit(5)
 
-      {:ok, results} = WeaviateEx.Query.execute(query)
+      {:ok, results} = WeaviateEx.Query.execute(query, client)
 
       # Hybrid search
       query = WeaviateEx.Query.get("Article")
         |> WeaviateEx.Query.hybrid("machine learning", alpha: 0.5)
         |> WeaviateEx.Query.fields(["title"])
 
-      {:ok, results} = WeaviateEx.Query.execute(query)
+      {:ok, results} = WeaviateEx.Query.execute(query, client)
 
       # Cursor pagination with sorting
       alias WeaviateEx.Query.Sort
@@ -37,11 +38,11 @@ defmodule WeaviateEx.Query do
         |> WeaviateEx.Query.limit(100)
         |> WeaviateEx.Query.after_cursor("last-cursor-id")
 
-      {:ok, results} = WeaviateEx.Query.execute(query)
+      {:ok, results} = WeaviateEx.Query.execute(query, client)
   """
 
-  import WeaviateEx, only: [request: 4]
-
+  alias WeaviateEx.Client
+  alias WeaviateEx.GRPC.Services.Search, as: GRPCSearch
   alias WeaviateEx.Query.QueryReference
   alias WeaviateEx.Query.Sort
 
@@ -59,7 +60,8 @@ defmodule WeaviateEx.Query do
             auto_limit: nil,
             after: nil,
             sort: nil,
-            return_references: nil
+            return_references: nil,
+            tenant: nil
 
   @type t :: %__MODULE__{}
 
@@ -365,44 +367,362 @@ defmodule WeaviateEx.Query do
   end
 
   @doc """
-  Executes the query and returns results.
+  Sets the tenant for multi-tenant collections.
 
   ## Examples
 
       query
-      |> WeaviateEx.Query.get("Article")
-      |> WeaviateEx.Query.fields(["title"])
-      |> WeaviateEx.Query.limit(10)
-      |> WeaviateEx.Query.execute()
+      |> WeaviateEx.Query.tenant("TenantA")
   """
+  @spec tenant(t(), String.t()) :: t()
+  def tenant(%__MODULE__{} = query, tenant_name) when is_binary(tenant_name) do
+    %{query | tenant: tenant_name}
+  end
+
+  @doc """
+  Executes the query and returns results.
+
+  When called with a WeaviateEx.Client, uses gRPC for optimal performance.
+  When called without a client (legacy mode), uses HTTP/GraphQL.
+
+  ## Examples
+
+      # With client (uses gRPC)
+      {:ok, client} = WeaviateEx.Client.connect(base_url: "http://localhost:8080")
+      {:ok, results} = Query.execute(query, client)
+
+      # Legacy mode (uses HTTP/GraphQL)
+      {:ok, results} = Query.execute(query)
+  """
+  @spec execute(t()) :: WeaviateEx.api_response()
   @spec execute(t(), Keyword.t()) :: WeaviateEx.api_response()
-  def execute(%__MODULE__{} = query, opts \\ []) do
+  @spec execute(t(), Client.t()) :: WeaviateEx.api_response()
+  @spec execute(t(), Client.t(), Keyword.t()) :: WeaviateEx.api_response()
+
+  # Legacy HTTP mode - no client
+  def execute(%__MODULE__{} = query) do
+    execute_http(query, [])
+  end
+
+  # Legacy HTTP mode - with opts but no client
+  def execute(%__MODULE__{} = query, opts) when is_list(opts) do
+    execute_http(query, opts)
+  end
+
+  # gRPC mode - with client
+  def execute(%__MODULE__{} = query, %Client{} = client) do
+    execute_with_client(query, client, [])
+  end
+
+  # gRPC mode - with client and opts
+  def execute(%__MODULE__{} = query, %Client{} = client, opts) when is_list(opts) do
+    execute_with_client(query, client, opts)
+  end
+
+  defp execute_with_client(query, client, opts) do
+    channel = Client.grpc_channel(client)
+
+    if is_nil(channel) do
+      # Fall back to HTTP if no gRPC channel
+      execute_http(query, opts)
+    else
+      execute_grpc(query, channel, client, opts)
+    end
+  end
+
+  # Legacy HTTP/GraphQL execution
+  defp execute_http(%__MODULE__{} = query, opts) do
+    import WeaviateEx, only: [request: 4]
+
     graphql_query = build_graphql(query)
 
     case request(:post, "/v1/graphql", %{query: graphql_query}, opts) do
-      {:ok, response} -> parse_response(response, query.collection)
+      {:ok, response} -> parse_http_response(response, query.collection)
       error -> error
     end
   end
 
   # Parse GraphQL response and extract collection results
-  defp parse_response(%{"data" => %{"Get" => get_results}}, collection)
+  defp parse_http_response(%{"data" => %{"Get" => get_results}}, collection)
        when is_map(get_results) do
-    # Get collection results, defaulting to [] if missing or nil
     collection_results = Map.get(get_results, collection, []) || []
     {:ok, collection_results}
   end
 
-  defp parse_response(%{"errors" => errors}, _collection) do
+  defp parse_http_response(%{"errors" => errors}, _collection) do
     {:error, %{graphql_errors: errors}}
   end
 
-  defp parse_response(response, _collection) do
-    # Fallback - return the raw response
+  defp parse_http_response(response, _collection) do
     {:ok, response}
   end
 
-  # Build GraphQL query string
+  # Execute via gRPC based on search type
+  defp execute_grpc(%__MODULE__{} = query, channel, client, opts) do
+    grpc_opts = build_grpc_opts(query, client, opts)
+    result = dispatch_grpc_search(query, channel, grpc_opts)
+
+    case result do
+      {:ok, reply} -> {:ok, parse_grpc_reply(reply, query.fields, query.additional)}
+      error -> error
+    end
+  end
+
+  # Dispatch to the appropriate gRPC search method based on query type
+  defp dispatch_grpc_search(%{near_vector: %{vector: vector}} = query, channel, opts)
+       when not is_nil(vector) do
+    GRPCSearch.near_vector(channel, query.collection, vector, opts)
+  end
+
+  defp dispatch_grpc_search(%{near_text: %{concepts: concepts}} = query, channel, opts)
+       when not is_nil(concepts) do
+    text = if is_list(concepts), do: hd(concepts), else: concepts
+    GRPCSearch.near_text(channel, query.collection, text, opts)
+  end
+
+  defp dispatch_grpc_search(%{near_object: %{id: id}} = query, channel, opts)
+       when not is_nil(id) do
+    GRPCSearch.near_object(channel, query.collection, id, opts)
+  end
+
+  defp dispatch_grpc_search(%{hybrid: %{query: hybrid_query}} = query, channel, opts)
+       when not is_nil(hybrid_query) do
+    GRPCSearch.hybrid(channel, query.collection, hybrid_query, opts)
+  end
+
+  defp dispatch_grpc_search(%{bm25: %{query: bm25_query}} = query, channel, opts)
+       when not is_nil(bm25_query) do
+    GRPCSearch.bm25(channel, query.collection, bm25_query, opts)
+  end
+
+  defp dispatch_grpc_search(query, channel, opts) do
+    # Default: basic search (uses gRPC Search with no vector search type)
+    execute_basic_search(channel, query, opts)
+  end
+
+  # Basic search without vector search - uses near_vector with empty vector
+  # or falls back to HTTP for simple queries
+  defp execute_basic_search(channel, query, opts) do
+    # For basic searches without any search operator, we need to use a different approach
+    # The gRPC API requires at least one search type, so we use bm25 with empty query
+    # which effectively returns all objects matching any filters
+    GRPCSearch.bm25(channel, query.collection, "", opts)
+  end
+
+  defp build_grpc_opts(%__MODULE__{} = query, client, opts) do
+    [
+      limit: query.limit || 10,
+      offset: query.offset || 0,
+      autocut: query.auto_limit || 0,
+      return_properties: query.fields,
+      return_metadata: build_metadata_list(query.additional),
+      api_key: client.config.api_key
+    ]
+    |> maybe_add_grpc_opt(:tenant, query.tenant)
+    |> add_search_opts(query)
+    |> Keyword.merge(Keyword.take(opts, [:timeout]))
+  end
+
+  # Add search-specific options based on query type
+  defp add_search_opts(opts, %{near_text: params}) when is_map(params) do
+    opts
+    |> maybe_add_grpc_opt(:certainty, params[:certainty])
+    |> maybe_add_grpc_opt(:distance, params[:distance])
+  end
+
+  defp add_search_opts(opts, %{near_vector: params}) when is_map(params) do
+    opts
+    |> maybe_add_grpc_opt(:certainty, params[:certainty])
+    |> maybe_add_grpc_opt(:distance, params[:distance])
+  end
+
+  defp add_search_opts(opts, %{near_object: params}) when is_map(params) do
+    opts
+    |> maybe_add_grpc_opt(:certainty, params[:certainty])
+    |> maybe_add_grpc_opt(:distance, params[:distance])
+  end
+
+  defp add_search_opts(opts, %{hybrid: params}) when is_map(params) do
+    maybe_add_grpc_opt(opts, :alpha, params[:alpha])
+  end
+
+  defp add_search_opts(opts, %{bm25: params}) when is_map(params) do
+    maybe_add_grpc_opt(opts, :properties, params[:properties])
+  end
+
+  defp add_search_opts(opts, _query), do: opts
+
+  # Helper to conditionally add an option
+  defp maybe_add_grpc_opt(opts, _key, nil), do: opts
+  defp maybe_add_grpc_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp build_metadata_list(additional) when is_list(additional) do
+    Enum.map(additional, fn
+      "id" -> :uuid
+      "uuid" -> :uuid
+      "distance" -> :distance
+      "certainty" -> :certainty
+      "vector" -> :vector
+      "creationTimeUnix" -> :creation_time
+      "lastUpdateTimeUnix" -> :update_time
+      "score" -> :score
+      "explainScore" -> :explain_score
+      other when is_atom(other) -> other
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp build_metadata_list(_), do: [:uuid, :distance, :certainty]
+
+  # Parse gRPC SearchReply to match expected format
+  defp parse_grpc_reply(%Weaviate.V1.SearchReply{results: results}, fields, additional) do
+    Enum.map(results, fn result ->
+      object = parse_result_object(result, fields)
+
+      # Add _additional fields if requested
+      if additional && length(additional) > 0 do
+        additional_data = parse_additional_metadata(result.metadata)
+        Map.put(object, "_additional", additional_data)
+      else
+        object
+      end
+    end)
+  end
+
+  defp parse_result_object(result, _fields) do
+    # Extract properties from the result
+    case result.properties do
+      %Weaviate.V1.PropertiesResult{non_ref_props: props} when not is_nil(props) ->
+        parse_properties_to_map(props)
+
+      _ ->
+        %{}
+    end
+  end
+
+  # Parse Weaviate.V1.Properties (with fields map) to Elixir map
+  defp parse_properties_to_map(%Weaviate.V1.Properties{fields: fields}) when is_map(fields) do
+    fields
+    |> Enum.map(fn {key, value} -> {key, parse_weaviate_value(value)} end)
+    |> Map.new()
+  end
+
+  defp parse_properties_to_map(_), do: %{}
+
+  # Parse Weaviate.V1.Value (oneof kind)
+  # Uses pattern matching in function heads to reduce cyclomatic complexity
+  defp parse_weaviate_value(%Weaviate.V1.Value{kind: kind}), do: parse_value_kind(kind)
+  defp parse_weaviate_value(_), do: nil
+
+  # Simple scalar values - return as-is
+  defp parse_value_kind({:text_value, v}), do: v
+  defp parse_value_kind({:number_value, v}), do: v
+  defp parse_value_kind({:int_value, v}), do: v
+  defp parse_value_kind({:bool_value, v}), do: v
+  defp parse_value_kind({:date_value, v}), do: v
+  defp parse_value_kind({:uuid_value, v}), do: v
+  defp parse_value_kind({:blob_value, v}), do: v
+
+  # Complex values - delegate to specialized parsers
+  defp parse_value_kind({:geo_value, v}), do: parse_geo_value(v)
+  defp parse_value_kind({:phone_value, v}), do: parse_phone_value(v)
+  defp parse_value_kind({:object_value, v}), do: parse_properties_to_map(v)
+  defp parse_value_kind({:list_value, v}), do: parse_list_value(v)
+
+  # Null and unknown values
+  defp parse_value_kind({:null_value, _}), do: nil
+  defp parse_value_kind(nil), do: nil
+  defp parse_value_kind(_), do: nil
+
+  defp parse_geo_value(%Weaviate.V1.GeoCoordinate{} = geo) do
+    %{"latitude" => geo.latitude, "longitude" => geo.longitude}
+  end
+
+  defp parse_phone_value(%Weaviate.V1.PhoneNumber{} = phone) do
+    %{
+      "input" => phone.input,
+      "valid" => phone.valid,
+      "internationalFormatted" => phone.international_formatted
+    }
+  end
+
+  # Parse list values using pattern matching in function heads
+  defp parse_list_value(%Weaviate.V1.ListValue{kind: kind}), do: parse_list_kind(kind)
+
+  # Simple list values - return as-is
+  defp parse_list_kind({:text_values, %{values: values}}), do: values
+  defp parse_list_kind({:bool_values, %{values: values}}), do: values
+  defp parse_list_kind({:date_values, %{values: values}}), do: values
+  defp parse_list_kind({:uuid_values, %{values: values}}), do: values
+
+  # Binary-encoded numeric lists - need parsing
+  defp parse_list_kind({:number_values, %{values: bytes}}), do: parse_number_bytes(bytes)
+  defp parse_list_kind({:int_values, %{values: bytes}}), do: parse_int_bytes(bytes)
+
+  # Object lists - recursive parsing
+  defp parse_list_kind({:object_values, %{values: values}}),
+    do: Enum.map(values, &parse_properties_to_map/1)
+
+  # Empty or unknown list kinds
+  defp parse_list_kind(nil), do: []
+  defp parse_list_kind(_), do: []
+
+  defp parse_number_bytes(bytes) when is_binary(bytes) do
+    # Numbers are stored as little-endian doubles
+    for <<value::float-little-64 <- bytes>>, do: value
+  end
+
+  defp parse_number_bytes(_), do: []
+
+  defp parse_int_bytes(bytes) when is_binary(bytes) do
+    # Ints are stored as little-endian int64s
+    for <<value::signed-little-64 <- bytes>>, do: value
+  end
+
+  defp parse_int_bytes(_), do: []
+
+  defp parse_additional_metadata(nil), do: %{}
+
+  defp parse_additional_metadata(metadata) do
+    result = %{}
+
+    result =
+      if metadata.id && metadata.id != "", do: Map.put(result, "id", metadata.id), else: result
+
+    result =
+      if metadata.distance_present,
+        do: Map.put(result, "distance", metadata.distance),
+        else: result
+
+    result =
+      if metadata.certainty_present,
+        do: Map.put(result, "certainty", metadata.certainty),
+        else: result
+
+    result = if metadata.score_present, do: Map.put(result, "score", metadata.score), else: result
+
+    result =
+      if metadata.creation_time_unix_present do
+        Map.put(result, "creationTimeUnix", metadata.creation_time_unix)
+      else
+        result
+      end
+
+    result =
+      if metadata.last_update_time_unix_present do
+        Map.put(result, "lastUpdateTimeUnix", metadata.last_update_time_unix)
+      else
+        result
+      end
+
+    result
+  end
+
+  # ============================================================================
+  # GraphQL Building Helpers (for legacy HTTP mode)
+  # ============================================================================
+
   defp build_graphql(%__MODULE__{} = query) do
     collection = query.collection
     fields_str = build_fields(query.fields, query.additional, query.return_references)
@@ -534,7 +854,6 @@ defmodule WeaviateEx.Query do
   end
 
   defp map_to_graphql(value) when is_binary(value) do
-    # Escape quotes and wrap in quotes for strings
     escaped = String.replace(value, "\"", "\\\"")
     "\"#{escaped}\""
   end
@@ -545,12 +864,10 @@ defmodule WeaviateEx.Query do
 
   # Version with key context for enum detection
   defp map_to_graphql(value, key) when is_binary(value) and key in ["operator", "fusionType"] do
-    # These fields are enums in GraphQL - don't quote them
     value
   end
 
   defp map_to_graphql(value, _key) when is_binary(value) do
-    # Regular strings - quote them
     escaped = String.replace(value, "\"", "\\\"")
     "\"#{escaped}\""
   end

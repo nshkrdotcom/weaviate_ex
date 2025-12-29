@@ -1,7 +1,7 @@
 defmodule WeaviateEx.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @source_url "https://github.com/nshkrdotcom/weaviate_ex"
 
   def project do
@@ -40,17 +40,18 @@ defmodule WeaviateEx.MixProject do
 
   defp deps do
     [
-      # HTTP client with HTTP/2 and connection pooling
+      # HTTP client - retained for schema operations (no gRPC schema support in Weaviate)
       {:finch, "~> 0.18"},
 
-      # JSON encoding/decoding
+      # JSON encoding/decoding - for config and schema operations
       {:jason, "~> 1.4"},
 
       # UUID generation
       {:uniq, "~> 0.6"},
 
-      # Optional: gRPC support (for future enhancement)
-      # {:grpc, "~> 0.7", optional: true},
+      # gRPC support for data operations, queries, batch, etc.
+      {:grpc, "~> 0.9"},
+      {:protobuf, "~> 0.13"},
 
       # Development and testing
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},

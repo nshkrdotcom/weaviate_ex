@@ -8,7 +8,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-694%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Tests](https://img.shields.io/badge/tests-881%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -16,9 +16,10 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 
 ### Core Capabilities
 - **Complete API Coverage** - Collections, objects, batch operations, queries, aggregations, cross-references, tenants
+- **Hybrid Protocol Architecture** - gRPC for high-performance data operations, HTTP for schema management
 - **Type-Safe** - Protocol-based architecture with comprehensive typespecs
-- **Test-First Design** - 694 tests with Mox-based mocking for fast, isolated testing
-- **Production-Ready** - Connection pooling with Finch, proper error handling, health checks
+- **Test-First Design** - 881 tests with Mox-based mocking for fast, isolated testing
+- **Production-Ready** - gRPC persistent channels, Finch HTTP pooling, proper error handling, health checks
 - **Easy Setup** - First-class Mix tasks for managing local Weaviate stacks
 
 ### Generative AI (RAG) - 20+ Providers
@@ -105,7 +106,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.3.0"}
+    {:weaviate_ex, "~> 0.4.0"}
   ]
 end
 ```
@@ -233,6 +234,40 @@ config :weaviate_ex,
   api_key: System.get_env("WEAVIATE_API_KEY"),
   strict: true,      # Fail on startup if unreachable
   timeout: 30_000    # Request timeout in milliseconds
+```
+
+### gRPC Configuration
+
+WeaviateEx v0.4.0+ uses a hybrid protocol architecture: gRPC for data operations (queries, batch, aggregations) and HTTP for schema management. gRPC provides significantly better performance for high-throughput operations.
+
+```elixir
+# config/config.exs
+config :weaviate_ex,
+  url: "http://localhost:8080",       # HTTP endpoint for schema operations
+  grpc_host: "localhost",             # gRPC host (default: derived from url)
+  grpc_port: 50051,                   # gRPC port (default: 50051)
+  grpc_max_message_size: 104_857_600, # Max message size in bytes (default: 100MB)
+  api_key: nil                        # Used for both HTTP and gRPC auth
+```
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `grpc_host` | No | Derived from `url` | gRPC endpoint hostname |
+| `grpc_port` | No | `50051` | gRPC port |
+| `grpc_max_message_size` | No | `104857600` | Maximum gRPC message size (100MB) |
+
+The gRPC connection is automatically established when you create a client:
+
+```elixir
+# Connect with gRPC (automatic)
+{:ok, client} = WeaviateEx.Client.connect(
+  url: "http://localhost:8080",
+  grpc_port: 50051
+)
+
+# Client now has both HTTP and gRPC channels
+client.grpc_channel  # => gRPC channel for data operations
+client.config        # => Configuration for HTTP operations
 ```
 
 ### Runtime Configuration (Recommended for Production)
@@ -742,10 +777,10 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 ### Test Modes
 
 **Mock Mode (Default)** - Fast, isolated unit tests:
-- ✅ Uses Mox to mock HTTP/Protocol responses
+- ✅ Uses Mox to mock HTTP/Protocol and gRPC responses
 - ✅ No Weaviate instance required
 - ✅ Fast execution (~0.2 seconds)
-- ✅ 694 unit tests
+- ✅ 881 unit tests
 - ✅ Perfect for TDD and CI/CD
 
 **Integration Mode** - Real Weaviate testing:
@@ -824,8 +859,10 @@ Current test coverage by module:
 - ✅ **Generative AI**: 62 tests - All providers, typed configs, result parsing
 - ✅ **Vector Config**: 15+ tests - HNSW, PQ, flat index, multi-vector
 - ✅ **Multi-Vector**: 10+ tests - ColBERT, Muvera encoding, Jina vectorizers
+- ✅ **gRPC Services**: 50+ tests - Channel management, search, batch, aggregate, tenants, health
+- ✅ **gRPC Error Handling**: 30+ tests - Status code mapping, retryable errors
 
-**Total: 694 tests passing**
+**Total: 881 tests passing**
 
 ## Mix Tasks
 
@@ -1033,6 +1070,12 @@ weaviate_ex/
 │       ├── start_weaviate.sh
 │       ├── docker-compose.yml
 │       └── docker-compose-*.yml
+├── priv/
+│   └── protos/v1/                  # Weaviate gRPC proto definitions
+│       ├── weaviate.proto
+│       ├── batch.proto
+│       ├── search_get.proto
+│       └── ...
 ├── lib/
 │   ├── weaviate_ex.ex              # Top-level API
 │   ├── weaviate_ex/
@@ -1041,7 +1084,7 @@ weaviate_ex/
 │   │   ├── application.ex          # OTP application
 │   │   ├── client.ex               # Client struct & config
 │   │   ├── config.ex               # Configuration management
-│   │   ├── error.ex                # Error types
+│   │   ├── error.ex                # Error types (HTTP + gRPC)
 │   │   ├── filter.ex               # Filter DSL
 │   │   ├── api/                    # API modules
 │   │   │   ├── collections.ex
@@ -1049,6 +1092,15 @@ weaviate_ex/
 │   │   │   ├── aggregate.ex
 │   │   │   ├── tenants.ex
 │   │   │   └── vector_config.ex
+│   │   ├── grpc/                   # gRPC infrastructure
+│   │   │   ├── channel.ex          # Channel management
+│   │   │   ├── services/           # gRPC service clients
+│   │   │   │   ├── search.ex
+│   │   │   │   ├── batch.ex
+│   │   │   │   ├── aggregate.ex
+│   │   │   │   ├── tenants.ex
+│   │   │   │   └── health.ex
+│   │   │   └── generated/v1/       # Proto-generated modules
 │   │   └── ...
 │   └── mix/
 │       └── tasks/
@@ -1092,7 +1144,8 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 - Built for [Weaviate](https://weaviate.io) vector database
 - Inspired by official Python and TypeScript clients
-- Uses [Finch](https://github.com/sneako/finch) for HTTP/2 connection pooling
+- Uses [grpc-elixir](https://github.com/elixir-grpc/grpc) for high-performance gRPC operations
+- Uses [Finch](https://github.com/sneako/finch) for HTTP/2 connection pooling (schema operations)
 - Powered by Elixir and the BEAM VM
 
 ---
