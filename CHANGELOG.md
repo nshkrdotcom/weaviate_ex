@@ -124,6 +124,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `:poll_interval` option - Configure stats polling frequency
   - `get_server_batch_stats/1` - Get current server stats from GenServer
 
+#### gRPC Batch Streaming (Weaviate 1.34+)
+- **Batch Stream Service** (`WeaviateEx.GRPC.Services.BatchStream`) - Low-level gRPC streaming:
+  - `open/2` - Open bidirectional gRPC stream
+  - `send_objects/2` - Send batch objects over stream
+  - `send_references/2` - Send cross-references over stream
+  - `receive_results/2` - Receive batch results with timeout
+  - `close/1` - Close stream and clean up resources
+  - `start_message/1`, `stop_message/0`, `data_message/2` - Protocol message builders
+- **High-Level Batch Stream** (`WeaviateEx.Batch.Stream`) - Client-side buffered streaming:
+  - `new/3` - Create stream session with buffer configuration
+  - `add/2` - Add object to buffer (auto-flush when full)
+  - `flush/1` - Manually flush buffer to server
+  - `close/1` - Close stream and return all results
+  - Configurable: `buffer_size`, `flush_interval_ms`, `auto_flush`, `auto_reconnect`
+  - Automatic connection management and error recovery
+
+#### RBAC Enhancements
+- **Scope Permissions** (`WeaviateEx.API.RBAC.Scope`) - Fine-grained access control:
+  - `all_collections/0` - Create scope for all collections
+  - `collection/1` - Create scope for specific collection
+  - `collections/1` - Create scope for list of collections
+  - `with_tenants/2` - Add tenant restrictions to scope
+  - `with_shards/2` - Add shard restrictions to scope
+  - `to_api/1`, `from_api/1` - API serialization
+- **Permission Builder** (`WeaviateEx.API.RBAC.Permission`) - Permission construction:
+  - `new/3` - Create permission with resource, action, and scope
+  - `read_collection/1`, `manage_data/1` - Common permission shortcuts
+  - `admin/0` - Full administrative permissions
+  - `viewer/0` - Read-only permissions
+  - `to_api/1`, `from_api/1` - API serialization
+- **Database User Management** (`WeaviateEx.API.Users.DB`) - DB-backed users:
+  - `create/3` - Create DB user (returns API key)
+  - `get/3` - Get DB user details
+  - `list/2` - List all DB users
+  - `delete/3` - Delete DB user
+  - `rotate_api_key/3` - Rotate user's API key
+  - `assign_roles/4`, `revoke_roles/4` - Role management
+- **OIDC User Management** (`WeaviateEx.API.Users.OIDC`) - OIDC-backed users:
+  - `get/3` - Get OIDC user details
+  - `list/2` - List OIDC users
+  - `assign_roles/4`, `revoke_roles/4` - Role management
+  - Note: OIDC users cannot be created/deleted via API
+
+#### Additional Vectorizers
+- **Text2VecTransformers** (`WeaviateEx.API.Vectorizers.Text2VecTransformers`) - Local transformer models:
+  - Pooling strategy configuration (`:masked_mean`, `:cls`)
+  - Separate passage/query inference URLs for asymmetric search
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecOllama** (`WeaviateEx.API.Vectorizers.Text2VecOllama`) - Ollama embeddings:
+  - Model selection (nomic-embed-text, mxbai-embed-large, etc.)
+  - Custom API endpoint configuration
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecJinaAI** (`WeaviateEx.API.Vectorizers.Text2VecJinaAI`) - Jina AI embeddings:
+  - Model selection with dimensions support
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecVoyageAI** (`WeaviateEx.API.Vectorizers.Text2VecVoyageAI`) - VoyageAI embeddings:
+  - Truncation support for long inputs
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecPalm** (`WeaviateEx.API.Vectorizers.Text2VecPalm`) - Google PaLM/Vertex AI:
+  - Project ID and model ID configuration
+  - Custom API endpoint support
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecAzureOpenAI** (`WeaviateEx.API.Vectorizers.Text2VecAzureOpenAI`) - Azure OpenAI:
+  - Resource name and deployment ID configuration
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Multi2VecClip** (`WeaviateEx.API.Vectorizers.Multi2VecClip`) - CLIP multimodal:
+  - Image and text field configuration with weights
+  - Custom inference URL support
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Multi2VecGoogle** (`WeaviateEx.API.Vectorizers.Multi2VecGoogle`) - Google multimodal:
+  - Image, text, and video field support
+  - Project ID, location, model ID, dimensions configuration
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Multi2VecCohere** (`WeaviateEx.API.Vectorizers.Multi2VecCohere`) - Cohere multimodal:
+  - Image and text field configuration
+  - Truncation strategy support (NONE, START, END)
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Multi2VecVoyageAI** (`WeaviateEx.API.Vectorizers.Multi2VecVoyageAI`) - VoyageAI multimodal:
+  - Image and text field configuration with weights
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Ref2VecCentroid** (`WeaviateEx.API.Vectorizers.Ref2VecCentroid`) - Reference centroid:
+  - Reference properties configuration
+  - Centroid calculation method (mean)
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+
 ## [0.5.0] - 2025-12-28
 
 ### Added

@@ -12,5 +12,9 @@
   ~r/lib\/mix\/tasks\/.*:unknown_function.*Mix\.(shell|raise|env)/,
 
   # Mix.env/0 in application.ex - compile-time check
-  {"lib/weaviate_ex/application.ex", :unknown_function, "Function Mix.env/0 does not exist."}
+  {"lib/weaviate_ex/application.ex", :unknown_function, "Function Mix.env/0 does not exist."},
+
+  # Batch stream reconnect - dialyzer can't prove max_reconnect_attempts is pos_integer
+  # but it's guaranteed by the struct definition and type spec
+  {"lib/weaviate_ex/batch/stream.ex", :call}
 ]

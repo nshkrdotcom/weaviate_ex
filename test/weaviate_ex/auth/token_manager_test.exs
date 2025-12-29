@@ -1,6 +1,8 @@
 defmodule WeaviateEx.Auth.TokenManagerTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias WeaviateEx.Auth.OIDC.Config
   alias WeaviateEx.Auth.TokenManager
 
@@ -130,14 +132,21 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
       }
 
       name = :"token_manager_test_#{:rand.uniform(100_000)}"
-      {:ok, pid} = TokenManager.start_link(oidc_config: oidc_config, auth: auth, name: name)
 
-      # Wait for initial token fetch attempt
-      Process.sleep(100)
+      log =
+        capture_log(fn ->
+          {:ok, pid} = TokenManager.start_link(oidc_config: oidc_config, auth: auth, name: name)
 
-      assert {:error, :no_token} = TokenManager.get_token(pid)
+          # Wait for initial token fetch attempt
+          Process.sleep(100)
 
-      GenServer.stop(pid)
+          assert {:error, :no_token} = TokenManager.get_token(pid)
+
+          GenServer.stop(pid)
+        end)
+
+      assert log =~ "TokenManager: Failed to fetch token"
+      assert log =~ "invalid_client"
     end
   end
 

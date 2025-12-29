@@ -44,7 +44,8 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - **Multi-Tenancy** - HOT, COLD, FROZEN, OFFLOADED states
 - **Batch Operations** - Error tracking, retry logic, rate limit handling
 - **Embedded Mode** - Run Weaviate without Docker
-- **15+ Vectorizers** - OpenAI, Cohere, VoyageAI, Jina, and more
+- **20+ Vectorizers** - OpenAI, Cohere, VoyageAI, Jina, Transformers, Ollama, and more
+- **gRPC Batch Streaming** - High-performance bidirectional streaming (Weaviate 1.34+)
 
 ## Table of Contents
 
@@ -666,6 +667,82 @@ IO.puts("Rate: #{stats.rate_per_second}/s")
 IO.puts("Failed: #{stats.failed_count}")
 ```
 
+### gRPC Batch Streaming (v0.6.0+)
+
+Bidirectional gRPC streaming for high-throughput batch operations (requires Weaviate 1.34+):
+
+```elixir
+alias WeaviateEx.Batch.Stream
+
+# Create a streaming batch session
+{:ok, stream} = Stream.new(client, "Article",
+  buffer_size: 200,           # Objects per batch
+  flush_interval_ms: 1000,    # Auto-flush interval
+  auto_flush: true            # Enable automatic flushing
+)
+
+# Add objects to the stream buffer
+{:ok, stream} = Stream.add(stream, %{
+  properties: %{title: "Article 1", content: "Content 1"}
+})
+
+{:ok, stream} = Stream.add(stream, %{
+  properties: %{title: "Article 2", content: "Content 2"}
+})
+
+# Manually flush when buffer reaches threshold
+{:ok, stream} = Stream.flush(stream)
+
+# Add many objects efficiently
+objects = Enum.map(1..1000, fn i ->
+  %{properties: %{title: "Article #{i}", content: "Content #{i}"}}
+end)
+
+{:ok, stream} = Enum.reduce(objects, {:ok, stream}, fn obj, {:ok, s} ->
+  Stream.add(s, obj)
+end)
+
+# Close stream and get final results
+{:ok, results} = Stream.close(stream)
+
+# Results include success/failure for each object
+Enum.each(results, fn result ->
+  case result do
+    %{status: :success, uuid: uuid} ->
+      IO.puts("Created: #{uuid}")
+    %{status: :failed, error: error} ->
+      IO.puts("Failed: #{error}")
+  end
+end)
+```
+
+#### Low-Level gRPC Streaming
+
+For advanced use cases, access the underlying gRPC stream directly:
+
+```elixir
+alias WeaviateEx.GRPC.Services.BatchStream
+
+# Open a bidirectional stream
+{:ok, stream_handle} = BatchStream.open(client.grpc_channel)
+
+# Send objects
+:ok = BatchStream.send_objects(stream_handle, [
+  %{collection: "Article", properties: %{title: "Test"}, uuid: nil, vector: nil}
+])
+
+# Send cross-references
+:ok = BatchStream.send_references(stream_handle, [
+  %{from_collection: "Article", from_uuid: "...", to_collection: "Author", to_uuid: "..."}
+])
+
+# Receive results
+{:ok, results} = BatchStream.receive_results(stream_handle, timeout: 5000)
+
+# Close the stream
+:ok = BatchStream.close(stream_handle)
+```
+
 ### Queries & Vector Search
 
 Powerful query capabilities with semantic search:
@@ -1144,6 +1221,33 @@ permissions = [
 :ok = RBAC.delete_role(client, "article-editor")
 ```
 
+#### Role Scope Permissions (v0.6.0+)
+
+Fine-grained permissions with collection/tenant/shard scopes:
+
+```elixir
+alias WeaviateEx.API.RBAC.{Scope, Permission}
+
+# Create scopes for fine-grained access
+scope = Scope.collection("Article")
+  |> Scope.with_tenants(["tenant-a", "tenant-b"])
+
+# Or use wildcard access
+all_scope = Scope.all_collections()
+
+# Build permissions with scopes
+permissions = [
+  Permission.read_collection("Article"),
+  Permission.manage_data("Article"),
+  Permission.new(:data, :read, scope: Scope.collection("*")),
+  Permission.new(:tenants, :create, scope: scope)
+]
+
+# Convenience methods for common patterns
+admin_permissions = Permission.admin()  # Full access
+viewer_permissions = Permission.viewer()  # Read-only access
+```
+
 #### Permission Types
 
 | Type | Actions | Description |
@@ -1193,6 +1297,25 @@ IO.puts("API Key: #{user.api_key}")
 
 # Delete user
 :ok = Users.delete(client, "john.doe")
+```
+
+#### Separate DB and OIDC User Management (v0.6.0+)
+
+For fine-grained control, use the specialized modules:
+
+```elixir
+alias WeaviateEx.API.Users.{DB, OIDC}
+
+# Database-backed users (full lifecycle management)
+{:ok, user} = DB.create(client, "db-user")
+{:ok, new_key} = DB.rotate_api_key(client, "db-user")
+{:ok, _} = DB.delete(client, "db-user")
+
+# OIDC users (managed externally, role assignment only)
+{:ok, users} = OIDC.list(client)
+{:ok, user} = OIDC.get(client, "oidc-user@example.com")
+:ok = OIDC.assign_roles(client, "oidc-user@example.com", ["viewer"])
+:ok = OIDC.revoke_roles(client, "oidc-user@example.com", ["admin"])
 ```
 
 ### Group Management
