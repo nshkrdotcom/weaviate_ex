@@ -5,7 +5,26 @@ defmodule WeaviateEx.Batch do
   Batch operations are much more efficient than individual operations
   when dealing with large numbers of objects.
 
-  ## Examples
+  ## Batch Modes
+
+  This module supports three batching modes:
+
+  - **Fixed size** (default): Simple fixed-size batching
+  - **Dynamic**: Auto-adjusting batch sizes based on server queue depth
+  - **Rate-limited**: Respects vectorizer API rate limits
+
+  ## Context Manager Pattern
+
+  Use `with_batch/3` for a context-manager style interface that automatically
+  flushes on exit:
+
+      {:ok, results} = WeaviateEx.Batch.with_batch(client, [batch_size: 100], fn batch ->
+        batch
+        |> WeaviateEx.Batch.add_object("Article", %{title: "Article 1"})
+        |> WeaviateEx.Batch.add_object("Article", %{title: "Article 2"})
+      end)
+
+  ## Direct API Examples
 
       # Batch create objects
       objects = [
@@ -43,10 +62,20 @@ defmodule WeaviateEx.Batch do
 
   import WeaviateEx, only: [request: 4]
   alias WeaviateEx.API.Batch, as: BatchAPI
+  alias WeaviateEx.Batch.{Dynamic, RateLimited, FixedSize}
+  alias WeaviateEx.Batch.ErrorTracking.Results
 
   @type batch_objects :: list(map())
   @type batch_references :: list(map())
   @type delete_criteria :: map()
+  @type batch_mode :: :fixed | :dynamic | :rate_limited
+  @type batch_context :: %{
+          mode: batch_mode(),
+          client: WeaviateEx.Client.t(),
+          batcher: FixedSize.t() | pid(),
+          opts: keyword(),
+          results: Results.t()
+        }
 
   @doc """
   Creates multiple objects in a single batch request.
@@ -188,4 +217,417 @@ defmodule WeaviateEx.Batch do
 
     fun.(client)
   end
+
+  # ============================================================================
+  # Context Manager Pattern
+  # ============================================================================
+
+  @doc """
+  Execute batch operations within a context that automatically flushes on exit.
+
+  This provides a Python-like context manager pattern for batch operations.
+  All buffered objects and references are automatically flushed when the
+  callback completes.
+
+  ## Parameters
+
+    - `client` - WeaviateEx.Client
+    - `opts` - Batch options
+    - `fun` - Callback function receiving the batch context
+
+  ## Options
+
+    - `:mode` - Batch mode: `:fixed` (default), `:dynamic`, or `:rate_limited`
+    - `:batch_size` - Number of objects per batch (default: 100)
+    - `:on_flush` - Callback function called after each batch flush
+    - `:on_error` - Callback function called on errors
+    - `:consistency_level` - Consistency level for requests
+
+  ### Dynamic Mode Options
+
+    - `:min_batch_size` - Minimum batch size (default: 10)
+    - `:max_batch_size` - Maximum batch size (default: 1000)
+    - `:concurrent_requests` - Number of concurrent requests (default: 2)
+
+  ### Rate-Limited Mode Options
+
+    - `:requests_per_minute` - Maximum requests per minute (default: 60)
+    - `:retry_on_rate_limit` - Retry on rate limit errors (default: false)
+    - `:max_retries` - Maximum retry attempts (default: 5)
+
+  ## Examples
+
+      # Simple fixed-size batching
+      {:ok, results} = Batch.with_batch(client, [batch_size: 100], fn batch ->
+        batch
+        |> Batch.add_object("Article", %{title: "Test 1"})
+        |> Batch.add_object("Article", %{title: "Test 2"})
+      end)
+
+      # Dynamic batching
+      {:ok, results} = Batch.with_batch(client, [mode: :dynamic], fn batch ->
+        Enum.reduce(objects, batch, fn obj, b ->
+          Batch.add_object(b, "Article", obj)
+        end)
+      end)
+
+      # Rate-limited batching
+      {:ok, results} = Batch.with_batch(client, [
+        mode: :rate_limited,
+        requests_per_minute: 30
+      ], fn batch ->
+        batch
+        |> Batch.add_object("Article", %{title: "Test"})
+      end)
+  """
+  @spec with_batch(WeaviateEx.Client.t(), keyword(), (batch_context() -> batch_context())) ::
+          {:ok, Results.t()} | {:error, WeaviateEx.Error.t()}
+  def with_batch(client, opts, fun) when is_function(fun, 1) do
+    mode = Keyword.get(opts, :mode, :fixed)
+
+    case mode do
+      :fixed -> with_fixed_batch(client, opts, fun)
+      :dynamic -> with_dynamic_batch(client, opts, fun)
+      :rate_limited -> with_rate_limited_batch(client, opts, fun)
+    end
+  end
+
+  @doc """
+  Add an object to the batch context.
+
+  Used within a `with_batch/3` callback.
+
+  ## Options
+
+    - `:uuid` - Custom UUID for the object
+    - `:vector` - Custom vector for the object
+    - `:tenant` - Tenant name for multi-tenant collections
+
+  ## Examples
+
+      Batch.with_batch(client, [], fn batch ->
+        batch
+        |> Batch.add_object("Article", %{title: "Test"})
+        |> Batch.add_object("Article", %{title: "Test 2"}, uuid: "custom-uuid")
+      end)
+  """
+  @spec add_object(batch_context(), String.t(), map(), keyword()) :: batch_context()
+  def add_object(ctx, collection, properties, opts \\ [])
+
+  def add_object(%{mode: :fixed} = ctx, collection, properties, opts) do
+    batcher = FixedSize.add_object(ctx.batcher, collection, properties, opts)
+
+    # Check if we need to auto-flush
+    if FixedSize.ready_to_send?(batcher) do
+      case flush_fixed_batch(ctx.client, batcher, ctx.opts) do
+        {:ok, new_results, _} ->
+          %{
+            ctx
+            | batcher: FixedSize.clear(batcher),
+              results: merge_results(ctx.results, new_results)
+          }
+
+        {:error, _} ->
+          # Keep buffer, let final flush handle it
+          %{ctx | batcher: batcher}
+      end
+    else
+      %{ctx | batcher: batcher}
+    end
+  end
+
+  def add_object(%{mode: mode} = ctx, collection, properties, opts)
+      when mode in [:dynamic, :rate_limited] do
+    module = if mode == :dynamic, do: Dynamic, else: RateLimited
+    :ok = module.add_object(ctx.batcher, collection, properties, opts)
+    ctx
+  end
+
+  @doc """
+  Add a reference to the batch context.
+
+  Used within a `with_batch/3` callback.
+
+  ## Options
+
+    - `:tenant` - Tenant name for multi-tenant collections
+
+  ## Examples
+
+      Batch.with_batch(client, [], fn batch ->
+        batch
+        |> Batch.add_reference("Article", "uuid-1", "hasAuthor", "author-uuid")
+      end)
+  """
+  @spec add_reference(batch_context(), String.t(), String.t(), String.t(), String.t(), keyword()) ::
+          batch_context()
+  def add_reference(ctx, collection, from_uuid, property, to_uuid, opts \\ [])
+
+  def add_reference(%{mode: :fixed} = ctx, collection, from_uuid, property, to_uuid, opts) do
+    batcher = FixedSize.add_reference(ctx.batcher, collection, from_uuid, property, to_uuid, opts)
+    %{ctx | batcher: batcher}
+  end
+
+  def add_reference(%{mode: mode} = ctx, collection, from_uuid, property, to_uuid, opts)
+      when mode in [:dynamic, :rate_limited] do
+    module = if mode == :dynamic, do: Dynamic, else: RateLimited
+    :ok = module.add_reference(ctx.batcher, collection, from_uuid, property, to_uuid, opts)
+    ctx
+  end
+
+  @doc """
+  Explicitly flush the current batch within a context.
+
+  Returns updated context with flushed results.
+
+  ## Examples
+
+      Batch.with_batch(client, [], fn batch ->
+        batch = Batch.add_object(batch, "Article", %{title: "Test 1"})
+        {:ok, batch, _results} = Batch.flush(batch)
+        batch = Batch.add_object(batch, "Article", %{title: "Test 2"})
+        batch
+      end)
+  """
+  @spec flush(batch_context()) ::
+          {:ok, batch_context(), Results.t()} | {:error, WeaviateEx.Error.t()}
+  def flush(%{mode: :fixed} = ctx) do
+    case flush_fixed_batch(ctx.client, ctx.batcher, ctx.opts) do
+      {:ok, results, _} ->
+        new_ctx = %{
+          ctx
+          | batcher: FixedSize.clear(ctx.batcher),
+            results: merge_results(ctx.results, results)
+        }
+
+        {:ok, new_ctx, results}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  def flush(%{mode: mode} = ctx) when mode in [:dynamic, :rate_limited] do
+    module = if mode == :dynamic, do: Dynamic, else: RateLimited
+
+    case module.flush(ctx.batcher) do
+      {:ok, results} ->
+        new_ctx = %{ctx | results: merge_results(ctx.results, results)}
+        {:ok, new_ctx, results}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  # ============================================================================
+  # Private Context Manager Helpers
+  # ============================================================================
+
+  defp with_fixed_batch(client, opts, fun) do
+    batch_size = Keyword.get(opts, :batch_size, 100)
+    batcher = FixedSize.new(batch_size: batch_size)
+
+    ctx = %{
+      mode: :fixed,
+      client: client,
+      batcher: batcher,
+      opts: opts,
+      results: Results.new()
+    }
+
+    final_ctx = fun.(ctx)
+
+    # Final flush
+    case flush_fixed_batch(client, final_ctx.batcher, opts) do
+      {:ok, results, _} ->
+        {:ok, merge_results(final_ctx.results, results)}
+
+      {:error, error} ->
+        if Keyword.get(opts, :on_error), do: Keyword.get(opts, :on_error).(error)
+        {:error, error}
+    end
+  end
+
+  defp with_dynamic_batch(client, opts, fun) do
+    {:ok, pid} = Dynamic.start(Keyword.put(opts, :client, client))
+
+    ctx = %{
+      mode: :dynamic,
+      client: client,
+      batcher: pid,
+      opts: opts,
+      results: Results.new()
+    }
+
+    try do
+      final_ctx = fun.(ctx)
+      {:ok, results} = Dynamic.stop(pid)
+      {:ok, merge_results(final_ctx.results, results)}
+    catch
+      kind, reason ->
+        Dynamic.stop(pid)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    end
+  end
+
+  defp with_rate_limited_batch(client, opts, fun) do
+    {:ok, pid} = RateLimited.start(Keyword.put(opts, :client, client))
+
+    ctx = %{
+      mode: :rate_limited,
+      client: client,
+      batcher: pid,
+      opts: opts,
+      results: Results.new()
+    }
+
+    try do
+      final_ctx = fun.(ctx)
+      {:ok, results} = RateLimited.stop(pid)
+      {:ok, merge_results(final_ctx.results, results)}
+    catch
+      kind, reason ->
+        RateLimited.stop(pid)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    end
+  end
+
+  defp flush_fixed_batch(client, batcher, opts) do
+    objects = FixedSize.get_batches(batcher) |> List.flatten()
+    references = FixedSize.get_reference_batches(batcher) |> List.flatten()
+
+    results = Results.new()
+
+    # Flush objects
+    {results, error} =
+      if length(objects) > 0 do
+        formatted_objects = format_objects(objects)
+
+        case BatchAPI.create_objects(client, formatted_objects, Keyword.put(opts, :summary, true)) do
+          {:ok, %BatchAPI.Result{} = result} ->
+            {merge_results(results, convert_api_result(result)), nil}
+
+          {:error, error} ->
+            {results, error}
+        end
+      else
+        {results, nil}
+      end
+
+    if error do
+      {:error, error}
+    else
+      # Flush references
+      if length(references) > 0 do
+        formatted_refs = format_references(references)
+
+        case WeaviateEx.Client.request(
+               client,
+               :post,
+               "/v1/batch/references",
+               formatted_refs,
+               opts
+             ) do
+          {:ok, ref_results} when is_list(ref_results) ->
+            ref_processed = process_reference_results(ref_results)
+            {:ok, merge_results(results, ref_processed), batcher}
+
+          {:error, error} ->
+            {:error, error}
+        end
+      else
+        if Keyword.get(opts, :on_flush), do: Keyword.get(opts, :on_flush).(results)
+        {:ok, results, batcher}
+      end
+    end
+  end
+
+  defp format_objects(objects) do
+    Enum.map(objects, fn obj ->
+      base = %{
+        "class" => obj.collection,
+        "properties" => obj.properties
+      }
+
+      base
+      |> maybe_put("id", obj.uuid)
+      |> maybe_put("vector", obj.vector)
+      |> maybe_put("tenant", obj.tenant)
+    end)
+  end
+
+  defp format_references(references) do
+    Enum.map(references, fn ref ->
+      %{
+        "from" => "weaviate://localhost/#{ref.collection}/#{ref.from_uuid}/#{ref.property}",
+        "to" => "weaviate://localhost/#{ref.collection}/#{ref.to_uuid}"
+      }
+    end)
+  end
+
+  defp convert_api_result(%BatchAPI.Result{} = result) do
+    alias WeaviateEx.Batch.ErrorTracking.ErrorObject
+
+    base = Results.new()
+
+    successful_results =
+      result.successful
+      |> Enum.with_index()
+      |> Enum.reduce(base, fn {obj, idx}, acc ->
+        Results.add_success(acc, idx, obj["id"])
+      end)
+
+    Enum.reduce(result.errors, successful_results, fn error, acc ->
+      error_obj = %ErrorObject{
+        message: Enum.join(error.messages, "; "),
+        object: error.raw,
+        original_uuid: error.id
+      }
+
+      Results.add_error(acc, error_obj)
+    end)
+  end
+
+  defp process_reference_results(results) do
+    alias WeaviateEx.Batch.ErrorTracking.ErrorObject
+
+    Enum.reduce(results, Results.new(), fn result, acc ->
+      case result do
+        %{"status" => "SUCCESS"} ->
+          Results.add_success(acc, map_size(acc.successful_uuids), "reference")
+
+        %{"status" => "FAILED"} = failed ->
+          error = %ErrorObject{
+            message: Map.get(failed, "result", %{}) |> Map.get("errors", "Unknown error"),
+            object: failed
+          }
+
+          Results.add_error(acc, error)
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp merge_results(acc, new) do
+    # Offset the new UUIDs to avoid key collisions
+    base_index = map_size(acc.successful_uuids)
+
+    offset_uuids =
+      for {idx, uuid} <- new.successful_uuids, into: %{} do
+        {base_index + idx, uuid}
+      end
+
+    %Results{
+      failed_objects: acc.failed_objects ++ new.failed_objects,
+      failed_references: acc.failed_references ++ new.failed_references,
+      successful_uuids: Map.merge(acc.successful_uuids, offset_uuids),
+      elapsed_seconds: acc.elapsed_seconds + new.elapsed_seconds
+    }
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

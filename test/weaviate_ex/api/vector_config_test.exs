@@ -457,4 +457,334 @@ defmodule WeaviateEx.API.VectorConfigTest do
       assert VectorConfig.valid_distance?(:invalid) == false
     end
   end
+
+  describe "scalar quantization (SQ) with all options" do
+    test "SQ with training_limit option" do
+      config =
+        VectorConfig.scalar_quantization(
+          enabled: true,
+          training_limit: 50_000,
+          rescore_limit: 100,
+          cache: true
+        )
+
+      assert config["sq"]["enabled"] == true
+      assert config["sq"]["trainingLimit"] == 50_000
+      assert config["sq"]["rescoreLimit"] == 100
+      assert config["sq"]["cache"] == true
+    end
+
+    test "SQ with default values" do
+      config = VectorConfig.scalar_quantization(enabled: true)
+
+      assert config["sq"]["enabled"] == true
+      refute Map.has_key?(config["sq"], "trainingLimit")
+      refute Map.has_key?(config["sq"], "rescoreLimit")
+      refute Map.has_key?(config["sq"], "cache")
+    end
+
+    test "sq/1 alias function with all options" do
+      config =
+        VectorConfig.sq(
+          enabled: true,
+          training_limit: 100_000,
+          rescore_limit: 200,
+          cache: false
+        )
+
+      assert config["sq"]["enabled"] == true
+      assert config["sq"]["trainingLimit"] == 100_000
+      assert config["sq"]["rescoreLimit"] == 200
+      assert config["sq"]["cache"] == false
+    end
+  end
+
+  describe "rotational quantization (RQ)" do
+    test "RQ with all options" do
+      config =
+        VectorConfig.rotational_quantization(
+          enabled: true,
+          cache: true,
+          bits: 8,
+          rescore_limit: 200
+        )
+
+      assert config["rq"]["enabled"] == true
+      assert config["rq"]["cache"] == true
+      assert config["rq"]["bits"] == 8
+      assert config["rq"]["rescoreLimit"] == 200
+    end
+
+    test "RQ with default enabled true" do
+      config = VectorConfig.rotational_quantization()
+
+      assert config["rq"]["enabled"] == true
+    end
+
+    test "RQ with training_limit option" do
+      config =
+        VectorConfig.rotational_quantization(
+          enabled: true,
+          training_limit: 75_000
+        )
+
+      assert config["rq"]["enabled"] == true
+      assert config["rq"]["trainingLimit"] == 75_000
+    end
+
+    test "rq/1 alias function" do
+      config =
+        VectorConfig.rq(
+          cache: true,
+          bits: 4,
+          rescore_limit: 150
+        )
+
+      assert config["rq"]["enabled"] == true
+      assert config["rq"]["cache"] == true
+      assert config["rq"]["bits"] == 4
+      assert config["rq"]["rescoreLimit"] == 150
+    end
+
+    test "with_rotational_quantization builder function" do
+      config =
+        VectorConfig.new("TestCollection")
+        |> VectorConfig.with_hnsw_index()
+        |> VectorConfig.with_rotational_quantization(bits: 8, cache: true)
+
+      assert config["vectorIndexConfig"]["rq"]["enabled"] == true
+      assert config["vectorIndexConfig"]["rq"]["bits"] == 8
+      assert config["vectorIndexConfig"]["rq"]["cache"] == true
+    end
+  end
+
+  describe "dynamic vector index with configs" do
+    test "dynamic index with HNSW and Flat sub-configs" do
+      config =
+        VectorConfig.dynamic_index(
+          distance: :cosine,
+          threshold: 5_000,
+          hnsw: %{
+            "ef" => 100,
+            "efConstruction" => 128,
+            "maxConnections" => 64
+          },
+          flat: %{
+            "vectorCacheMaxObjects" => 50_000
+          }
+        )
+
+      assert config["vectorIndexType"] == "dynamic"
+      assert config["vectorIndexConfig"]["distance"] == "cosine"
+      assert config["vectorIndexConfig"]["threshold"] == 5_000
+      assert config["vectorIndexConfig"]["hnsw"]["ef"] == 100
+      assert config["vectorIndexConfig"]["hnsw"]["efConstruction"] == 128
+      assert config["vectorIndexConfig"]["hnsw"]["maxConnections"] == 64
+      assert config["vectorIndexConfig"]["flat"]["vectorCacheMaxObjects"] == 50_000
+    end
+
+    test "dynamic index with only threshold" do
+      config = VectorConfig.dynamic_index(threshold: 15_000)
+
+      assert config["vectorIndexType"] == "dynamic"
+      assert config["vectorIndexConfig"]["threshold"] == 15_000
+      refute Map.has_key?(config["vectorIndexConfig"], "hnsw")
+      refute Map.has_key?(config["vectorIndexConfig"], "flat")
+    end
+
+    test "dynamic index defaults" do
+      config = VectorConfig.dynamic_index()
+
+      assert config["vectorIndexType"] == "dynamic"
+      assert config["vectorIndexConfig"]["distance"] == "cosine"
+      assert config["vectorIndexConfig"]["threshold"] == 10_000
+    end
+
+    test "dynamic index with quantizer" do
+      config =
+        VectorConfig.dynamic_index(
+          threshold: 8_000,
+          hnsw: %{
+            "ef" => 100,
+            "quantizer" => %{"bq" => %{"enabled" => true}}
+          }
+        )
+
+      assert config["vectorIndexType"] == "dynamic"
+      assert config["vectorIndexConfig"]["hnsw"]["quantizer"]["bq"]["enabled"] == true
+    end
+  end
+
+  describe "HNSW filter_strategy option" do
+    test "HNSW with sweeping filter strategy" do
+      config = VectorConfig.hnsw_index(filter_strategy: :sweeping)
+
+      assert config["vectorIndexType"] == "hnsw"
+      assert config["vectorIndexConfig"]["filterStrategy"] == "sweeping"
+    end
+
+    test "HNSW with acorn filter strategy" do
+      config = VectorConfig.hnsw_index(filter_strategy: :acorn)
+
+      assert config["vectorIndexType"] == "hnsw"
+      assert config["vectorIndexConfig"]["filterStrategy"] == "acorn"
+    end
+
+    test "HNSW with filter_strategy and other options" do
+      config =
+        VectorConfig.hnsw_index(
+          ef: 200,
+          max_connections: 48,
+          filter_strategy: :acorn,
+          distance: :dot
+        )
+
+      assert config["vectorIndexConfig"]["ef"] == 200
+      assert config["vectorIndexConfig"]["maxConnections"] == 48
+      assert config["vectorIndexConfig"]["filterStrategy"] == "acorn"
+      assert config["vectorIndexConfig"]["distance"] == "dot"
+    end
+
+    test "HNSW without filter_strategy uses default" do
+      config = VectorConfig.hnsw_index(ef: 100)
+
+      refute Map.has_key?(config["vectorIndexConfig"], "filterStrategy")
+    end
+
+    test "HNSW with string filter_strategy value" do
+      config = VectorConfig.hnsw_index(filter_strategy: "acorn")
+
+      assert config["vectorIndexConfig"]["filterStrategy"] == "acorn"
+    end
+  end
+
+  describe "replication config with deletion_strategy" do
+    test "replication with delete_on_conflict strategy" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(
+          factor: 3,
+          deletion_strategy: :delete_on_conflict
+        )
+
+      assert config["replicationConfig"]["factor"] == 3
+      assert config["replicationConfig"]["deletionStrategy"] == "DeleteOnConflict"
+    end
+
+    test "replication with no_automated_resolution strategy" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(
+          factor: 2,
+          deletion_strategy: :no_automated_resolution
+        )
+
+      assert config["replicationConfig"]["factor"] == 2
+      assert config["replicationConfig"]["deletionStrategy"] == "NoAutomatedResolution"
+    end
+
+    test "replication with time_based_resolution strategy" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(
+          factor: 3,
+          deletion_strategy: :time_based_resolution
+        )
+
+      assert config["replicationConfig"]["factor"] == 3
+      assert config["replicationConfig"]["deletionStrategy"] == "TimeBasedResolution"
+    end
+
+    test "replication with async_enabled option" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(
+          factor: 2,
+          async_enabled: true
+        )
+
+      assert config["replicationConfig"]["factor"] == 2
+      assert config["replicationConfig"]["asyncEnabled"] == true
+    end
+
+    test "replication with all options" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(
+          factor: 3,
+          async_enabled: true,
+          deletion_strategy: :time_based_resolution
+        )
+
+      assert config["replicationConfig"]["factor"] == 3
+      assert config["replicationConfig"]["asyncEnabled"] == true
+      assert config["replicationConfig"]["deletionStrategy"] == "TimeBasedResolution"
+    end
+
+    test "replication without deletion_strategy uses default" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(factor: 2)
+
+      assert config["replicationConfig"]["factor"] == 2
+      refute Map.has_key?(config["replicationConfig"], "deletionStrategy")
+    end
+
+    test "replication with string deletion_strategy value" do
+      config =
+        VectorConfig.new("ReplicatedCollection")
+        |> VectorConfig.with_replication_config(
+          factor: 3,
+          deletion_strategy: "DeleteOnConflict"
+        )
+
+      assert config["replicationConfig"]["deletionStrategy"] == "DeleteOnConflict"
+    end
+  end
+
+  describe "HNSW with quantizer option" do
+    test "HNSW with RQ quantizer via quantizer option" do
+      config =
+        VectorConfig.hnsw_index(
+          ef: 100,
+          quantizer: VectorConfig.rq(bits: 8, cache: true)
+        )
+
+      assert config["vectorIndexConfig"]["rq"]["enabled"] == true
+      assert config["vectorIndexConfig"]["rq"]["bits"] == 8
+      assert config["vectorIndexConfig"]["rq"]["cache"] == true
+    end
+
+    test "HNSW with SQ quantizer via quantizer option" do
+      config =
+        VectorConfig.hnsw_index(
+          ef: 100,
+          quantizer: VectorConfig.sq(training_limit: 50_000)
+        )
+
+      assert config["vectorIndexConfig"]["sq"]["enabled"] == true
+      assert config["vectorIndexConfig"]["sq"]["trainingLimit"] == 50_000
+    end
+
+    test "HNSW with PQ quantizer via quantizer option" do
+      config =
+        VectorConfig.hnsw_index(
+          ef: 100,
+          quantizer: VectorConfig.product_quantization(enabled: true, segments: 96)
+        )
+
+      assert config["vectorIndexConfig"]["pq"]["enabled"] == true
+      assert config["vectorIndexConfig"]["pq"]["segments"] == 96
+    end
+
+    test "HNSW with BQ quantizer via quantizer option" do
+      config =
+        VectorConfig.hnsw_index(
+          ef: 100,
+          quantizer: VectorConfig.binary_quantization(enabled: true)
+        )
+
+      assert config["vectorIndexConfig"]["bq"]["enabled"] == true
+    end
+  end
 end

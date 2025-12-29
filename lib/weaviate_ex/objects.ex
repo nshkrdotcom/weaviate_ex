@@ -25,12 +25,17 @@ defmodule WeaviateEx.Objects do
       {:ok, object} =
         WeaviateEx.Objects.get("Article", uuid, tenant: "tenant-a", include: ["_additional"])
 
-      # Update an object (full replacement)
+      # Update an object (full replacement using PUT)
       {:ok, updated} = WeaviateEx.Objects.update("Article", uuid, %{
         properties: %{title: "Updated Title"}
       })
 
-      # Patch an object (partial update)
+      # Replace an object (semantic alias for update, uses PUT)
+      {:ok, replaced} = WeaviateEx.Objects.replace("Article", uuid, %{
+        properties: %{title: "Replaced Title", content: "New Content"}
+      })
+
+      # Patch an object (partial update using PATCH)
       {:ok, patched} = WeaviateEx.Objects.patch("Article", uuid, %{
         properties: %{title: "New Title"}
       })
@@ -38,7 +43,7 @@ defmodule WeaviateEx.Objects do
       # Delete an object
       {:ok, _} = WeaviateEx.Objects.delete("Article", uuid)
 
-      # Check if object exists
+      # Check if object exists (using HEAD request)
       {:ok, true} = WeaviateEx.Objects.exists?("Article", uuid)
   """
 
@@ -181,6 +186,52 @@ defmodule WeaviateEx.Objects do
   end
 
   defp clean_properties_for_update(data), do: data
+
+  @doc """
+  Replaces an object entirely (full replacement using PUT).
+
+  This is a semantic alias for `update/4` that makes the intent clearer.
+  Use this when you want to replace the entire object with new data.
+
+  All existing properties will be replaced with the new data.
+  Properties not included in the new data will be removed.
+
+  ## Parameters
+
+  - `collection_name` - The collection containing the object
+  - `id` - The object UUID
+  - `data` - Complete object data to replace with
+  - `opts` - Additional options (consistency_level, tenant, keep_vector)
+
+  ## Options
+
+  - `:consistency_level` - Write consistency level ("ONE", "QUORUM", "ALL")
+  - `:tenant` - Tenant name for multi-tenant collections
+  - `:keep_vector` - If true, keeps the existing vector (default: false)
+
+  ## Examples
+
+      # Replace entire object
+      {:ok, replaced} = Objects.replace("Article", uuid, %{
+        properties: %{title: "New Title", content: "New Content"}
+      })
+
+      # Replace with new vector
+      {:ok, replaced} = Objects.replace("Article", uuid, %{
+        properties: %{title: "New Title"},
+        vector: [0.1, 0.2, 0.3]
+      })
+
+      # Replace but keep existing vector
+      {:ok, replaced} = Objects.replace("Article", uuid, %{
+        properties: %{title: "New Title"}
+      }, keep_vector: true)
+  """
+  @spec replace(collection_name(), object_id(), object_data(), Keyword.t()) ::
+          WeaviateEx.api_response()
+  def replace(collection_name, id, data, opts \\ []) do
+    update(collection_name, id, data, opts)
+  end
 
   @doc """
   Patches an object (partial update).

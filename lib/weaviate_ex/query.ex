@@ -27,9 +27,23 @@ defmodule WeaviateEx.Query do
         |> WeaviateEx.Query.fields(["title"])
 
       {:ok, results} = WeaviateEx.Query.execute(query)
+
+      # Cursor pagination with sorting
+      alias WeaviateEx.Query.Sort
+
+      query = WeaviateEx.Query.get("Article")
+        |> WeaviateEx.Query.fields(["title"])
+        |> WeaviateEx.Query.sort(Sort.by_id())
+        |> WeaviateEx.Query.limit(100)
+        |> WeaviateEx.Query.after_cursor("last-cursor-id")
+
+      {:ok, results} = WeaviateEx.Query.execute(query)
   """
 
   import WeaviateEx, only: [request: 4]
+
+  alias WeaviateEx.Query.QueryReference
+  alias WeaviateEx.Query.Sort
 
   defstruct collection: nil,
             fields: [],
@@ -41,7 +55,11 @@ defmodule WeaviateEx.Query do
             bm25: nil,
             limit: nil,
             offset: nil,
-            additional: []
+            additional: [],
+            auto_limit: nil,
+            after: nil,
+            sort: nil,
+            return_references: nil
 
   @type t :: %__MODULE__{}
 
@@ -220,8 +238,130 @@ defmodule WeaviateEx.Query do
       |> WeaviateEx.Query.additional(["id", "certainty", "distance"])
   """
   @spec additional(t(), list(String.t())) :: t()
-  def additional(%__MODULE__{} = query, fields) when is_list(fields) do
-    %{query | additional: fields}
+  def additional(%__MODULE__{} = query, add_fields) when is_list(add_fields) do
+    %{query | additional: add_fields}
+  end
+
+  @doc """
+  Sets the auto-limit for automatically cutting off results at natural score boundaries.
+
+  Auto-limit is useful with vector searches where you want to stop returning results
+  when there's a natural gap in similarity scores. The value represents the number
+  of "jumps" or score discontinuities to allow before cutting off.
+
+  ## Examples
+
+      # Cut off after 3 natural score boundaries
+      query
+      |> WeaviateEx.Query.auto_limit(3)
+
+      # Combined with near_text for semantic search with auto-cutoff
+      query
+      |> WeaviateEx.Query.near_text("machine learning")
+      |> WeaviateEx.Query.auto_limit(2)
+  """
+  @spec auto_limit(t(), pos_integer()) :: t()
+  def auto_limit(%__MODULE__{} = query, value) when is_integer(value) and value > 0 do
+    %{query | auto_limit: value}
+  end
+
+  @doc """
+  Sets the cursor for cursor-based pagination.
+
+  Cursor pagination is more memory-efficient than offset-based pagination for large
+  result sets. Use the cursor value from the last object's `_additional.id` to
+  fetch the next page.
+
+  Note: Cursor pagination requires consistent sorting. Use with `sort/2` for
+  deterministic results, typically sorting by ID.
+
+  ## Examples
+
+      # First page
+      query
+      |> WeaviateEx.Query.limit(100)
+      |> WeaviateEx.Query.sort(Sort.by_id())
+
+      # Subsequent pages using the last ID as cursor
+      query
+      |> WeaviateEx.Query.limit(100)
+      |> WeaviateEx.Query.sort(Sort.by_id())
+      |> WeaviateEx.Query.after_cursor("last-object-id")
+  """
+  @spec after_cursor(t(), String.t()) :: t()
+  def after_cursor(%__MODULE__{} = query, cursor) when is_binary(cursor) do
+    %{query | after: cursor}
+  end
+
+  @doc """
+  Sets the sort criteria for the query.
+
+  Accepts sort criteria built using the `WeaviateEx.Query.Sort` module.
+  Sort can be used for ordering results and is required for deterministic
+  cursor-based pagination.
+
+  ## Examples
+
+      # Sort by a single property
+      query
+      |> WeaviateEx.Query.sort(Sort.by_property("title", :asc))
+
+      # Sort by ID (useful for cursor pagination)
+      query
+      |> WeaviateEx.Query.sort(Sort.by_id())
+
+      # Sort by creation time descending (newest first)
+      query
+      |> WeaviateEx.Query.sort(Sort.by_creation_time(:desc))
+
+      # Sort by update time
+      query
+      |> WeaviateEx.Query.sort(Sort.by_update_time(:desc))
+
+      # Multiple sort criteria
+      query
+      |> WeaviateEx.Query.sort(
+        Sort.by_property("category")
+        |> Sort.then_by_property("title", :desc)
+      )
+  """
+  @spec sort(t(), Sort.t()) :: t()
+  def sort(%__MODULE__{} = query, sort_criteria) when is_list(sort_criteria) do
+    %{query | sort: sort_criteria}
+  end
+
+  @doc """
+  Sets the cross-references to fetch with the query results.
+
+  Allows fetching related objects through cross-reference properties.
+  Use `WeaviateEx.Query.QueryReference` to build reference configurations
+  with property selection and nested reference support.
+
+  ## Examples
+
+      # Simple reference
+      ref = QueryReference.new("hasAuthor", return_properties: ["name"])
+      query
+      |> WeaviateEx.Query.return_references([ref])
+
+      # Reference with nested references
+      nested = QueryReference.new("hasPublisher", return_properties: ["name"])
+      ref = QueryReference.new("hasAuthor",
+        return_properties: ["name", "bio"],
+        return_references: [nested]
+      )
+      query
+      |> WeaviateEx.Query.return_references([ref])
+
+      # Multiple references
+      author_ref = QueryReference.new("hasAuthor", return_properties: ["name"])
+      category_ref = QueryReference.new("hasCategory", return_properties: ["name"])
+      query
+      |> WeaviateEx.Query.return_references([author_ref, category_ref])
+  """
+  @spec return_references(t(), [QueryReference.t()]) :: t()
+  def return_references(%__MODULE__{} = query, refs) when is_list(refs) do
+    %{query | return_references: refs}
   end
 
   @doc """
@@ -265,7 +405,7 @@ defmodule WeaviateEx.Query do
   # Build GraphQL query string
   defp build_graphql(%__MODULE__{} = query) do
     collection = query.collection
-    fields_str = build_fields(query.fields, query.additional)
+    fields_str = build_fields(query.fields, query.additional, query.return_references)
     args = build_args(query)
 
     """
@@ -279,9 +419,19 @@ defmodule WeaviateEx.Query do
     """
   end
 
-  defp build_fields(fields, additional) do
-    field_list = fields ++ build_additional_fields(additional)
+  defp build_fields(fields, additional, return_references) do
+    field_list =
+      fields ++
+        build_additional_fields(additional) ++
+        build_reference_fields(return_references)
+
     Enum.join(field_list, "\n          ")
+  end
+
+  defp build_reference_fields(nil), do: []
+
+  defp build_reference_fields(refs) when is_list(refs) do
+    [QueryReference.list_to_graphql(refs)]
   end
 
   defp build_additional_fields([]), do: []
@@ -296,6 +446,9 @@ defmodule WeaviateEx.Query do
       []
       |> maybe_add_limit(query.limit)
       |> maybe_add_offset(query.offset)
+      |> maybe_add_auto_limit(query.auto_limit)
+      |> maybe_add_after(query.after)
+      |> maybe_add_sort(query.sort)
       |> maybe_add_where(query.where)
       |> maybe_add_near_text(query.near_text)
       |> maybe_add_near_vector(query.near_vector)
@@ -312,10 +465,22 @@ defmodule WeaviateEx.Query do
   defp maybe_add_offset(args, nil), do: args
   defp maybe_add_offset(args, value), do: args ++ ["offset: #{value}"]
 
+  defp maybe_add_auto_limit(args, nil), do: args
+  defp maybe_add_auto_limit(args, value), do: args ++ ["autoLimit: #{value}"]
+
+  defp maybe_add_after(args, nil), do: args
+  defp maybe_add_after(args, cursor), do: args ++ ["after: \"#{cursor}\""]
+
+  defp maybe_add_sort(args, nil), do: args
+
+  defp maybe_add_sort(args, sort_criteria) do
+    args ++ ["sort: #{Sort.to_graphql(sort_criteria)}"]
+  end
+
   defp maybe_add_where(args, nil), do: args
 
-  defp maybe_add_where(args, where) do
-    args ++ ["where: #{map_to_graphql(where)}"]
+  defp maybe_add_where(args, where_clause) do
+    args ++ ["where: #{map_to_graphql(where_clause)}"]
   end
 
   defp maybe_add_near_text(args, nil), do: args

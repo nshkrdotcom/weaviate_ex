@@ -32,6 +32,9 @@ defmodule WeaviateEx.Collections do
       # Delete a collection
       {:ok, _} = WeaviateEx.Collections.delete("Article")
 
+      # Delete all collections
+      {:ok, deleted_count: 3} = WeaviateEx.Collections.delete_all()
+
       # Add a property to an existing collection
       {:ok, property} = WeaviateEx.Collections.add_property("Article", %{
         name: "author",
@@ -314,6 +317,85 @@ defmodule WeaviateEx.Collections do
     path = "/v1/schema/#{name}/multi-tenancy/#{action}"
     body = %{"enabled" => enabled}
     request(:post, path, body, opts)
+  end
+
+  @doc """
+  Deletes all collections from the schema.
+
+  This operation lists all collections and then deletes each one.
+  Returns a result with the count of successfully deleted collections.
+
+  **Warning**: This operation is irreversible and will delete all data
+  in all collections.
+
+  ## Options
+
+  - All standard connection options (`:base_url`, `:api_key`, etc.)
+
+  ## Return Value
+
+  Returns `{:ok, keyword()}` with the following keys:
+  - `:deleted_count` - Number of collections successfully deleted
+  - `:failed_count` - Number of collections that failed to delete (only present if > 0)
+  - `:failures` - List of failure details (only present if there were failures)
+
+  ## Examples
+
+      # Delete all collections
+      {:ok, deleted_count: 3} = WeaviateEx.Collections.delete_all()
+
+      # With partial failures
+      {:ok, [deleted_count: 2, failed_count: 1, failures: [...]]} = WeaviateEx.Collections.delete_all()
+
+      # Handle connection errors
+      {:error, %WeaviateEx.Error{type: :connection_error}} = WeaviateEx.Collections.delete_all()
+  """
+  @spec delete_all(Keyword.t()) :: {:ok, keyword()} | {:error, WeaviateEx.Error.t()}
+  def delete_all(opts \\ []) do
+    case list(opts) do
+      {:ok, %{"classes" => classes}} when is_list(classes) ->
+        collection_names = Enum.map(classes, & &1["class"])
+        {:ok, build_delete_result(collection_names, opts)}
+
+      {:ok, _} ->
+        {:ok, [deleted_count: 0]}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp build_delete_result(collection_names, opts) do
+    results = Enum.map(collection_names, &delete_collection(&1, opts))
+
+    deleted = Enum.count(results, &match?({:ok, _}, &1))
+    failures = Enum.filter(results, &match?({:error, _, _}, &1))
+    failed_count = length(failures)
+
+    [deleted_count: deleted]
+    |> maybe_add_failed_count(failed_count)
+    |> maybe_add_failures(failures, failed_count)
+  end
+
+  defp delete_collection(collection_name, opts) do
+    case delete(collection_name, opts) do
+      {:ok, _} -> {:ok, collection_name}
+      {:error, error} -> {:error, collection_name, error}
+    end
+  end
+
+  defp maybe_add_failed_count(result, 0), do: result
+  defp maybe_add_failed_count(result, count), do: Keyword.put(result, :failed_count, count)
+
+  defp maybe_add_failures(result, _failures, 0), do: result
+
+  defp maybe_add_failures(result, failures, _count) do
+    failure_details =
+      Enum.map(failures, fn {:error, name, error} ->
+        [collection: name, error: error]
+      end)
+
+    Keyword.put(result, :failures, failure_details)
   end
 
   defp merge_config(config, opts) when is_map(config) do

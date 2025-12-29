@@ -129,5 +129,34 @@ defmodule WeaviateEx.Batch.ErrorTracking do
     def set_elapsed(%__MODULE__{} = results, seconds) when is_number(seconds) do
       %{results | elapsed_seconds: seconds}
     end
+
+    @doc """
+    Get statistics summary for the results.
+
+    Returns a map with processed, successful, and failed counts.
+    """
+    @spec statistics(t()) :: %{
+            processed: non_neg_integer(),
+            successful: non_neg_integer(),
+            failed: non_neg_integer()
+          }
+    def statistics(%__MODULE__{} = results) do
+      successful = map_size(results.successful_uuids)
+      failed = length(results.failed_objects) + length(results.failed_references)
+
+      %{
+        processed: successful + failed,
+        successful: successful,
+        failed: failed
+      }
+    end
+
+    @doc """
+    Get errors list.
+    """
+    @spec errors(t()) :: [ErrorObject.t() | ErrorReference.t()]
+    def errors(%__MODULE__{} = results) do
+      results.failed_objects ++ results.failed_references
+    end
   end
 end

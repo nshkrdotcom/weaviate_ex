@@ -73,6 +73,7 @@ defmodule WeaviateEx.Batch.BatchRetry do
 
     - `:max_retries` - Maximum retry attempts (default: 5)
     - `:on_retry` - Callback function called before each retry with (attempt, error)
+    - `:sleep` - Function used to sleep between retries (default: `&Process.sleep/1`)
 
   ## Examples
 
@@ -85,35 +86,36 @@ defmodule WeaviateEx.Batch.BatchRetry do
   def with_retry(fun, opts \\ []) when is_function(fun, 0) do
     max = Keyword.get(opts, :max_retries, @max_retries)
     on_retry = Keyword.get(opts, :on_retry)
+    sleep = Keyword.get(opts, :sleep, &Process.sleep/1)
 
-    do_retry(fun, 0, max, on_retry)
+    do_retry(fun, 0, max, on_retry, sleep)
   end
 
-  defp do_retry(_fun, attempt, max, _on_retry) when attempt >= max do
+  defp do_retry(_fun, attempt, max, _on_retry, _sleep) when attempt >= max do
     {:error, :max_retries_exceeded}
   end
 
-  defp do_retry(fun, attempt, max, on_retry) do
+  defp do_retry(fun, attempt, max, on_retry, sleep) do
     case fun.() do
       {:ok, result} ->
         {:ok, result}
 
       {:error, %{message: message} = error} when is_binary(message) ->
-        maybe_retry(fun, attempt, max, on_retry, message, error)
+        maybe_retry(fun, attempt, max, on_retry, sleep, message, error)
 
       {:error, message} when is_binary(message) ->
-        maybe_retry(fun, attempt, max, on_retry, message, message)
+        maybe_retry(fun, attempt, max, on_retry, sleep, message, message)
 
       {:error, _reason} = error ->
         error
     end
   end
 
-  defp maybe_retry(fun, attempt, max, on_retry, message, error) do
+  defp maybe_retry(fun, attempt, max, on_retry, sleep, message, error) do
     if rate_limit_error?(message) do
       if on_retry, do: on_retry.(attempt, error)
-      Process.sleep(calculate_backoff(attempt))
-      do_retry(fun, attempt + 1, max, on_retry)
+      sleep.(calculate_backoff(attempt))
+      do_retry(fun, attempt + 1, max, on_retry, sleep)
     else
       {:error, error}
     end

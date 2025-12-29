@@ -321,7 +321,18 @@ defmodule WeaviateEx.API.VectorConfig do
 
   ## Index Configurations
 
-  @doc "Configure HNSW index"
+  @doc """
+  Configure HNSW index.
+
+  ## Options
+    - `:distance` - Distance metric (:cosine, :dot, :l2_squared, :hamming, :manhattan)
+    - `:ef` - Query time ef parameter (default: -1)
+    - `:ef_construction` - Index build ef parameter (default: 128)
+    - `:max_connections` - Maximum connections per node (default: 32)
+    - `:filter_strategy` - Filter strategy (:sweeping or :acorn)
+    - `:quantizer` - Quantization config (PQ, BQ, SQ, or RQ)
+  """
+  @spec hnsw_index(keyword()) :: map()
   def hnsw_index(opts \\ []) do
     distance = Keyword.get(opts, :distance, :cosine) |> distance_to_string()
 
@@ -336,7 +347,9 @@ defmodule WeaviateEx.API.VectorConfig do
     index_config = maybe_add_vector_cache(index_config, opts)
     index_config = maybe_add_flat_search_cutoff(index_config, opts)
     index_config = maybe_add_cleanup_interval(index_config, opts)
+    index_config = maybe_add_filter_strategy(index_config, opts)
     index_config = maybe_add_quantization(index_config, opts)
+    index_config = maybe_add_quantizer_option(index_config, opts)
 
     %{
       "vectorIndexType" => "hnsw",
@@ -435,7 +448,24 @@ defmodule WeaviateEx.API.VectorConfig do
     }
   end
 
-  @doc "Configure Scalar Quantization (SQ)"
+  @doc """
+  Configure Scalar Quantization (SQ).
+
+  SQ provides memory reduction through scalar quantization of vectors.
+
+  ## Options
+    - `:enabled` - Enable SQ (default: false)
+    - `:cache` - Enable cache (optional)
+    - `:rescore_limit` - Number of candidates to rescore (optional)
+    - `:training_limit` - Number of vectors to train on (optional)
+
+  ## Example
+
+      VectorConfig.hnsw_index(
+        quantizer: VectorConfig.scalar_quantization(enabled: true, cache: true)
+      )
+  """
+  @spec scalar_quantization(keyword()) :: map()
   def scalar_quantization(opts \\ []) do
     sq_config = %{
       "enabled" => Keyword.get(opts, :enabled, false)
@@ -449,13 +479,34 @@ defmodule WeaviateEx.API.VectorConfig do
       end
 
     sq_config =
-      if cache = Keyword.get(opts, :cache) do
-        Map.put(sq_config, "cache", cache)
+      if Keyword.has_key?(opts, :cache) do
+        Map.put(sq_config, "cache", Keyword.get(opts, :cache))
+      else
+        sq_config
+      end
+
+    sq_config =
+      if training_limit = Keyword.get(opts, :training_limit) do
+        Map.put(sq_config, "trainingLimit", training_limit)
       else
         sq_config
       end
 
     %{"sq" => sq_config}
+  end
+
+  @doc """
+  Alias for `scalar_quantization/1` with enabled defaulting to true.
+
+  ## Example
+
+      VectorConfig.hnsw_index(
+        quantizer: VectorConfig.sq(training_limit: 50_000)
+      )
+  """
+  @spec sq(keyword()) :: map()
+  def sq(opts \\ []) do
+    scalar_quantization(Keyword.put_new(opts, :enabled, true))
   end
 
   ## Builder Pattern Functions
@@ -516,6 +567,13 @@ defmodule WeaviateEx.API.VectorConfig do
     update_in(config, ["vectorIndexConfig"], &Map.merge(&1, sq_config))
   end
 
+  @doc "Add Rotational Quantization to configuration"
+  @spec with_rotational_quantization(map(), keyword()) :: map()
+  def with_rotational_quantization(config, opts \\ []) do
+    rq_config = rotational_quantization(opts)
+    update_in(config, ["vectorIndexConfig"], &Map.merge(&1, rq_config))
+  end
+
   @doc "Add properties to configuration"
   def with_properties(config, properties) do
     Map.put(config, "properties", properties)
@@ -531,14 +589,37 @@ defmodule WeaviateEx.API.VectorConfig do
     Map.put(config, "vectorConfig", vectors_with_string_keys)
   end
 
-  @doc "Add replication configuration"
+  @doc """
+  Add replication configuration.
+
+  ## Options
+    - `:factor` - Number of replicas (default: 1)
+    - `:async_enabled` - Enable async replication (v1.26.0+, optional)
+    - `:deletion_strategy` - Conflict resolution strategy (optional)
+      - `:delete_on_conflict` - Delete object on conflict
+      - `:no_automated_resolution` - No automated conflict resolution
+      - `:time_based_resolution` - Use timestamp for resolution
+  """
+  @spec with_replication_config(map(), keyword()) :: map()
   def with_replication_config(config, opts \\ []) do
-    replication_config = %{
-      "factor" => Keyword.get(opts, :factor, 1)
-    }
+    replication_config =
+      %{
+        "factor" => Keyword.get(opts, :factor, 1)
+      }
+      |> maybe_put("asyncEnabled", Keyword.get(opts, :async_enabled))
+      |> maybe_put(
+        "deletionStrategy",
+        format_deletion_strategy(Keyword.get(opts, :deletion_strategy))
+      )
 
     Map.put(config, "replicationConfig", replication_config)
   end
+
+  defp format_deletion_strategy(nil), do: nil
+  defp format_deletion_strategy(:delete_on_conflict), do: "DeleteOnConflict"
+  defp format_deletion_strategy(:no_automated_resolution), do: "NoAutomatedResolution"
+  defp format_deletion_strategy(:time_based_resolution), do: "TimeBasedResolution"
+  defp format_deletion_strategy(strategy) when is_binary(strategy), do: strategy
 
   @doc "Add sharding configuration"
   def with_sharding_config(config, opts \\ []) do
@@ -1102,6 +1183,7 @@ defmodule WeaviateEx.API.VectorConfig do
     - `:cache` - Enable cache (optional)
     - `:bits` - Number of bits for quantization (default: 8)
     - `:rescore_limit` - Number of candidates to rescore (optional)
+    - `:training_limit` - Number of vectors to train on (optional)
 
   ## Example
 
@@ -1109,6 +1191,7 @@ defmodule WeaviateEx.API.VectorConfig do
         quantizer: VectorConfig.rotational_quantization(bits: 8, cache: true)
       )
   """
+  @spec rotational_quantization(keyword()) :: map()
   def rotational_quantization(opts \\ []) do
     rq_config =
       %{
@@ -1117,8 +1200,23 @@ defmodule WeaviateEx.API.VectorConfig do
       |> maybe_put("cache", Keyword.get(opts, :cache))
       |> maybe_put("bits", Keyword.get(opts, :bits))
       |> maybe_put("rescoreLimit", Keyword.get(opts, :rescore_limit))
+      |> maybe_put("trainingLimit", Keyword.get(opts, :training_limit))
 
     %{"rq" => rq_config}
+  end
+
+  @doc """
+  Alias for `rotational_quantization/1`.
+
+  ## Example
+
+      VectorConfig.hnsw_index(
+        quantizer: VectorConfig.rq(bits: 8, cache: true)
+      )
+  """
+  @spec rq(keyword()) :: map()
+  def rq(opts \\ []) do
+    rotational_quantization(Keyword.put_new(opts, :enabled, true))
   end
 
   ## Helper Functions
@@ -1246,11 +1344,35 @@ defmodule WeaviateEx.API.VectorConfig do
         config
       end
 
-    if sq_enabled = Keyword.get(opts, :sq_enabled) do
-      sq_config = scalar_quantization(enabled: sq_enabled)
-      Map.merge(config, sq_config)
+    config =
+      if sq_enabled = Keyword.get(opts, :sq_enabled) do
+        sq_config = scalar_quantization(enabled: sq_enabled)
+        Map.merge(config, sq_config)
+      else
+        config
+      end
+
+    if rq_enabled = Keyword.get(opts, :rq_enabled) do
+      rq_config = rotational_quantization(enabled: rq_enabled)
+      Map.merge(config, rq_config)
     else
       config
+    end
+  end
+
+  defp maybe_add_filter_strategy(config, opts) do
+    case Keyword.get(opts, :filter_strategy) do
+      nil -> config
+      :sweeping -> Map.put(config, "filterStrategy", "sweeping")
+      :acorn -> Map.put(config, "filterStrategy", "acorn")
+      strategy when is_binary(strategy) -> Map.put(config, "filterStrategy", strategy)
+    end
+  end
+
+  defp maybe_add_quantizer_option(config, opts) do
+    case Keyword.get(opts, :quantizer) do
+      nil -> config
+      quantizer when is_map(quantizer) -> Map.merge(config, quantizer)
     end
   end
 end

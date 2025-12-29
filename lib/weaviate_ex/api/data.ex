@@ -170,6 +170,43 @@ defmodule WeaviateEx.API.Data do
   end
 
   @doc """
+  Replace an object entirely (full replacement using PUT).
+
+  This is a semantic alias for `update/5` that makes the intent clearer.
+  Use this when you want to replace the entire object with new data.
+
+  All existing properties will be replaced with the new data.
+  Properties not included in the new data will be removed.
+
+  ## Parameters
+    * `client` - WeaviateEx client
+    * `collection_name` - Name of the collection
+    * `id` - Object UUID
+    * `data` - Complete object data to replace with
+    * `opts` - Options (`:tenant`, `:consistency_level`, `:keep_vector`)
+
+  ## Examples
+
+      Data.replace(client, "Article", uuid, %{
+        properties: %{"title" => "New Title", "content" => "New Content"}
+      })
+
+      # Replace but keep existing vector
+      Data.replace(client, "Article", uuid, %{
+        properties: %{"title" => "New Title"}
+      }, keep_vector: true)
+
+  ## Returns
+    * `{:ok, object}` - Replaced object
+    * `{:error, Error.t()}` - Error if replace fails
+  """
+  @spec replace(Client.t(), collection_name(), object_id(), object_data(), opts()) ::
+          {:ok, map()} | {:error, Error.t()}
+  def replace(client, collection_name, id, data, opts \\ []) do
+    update(client, collection_name, id, data, opts)
+  end
+
+  @doc """
   Patch an object (partial update).
 
   This merges changes with existing data.
