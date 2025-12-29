@@ -46,6 +46,8 @@ defmodule WeaviateEx.Query do
   alias WeaviateEx.Query.Generate
   alias WeaviateEx.Query.GroupBy
   alias WeaviateEx.Query.Move
+  alias WeaviateEx.Query.NearImage
+  alias WeaviateEx.Query.NearMedia
   alias WeaviateEx.Query.QueryReference
   alias WeaviateEx.Query.Rerank
   alias WeaviateEx.Query.Sort
@@ -56,6 +58,8 @@ defmodule WeaviateEx.Query do
             near_text: nil,
             near_vector: nil,
             near_object: nil,
+            near_image: nil,
+            near_media: nil,
             hybrid: nil,
             bm25: nil,
             limit: nil,
@@ -215,6 +219,83 @@ defmodule WeaviateEx.Query do
     params = if opts[:distance], do: Map.put(params, :distance, opts[:distance]), else: params
 
     %{query | near_object: params}
+  end
+
+  @doc """
+  Performs image-based vector search for multimodal collections.
+
+  Supports multi2vec-clip, multi2vec-bind, and other image vectorizers.
+
+  ## Options
+
+    * `:image` - Base64-encoded image data
+    * `:image_file` - Path to image file (will be read and base64 encoded)
+    * `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+    * `:distance` - Maximum distance threshold
+    * `:target_vectors` - List of named vectors to target
+
+  Either `:image` or `:image_file` must be provided, but not both.
+
+  ## Examples
+
+      # Search by base64 encoded image
+      query
+      |> WeaviateEx.Query.near_image(image: base64_data, certainty: 0.8)
+
+      # Search by file path
+      query
+      |> WeaviateEx.Query.near_image(image_file: "/path/to/image.png")
+
+      # With named vectors
+      query
+      |> WeaviateEx.Query.near_image(image: data, target_vectors: ["image_vector"])
+  """
+  @spec near_image(t(), keyword()) :: t()
+  def near_image(%__MODULE__{} = query, opts) do
+    %{query | near_image: NearImage.new(opts)}
+  end
+
+  @doc """
+  Performs media-based vector search for multimodal collections.
+
+  Supports audio, video, thermal, depth, and IMU data types for
+  multi2vec-bind and similar multimodal vectorizers.
+
+  ## Media Types
+
+    * `:audio` - Audio files (wav, mp3, etc.)
+    * `:video` - Video files (mp4, avi, etc.)
+    * `:thermal` - Thermal imaging data
+    * `:depth` - Depth sensor data
+    * `:imu` - Inertial measurement unit data
+
+  ## Options
+
+    * `:media` - Base64-encoded media data
+    * `:media_file` - Path to media file (will be read and base64 encoded)
+    * `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+    * `:distance` - Maximum distance threshold
+    * `:target_vectors` - List of named vectors to target
+
+  Either `:media` or `:media_file` must be provided, but not both.
+
+  ## Examples
+
+      # Search by audio
+      query
+      |> WeaviateEx.Query.near_media(:audio, media: base64_audio, certainty: 0.7)
+
+      # Search by video file
+      query
+      |> WeaviateEx.Query.near_media(:video, media_file: "/path/to/video.mp4")
+
+      # With named vectors
+      query
+      |> WeaviateEx.Query.near_media(:thermal, media: data, target_vectors: ["thermal_vec"])
+  """
+  @spec near_media(t(), NearMedia.media_type(), keyword()) :: t()
+  def near_media(%__MODULE__{} = query, type, opts) do
+    %{query | near_media: NearMedia.new(type, opts)}
   end
 
   @doc """
@@ -1009,6 +1090,8 @@ defmodule WeaviateEx.Query do
       |> maybe_add_near_text(query.near_text)
       |> maybe_add_near_vector(query.near_vector)
       |> maybe_add_near_object(query.near_object)
+      |> maybe_add_near_image(query.near_image)
+      |> maybe_add_near_media(query.near_media)
       |> maybe_add_hybrid(query.hybrid)
       |> maybe_add_bm25(query.bm25)
       |> maybe_add_group_by(query.group_by)
@@ -1096,6 +1179,18 @@ defmodule WeaviateEx.Query do
 
   defp maybe_add_near_object(args, params) do
     args ++ ["nearObject: #{map_to_graphql(params)}"]
+  end
+
+  defp maybe_add_near_image(args, nil), do: args
+
+  defp maybe_add_near_image(args, %NearImage{} = near_image) do
+    args ++ ["nearImage: #{map_to_graphql(NearImage.to_graphql(near_image))}"]
+  end
+
+  defp maybe_add_near_media(args, nil), do: args
+
+  defp maybe_add_near_media(args, %NearMedia{} = near_media) do
+    args ++ ["nearMedia: #{map_to_graphql(NearMedia.to_graphql(near_media))}"]
   end
 
   defp maybe_add_hybrid(args, nil), do: args

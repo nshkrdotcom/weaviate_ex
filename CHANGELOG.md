@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-12-29
+
+### Added
+
+#### Multimodal Search Support
+- **NearImage Search** (`WeaviateEx.Query.NearImage`) - Image-based vector search for multimodal collections:
+  - `new/1` - Create near_image search with base64 data or file path
+  - Supports `multi2vec-clip`, `multi2vec-bind`, and other image vectorizers
+  - Options: `:image`, `:image_file`, `:certainty`, `:distance`, `:target_vectors`
+  - `encode_image_file/1` - Base64 encode image files
+  - `to_grpc/1`, `to_graphql/1` - Protocol conversion utilities
+- **NearMedia Search** (`WeaviateEx.Query.NearMedia`) - Media-based vector search for multimodal collections:
+  - `new/2` - Create near_media search with type and media data
+  - Supports 5 media types: `:audio`, `:video`, `:thermal`, `:depth`, `:imu`
+  - Options: `:media`, `:media_file`, `:certainty`, `:distance`, `:target_vectors`
+  - `media_types/0` - List all supported media types
+  - `to_grpc/1`, `to_graphql/1` - Protocol conversion utilities
+- **Query Builder Integration**:
+  - `Query.near_image/2` - Add image-based search to query
+  - `Query.near_media/3` - Add media-based search to query
+  - Full GraphQL and gRPC support for multimodal queries
+
+#### gRPC Health Checking
+- **gRPC Health Ping** (`WeaviateEx.GRPC.Services.Health`):
+  - `ping/2` - Lightweight connectivity check returning `:ok` or `{:error, reason}`
+  - Quick connection verification for startup and heartbeat checks
+  - Returns `{:error, :no_channel}` for nil channels
+
+#### Server Version Detection
+- **Version Module** (`WeaviateEx.Version`) - Parse and validate Weaviate server versions:
+  - `parse/1` - Parse version strings (handles "v" prefix, prereleases, build metadata)
+  - `meets_minimum?/2` - Check if version meets minimum requirement
+  - `get_server_version/1` - Extract version from meta endpoint response
+  - `validate_server/1` - Validate against minimum supported version (1.27.0)
+  - `minimum_version/0`, `minimum_version_string/0` - Get minimum version info
+  - `format_version/1` - Format version tuple to string
+
+#### Kubernetes Health Endpoints
+- **K8s Probe Support** (`WeaviateEx.Health`):
+  - `alive?/0`, `alive?/1` - Liveness probe via `/.well-known/live` endpoint
+  - `ready?/0`, `ready?/1` - Readiness probe via `/.well-known/ready` endpoint
+  - Client and no-client variants for flexibility
+  - Returns `{:ok, true}` or `{:ok, false}` for consistent handling
+
+### Changed
+- Updated Query struct to include `near_image` and `near_media` fields
+- Enhanced GraphQL query building with nearImage and nearMedia support
+
+### Test Infrastructure
+
+#### Supertester Integration
+- **Added `supertester ~> 0.4.0`** as test dependency for robust, async-safe testing
+- **Eliminated all Process.sleep calls** from unit tests using supertester-style patterns:
+  - `token_manager_test.exs`: Replaced 8 sleep calls with deterministic state polling
+  - `dynamic_test.exs`: Replaced 1 sleep call with state-based synchronization
+  - `state_test.exs`: Replaced 1 sleep call with explicit time-wait pattern
+- **New Test Helpers** (`WeaviateEx.TestHelpers`):
+  - `wait_until/2` - Polls until condition is met with configurable timeout/interval
+  - `wait_for_genserver_state/3` - Waits for GenServer state to match a condition
+  - `trigger_and_wait/4` - Sends message and waits for state change
+- All 2151 tests pass with full async execution support
+
+### Stats
+- 5 new feature modules/functions
+- Full test coverage for all new features
+- Backward compatible with v0.6.0
+- Test suite now fully async-safe with zero timing-based synchronization
+
 ## [0.6.0] - 2025-12-29
 
 ### Added

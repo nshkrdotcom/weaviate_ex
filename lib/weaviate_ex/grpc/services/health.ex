@@ -29,6 +29,33 @@ defmodule WeaviateEx.GRPC.Services.Health do
         ]
 
   @doc """
+  Ping the gRPC server to verify connectivity.
+
+  This is a lightweight check that returns `:ok` if the server responds,
+  `{:error, reason}` otherwise. Use this for quick connection verification
+  at startup or for heartbeat checks.
+
+  ## Options
+
+    * `:timeout` - Request timeout in milliseconds (default: 5000)
+
+  ## Examples
+
+      :ok = Health.ping(channel)
+      {:error, reason} = Health.ping(nil)
+  """
+  @spec ping(GRPC.Channel.t() | nil, keyword()) :: :ok | {:error, term()}
+  def ping(channel, opts \\ [])
+  def ping(nil, _opts), do: {:error, :no_channel}
+
+  def ping(channel, opts) do
+    case check(channel, opts) do
+      {:ok, :serving} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Check the health status of the Weaviate gRPC server.
 
   Returns `:serving` if the server is healthy, otherwise an error.

@@ -217,6 +217,79 @@ defmodule WeaviateEx.QueryTest do
     end
   end
 
+  describe "near_image/2" do
+    alias WeaviateEx.Query.NearImage
+
+    test "builds near_image search query with base64 data", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "nearImage"
+        assert body_str =~ "base64imagedata"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      query =
+        Query.get("ImageCollection")
+        |> Query.near_image(image: "base64imagedata", certainty: 0.8)
+        |> Query.fields(["name"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "creates NearImage struct with correct values" do
+      query =
+        Query.get("ImageCollection")
+        |> Query.near_image(image: "data", certainty: 0.9, target_vectors: ["image_vec"])
+
+      assert %NearImage{} = query.near_image
+      assert query.near_image.image == "data"
+      assert query.near_image.certainty == 0.9
+      assert query.near_image.target_vectors == ["image_vec"]
+    end
+  end
+
+  describe "near_media/3" do
+    alias WeaviateEx.Query.NearMedia
+
+    test "builds near_media search query for audio", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "nearMedia"
+        assert body_str =~ "base64audiodata"
+        assert body_str =~ "audio"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      query =
+        Query.get("MediaCollection")
+        |> Query.near_media(:audio, media: "base64audiodata", certainty: 0.7)
+        |> Query.fields(["name"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "creates NearMedia struct with correct type and values" do
+      query =
+        Query.get("MediaCollection")
+        |> Query.near_media(:video, media: "data", distance: 0.3)
+
+      assert %NearMedia{} = query.near_media
+      assert query.near_media.type == :video
+      assert query.near_media.media == "data"
+      assert query.near_media.distance == 0.3
+    end
+
+    test "supports all media types" do
+      for type <- [:audio, :video, :thermal, :depth, :imu] do
+        query =
+          Query.get("MediaCollection")
+          |> Query.near_media(type, media: "data")
+
+        assert query.near_media.type == type
+      end
+    end
+  end
+
   describe "integration tests" do
     @tag :integration
     test "executes real GraphQL query" do

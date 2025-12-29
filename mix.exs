@@ -1,7 +1,7 @@
 defmodule WeaviateEx.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.7.0"
   @source_url "https://github.com/nshkrdotcom/weaviate_ex"
 
   def project do
@@ -58,7 +58,8 @@ defmodule WeaviateEx.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mox, "~> 1.1", only: :test},
-      {:bypass, "~> 2.1", only: :test}
+      {:bypass, "~> 2.1", only: :test},
+      {:supertester, "~> 0.4.0", only: :test}
     ]
   end
 

@@ -3,6 +3,7 @@ defmodule WeaviateEx.Batch.DynamicTest do
   use ExUnit.Case, async: false
   import Mox
   import WeaviateEx.Test.Mocks
+  import WeaviateEx.TestHelpers
 
   alias WeaviateEx.Batch.Dynamic
   alias WeaviateEx.Batch.ErrorTracking.Results
@@ -120,8 +121,8 @@ defmodule WeaviateEx.Batch.DynamicTest do
         Dynamic.add_object(pid, "Article", %{title: "Test #{i}"})
       end
 
-      # Wait a bit for async flush to complete
-      Process.sleep(50)
+      # Wait for async flush to complete
+      :ok = wait_for_genserver_state(pid, fn state -> state.objects_buffer == [] end)
 
       state = Dynamic.get_state(pid)
       # Buffer should be empty after flush

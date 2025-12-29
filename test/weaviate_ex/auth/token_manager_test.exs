@@ -2,6 +2,7 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
+  import WeaviateEx.TestHelpers
 
   alias WeaviateEx.Auth.OIDC.Config
   alias WeaviateEx.Auth.TokenManager
@@ -95,7 +96,7 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
       {:ok, pid} = TokenManager.start_link(oidc_config: oidc_config, auth: auth, name: name)
 
       # Wait for initial token fetch
-      Process.sleep(100)
+      :ok = wait_for_genserver_state(pid, fn state -> state.token != nil end)
 
       {:ok, token} = TokenManager.get_token(pid)
 
@@ -137,8 +138,12 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
         capture_log(fn ->
           {:ok, pid} = TokenManager.start_link(oidc_config: oidc_config, auth: auth, name: name)
 
-          # Wait for initial token fetch attempt
-          Process.sleep(100)
+          # Wait for the initial token fetch to complete and fail
+          # Since token stays nil on failure, we poll until get_token returns an error
+          :ok =
+            wait_until(fn ->
+              TokenManager.get_token(pid) == {:error, :no_token}
+            end)
 
           assert {:error, :no_token} = TokenManager.get_token(pid)
 
@@ -181,7 +186,7 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
       {:ok, pid} = TokenManager.start_link(oidc_config: oidc_config, auth: auth, name: name)
 
       # Wait for initial token fetch
-      Process.sleep(100)
+      :ok = wait_for_genserver_state(pid, fn state -> state.token != nil end)
 
       {:ok, access_token} = TokenManager.get_access_token(pid)
       assert access_token == "bearer-token-123"
@@ -239,13 +244,18 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
         )
 
       # Wait for initial token
-      Process.sleep(100)
+      :ok = wait_for_genserver_state(pid, fn state -> state.token != nil end)
 
       {:ok, token1} = TokenManager.get_token(pid)
       assert token1.access_token == "initial-token"
 
-      # Wait for refresh to occur (token expires in 2s, buffer is 1s)
-      Process.sleep(2500)
+      # Trigger refresh manually instead of waiting for timer
+      send(pid, :fetch_token)
+
+      :ok =
+        wait_for_genserver_state(pid, fn state ->
+          state.token && state.token.access_token == "refreshed-token"
+        end)
 
       {:ok, token2} = TokenManager.get_token(pid)
       assert token2.access_token == "refreshed-token"
@@ -291,14 +301,18 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
       {:ok, pid} = TokenManager.start_link(oidc_config: oidc_config, auth: auth, name: name)
 
       # Wait for initial token
-      Process.sleep(100)
+      :ok = wait_for_genserver_state(pid, fn state -> state.token != nil end)
 
       {:ok, token1} = TokenManager.get_token(pid)
       assert token1.access_token == "token-1"
 
       # Force refresh
       :ok = TokenManager.force_refresh(pid)
-      Process.sleep(100)
+
+      :ok =
+        wait_for_genserver_state(pid, fn state ->
+          state.token && state.token.access_token == "token-2"
+        end)
 
       {:ok, token2} = TokenManager.get_token(pid)
       assert token2.access_token == "token-2"
@@ -339,7 +353,7 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
           name: name
         )
 
-      Process.sleep(200)
+      :ok = wait_for_genserver_state(pid, fn state -> state.token != nil end)
 
       {:ok, token} = TokenManager.get_token(pid)
       assert token.access_token == "discovered-token"

@@ -2,8 +2,19 @@ defmodule WeaviateEx.GRPC.Services.HealthTest do
   use ExUnit.Case, async: true
 
   alias Weaviate.V1.{WeaviateHealthCheckRequest, WeaviateHealthCheckResponse}
+  alias WeaviateEx.GRPC.Services.Health
 
   @moduletag :grpc
+
+  describe "ping/2" do
+    test "returns error for nil channel" do
+      assert {:error, :no_channel} = Health.ping(nil)
+    end
+
+    test "returns error for nil channel with options" do
+      assert {:error, :no_channel} = Health.ping(nil, timeout: 1000)
+    end
+  end
 
   describe "WeaviateHealthCheckRequest protobuf" do
     test "can create with service name" do

@@ -1,6 +1,8 @@
 defmodule WeaviateEx.Client.StateTest do
   use ExUnit.Case, async: true
 
+  import WeaviateEx.TestHelpers
+
   alias WeaviateEx.Client.State
 
   describe "new/0" do
@@ -51,8 +53,13 @@ defmodule WeaviateEx.Client.StateTest do
     test "increments request count and updates last_used_at" do
       state = State.new() |> State.connected()
 
-      # Small delay to ensure different timestamps
-      Process.sleep(1)
+      # Wait until time has passed since created_at to ensure different timestamps
+      :ok =
+        wait_until(
+          fn -> DateTime.compare(DateTime.utc_now(), state.created_at) == :gt end,
+          timeout: 100,
+          interval: 1
+        )
 
       updated = State.record_request(state)
 

@@ -8,7 +8,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1793%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Tests](https://img.shields.io/badge/tests-2151%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -34,6 +34,7 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 
 ### Vector Search
 - **Semantic Search** - near_text, near_vector, near_object
+- **Multimodal Search** - near_image (images), near_media (audio, video, thermal, depth, IMU)
 - **Hybrid Search** - Combined keyword + vector with configurable alpha
 - **BM25 Keyword Search** - Full-text search with AND/OR operators
 - **Multi-Vector Support** - ColBERT-style embeddings with Muvera encoding
@@ -55,11 +56,13 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - [Usage](#usage)
   - [Embedded Mode](#embedded-mode)
   - [Health Checks](#health-checks)
+  - [Server Version Detection](#server-version-detection)
   - [Collections (Schema Management)](#collections-schema-management)
   - [Data Operations (CRUD)](#data-operations-crud)
   - [Objects API](#objects-api)
   - [Batch Operations](#batch-operations)
   - [Queries & Vector Search](#queries--vector-search)
+  - [Multimodal Search](#multimodal-search)
   - [Aggregations](#aggregations)
   - [Advanced Filtering](#advanced-filtering)
   - [Vector Configuration](#vector-configuration)
@@ -114,7 +117,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.6.0"}
+    {:weaviate_ex, "~> 0.7.0"}
   ]
 end
 ```
@@ -355,11 +358,72 @@ Check if Weaviate is accessible and get version information:
 {:ok, meta} = WeaviateEx.health_check()
 # => %{"version" => "1.34.0-rc.0", "modules" => %{}}
 
-# Check readiness (can handle requests)
+# Check readiness (can handle requests) - K8s readiness probe
 {:ok, true} = WeaviateEx.ready?()
 
-# Check liveness (service is up)
+# Check liveness (service is up) - K8s liveness probe
 {:ok, true} = WeaviateEx.alive?()
+
+# With explicit client
+{:ok, client} = WeaviateEx.Client.connect(base_url: "http://localhost:8080")
+{:ok, true} = WeaviateEx.Health.alive?(client)
+{:ok, true} = WeaviateEx.Health.ready?(client)
+
+# Wait for Weaviate to become ready (useful for startup scripts)
+:ok = WeaviateEx.Health.wait_until_ready(timeout: 30_000, check_interval: 1000)
+
+# gRPC health ping (v0.7.0+)
+alias WeaviateEx.GRPC.Services.Health, as: GRPCHealth
+:ok = GRPCHealth.ping(client.grpc_channel)
+```
+
+#### Kubernetes Integration
+
+The `alive?` and `ready?` functions use the standard Kubernetes probe endpoints:
+- **Liveness**: `/.well-known/live` - Is the process running?
+- **Readiness**: `/.well-known/ready` - Can the service handle traffic?
+
+```yaml
+# Example K8s deployment liveness/readiness probes
+livenessProbe:
+  httpGet:
+    path: /.well-known/live
+    port: 8080
+readinessProbe:
+  httpGet:
+    path: /.well-known/ready
+    port: 8080
+```
+
+### Server Version Detection
+
+Parse and validate Weaviate server versions (v0.7.0+):
+
+```elixir
+alias WeaviateEx.Version
+
+# Parse version strings
+{:ok, {1, 28, 0}} = Version.parse("1.28.0")
+{:ok, {1, 28, 0}} = Version.parse("v1.28.0-rc1")  # Handles v prefix and prerelease
+
+# Check if version meets minimum requirement
+true = Version.meets_minimum?({1, 28, 0}, {1, 27, 0})
+false = Version.meets_minimum?({1, 26, 0}, {1, 27, 0})
+
+# Validate server version (minimum: 1.27.0)
+:ok = Version.validate_server({1, 28, 0})
+{:error, {:unsupported_version, {1, 20, 0}, {1, 27, 0}}} = Version.validate_server({1, 20, 0})
+
+# Extract version from meta endpoint response
+{:ok, meta} = WeaviateEx.health_check()
+{:ok, {1, 28, 0}} = Version.get_server_version(meta)
+
+# Get minimum supported version
+Version.minimum_version()        # => {1, 27, 0}
+Version.minimum_version_string() # => "1.27.0"
+
+# Format version tuple to string
+"1.28.0" = Version.format_version({1, 28, 0})
 ```
 
 ### Collections (Schema Management)
@@ -811,6 +875,108 @@ query = Query.get("Article")
 
 {:ok, results} = Query.execute(query)
 ```
+
+### Multimodal Search
+
+Search using images, audio, video, and other media types (v0.7.0+):
+
+#### Image Search (near_image)
+
+Search collections using image data with multi2vec-clip, multi2vec-bind, or other image vectorizers:
+
+```elixir
+alias WeaviateEx.Query
+alias WeaviateEx.Query.NearImage
+
+# Search by base64 encoded image
+query = Query.get("ImageCollection")
+  |> Query.near_image(image: base64_image_data, certainty: 0.8)
+  |> Query.fields(["name", "description"])
+  |> Query.limit(10)
+
+{:ok, results} = Query.execute(query, client)
+
+# Search by image file path
+query = Query.get("ImageCollection")
+  |> Query.near_image(image_file: "/path/to/image.png", distance: 0.3)
+  |> Query.fields(["name"])
+
+{:ok, results} = Query.execute(query, client)
+
+# With named vectors (for collections with multiple vector spaces)
+query = Query.get("MultiVectorCollection")
+  |> Query.near_image(
+       image: base64_data,
+       certainty: 0.7,
+       target_vectors: ["image_vector", "clip_vector"]
+     )
+  |> Query.fields(["title"])
+
+{:ok, results} = Query.execute(query, client)
+
+# Using NearImage directly
+near_image = NearImage.new(image: base64_data, certainty: 0.8)
+NearImage.to_graphql(near_image)  # => %{"image" => "...", "certainty" => 0.8}
+NearImage.to_grpc(near_image)     # => %{image: "...", certainty: 0.8}
+
+# Encode image file to base64
+base64_data = NearImage.encode_image_file("/path/to/image.jpg")
+```
+
+#### Media Search (near_media)
+
+Search using audio, video, thermal, depth, or IMU data with multi2vec-bind:
+
+```elixir
+alias WeaviateEx.Query
+alias WeaviateEx.Query.NearMedia
+
+# Search by audio
+query = Query.get("MediaCollection")
+  |> Query.near_media(:audio, media: base64_audio, certainty: 0.7)
+  |> Query.fields(["name", "transcript"])
+  |> Query.limit(5)
+
+{:ok, results} = Query.execute(query, client)
+
+# Search by video file
+query = Query.get("MediaCollection")
+  |> Query.near_media(:video, media_file: "/path/to/video.mp4", distance: 0.3)
+  |> Query.fields(["title", "duration"])
+
+{:ok, results} = Query.execute(query, client)
+
+# Search by thermal imaging data
+query = Query.get("SensorData")
+  |> Query.near_media(:thermal, media: base64_thermal, certainty: 0.8)
+  |> Query.fields(["timestamp", "location"])
+
+{:ok, results} = Query.execute(query, client)
+
+# Supported media types
+NearMedia.media_types()  # => [:audio, :video, :thermal, :depth, :imu]
+
+# Using NearMedia directly
+near_media = NearMedia.new(:audio, media: base64_audio, certainty: 0.7)
+NearMedia.to_graphql(near_media)  # => %{"media" => "...", "type" => "audio", "certainty" => 0.7}
+NearMedia.to_grpc(near_media)     # => %{media: "...", type: :MEDIA_TYPE_AUDIO, certainty: 0.7}
+
+# With target vectors for named vectors
+near_media = NearMedia.new(:depth,
+  media: base64_depth_data,
+  target_vectors: ["depth_vector"]
+)
+```
+
+#### Media Type Reference
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `:audio` | Audio files (wav, mp3, etc.) | Voice search, audio similarity |
+| `:video` | Video files (mp4, avi, etc.) | Video content matching |
+| `:thermal` | Thermal imaging data | Industrial inspection, security |
+| `:depth` | Depth sensor data | 3D object recognition |
+| `:imu` | Inertial measurement unit data | Motion/gesture recognition |
 
 ### Generative Search (RAG)
 
@@ -1548,7 +1714,7 @@ Current test coverage by module:
 - ✅ **Batch Queue**: 25+ tests - Queue operations, failure tracking, re-queue
 - ✅ **Rate Limit Detection**: 20+ tests - Provider patterns, backoff calculation
 
-**Total: 1793 tests passing**
+**Total: 2151 tests passing**
 
 ## Mix Tasks
 
