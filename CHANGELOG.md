@@ -7,40 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-28
+
 ### Added
-- **Object TTL Configuration** (`WeaviateEx.Config.ObjectTTL`)
-  - `delete_by_update_time/2` - Expire objects by last update time
-  - `delete_by_creation_time/2` - Expire objects by creation time
-  - `delete_by_date_property/3` - Expire objects by custom date property
-  - `disable/0` - Disable TTL
-- **New Generative Providers**:
-  - ContextualAI with `system_prompt`, `avoid_commentary`, `max_new_tokens`
-  - XAI (Grok) with `top_p` support
-  - Google Vertex AI and Google Gemini
-  - AWS SageMaker
-- **AWS Service-Specific Vectorizers**:
-  - `text2vec_aws_bedrock/1` - AWS Bedrock embeddings
-  - `text2vec_aws_sagemaker/1` - AWS SageMaker endpoints
-- **Google Service-Specific Vectorizers**:
-  - `text2vec_google_vertex/1` - Google Vertex AI
-  - `text2vec_google_gemini/1` - Google AI Studio (Gemini)
+
+#### Query Enhancements
+- **Move Configuration** (`WeaviateEx.Query.Move`) - Move to/away from concepts in near_text queries
+- **Rerank Configuration** (`WeaviateEx.Query.Rerank`) - Reranking for search results
+- **Target Vectors** (`WeaviateEx.Query.TargetVectors`) - Named vector targeting with combination strategies (sum, average, minimum, manual weights, relative score)
+- **BM25 Operator** (`WeaviateEx.Query.BM25Operator`) - AND/OR operators with minimum_should_match
+- **Hybrid Vector** (`WeaviateEx.Query.HybridVector`) - Vector sub-search for hybrid queries
+- **GroupBy** (`WeaviateEx.Query.GroupBy`) - Result grouping configuration
+- **Metadata Helpers** (`WeaviateEx.Query.Metadata`) - Metadata field selection utilities
+- **Query Reference** (`WeaviateEx.Query.QueryReference`) - Cross-reference query configuration
+
+#### Reference Operations
+- **References API** (`WeaviateEx.API.References`) - Full cross-reference CRUD:
+  - `add/6` - Add single reference
+  - `delete/6` - Delete reference
+  - `replace/6` - Replace all references on a property
+  - `add_many/4` - Batch add references
+- **ReferenceToMulti** (`WeaviateEx.Data.ReferenceToMulti`) - Multi-target reference type with `to_beacons/1`
+
+#### Generative AI Enhancements
+- **Typed Provider Configs** (`WeaviateEx.Generative.Config`) - Full configuration structs for 14 providers:
+  - OpenAI, Azure OpenAI, Anthropic, Cohere
+  - AWS Bedrock/SageMaker, Google Vertex/Gemini
+  - Mistral, Ollama, XAI, ContextualAI, Anyscale
+  - **NEW**: NVIDIA NIM, Databricks, FriendliAI
+- **Generative Results** (`WeaviateEx.Generative.Result`) - Typed result structures:
+  - `Single` - Single prompt result with metadata and debug
+  - `Grouped` - Grouped task result
+  - `GenerativeObject` - Object with generative result
+  - `ResponseParser` - Parse API responses to typed structs
+- **Generative Parameters** (`WeaviateEx.Generative.Parameters`) - Multimodal support:
+  - `SinglePrompt` / `GroupedTask` with image support
+  - `image_properties`, `non_blob_properties` options
+  - `metadata` and `debug` options
+- **20+ AI Providers** - Added nvidia, databricks, friendliai to supported providers
+
+#### Batch Operations
+- **Error Tracking** (`WeaviateEx.Batch.ErrorTracking`) - Detailed error tracking:
+  - `ErrorObject` - Failed object details with retry count
+  - `ErrorReference` - Failed reference details
+  - `Results` - Aggregated results with helpers
+- **Batch Retry** (`WeaviateEx.Batch.BatchRetry`) - Smart retry logic:
+  - Rate limit detection
+  - Exponential backoff calculation
+  - `with_retry/2` wrapper function
+- **Fixed Size Batcher** (`WeaviateEx.Batch.FixedSize`) - Fixed-size batch processor
+
+#### Tenant Extensions
+- `freeze/3` - Set tenant to FROZEN state
+- `offload/3` - Set tenant to OFFLOADED state
+
+#### Multi-Vector Support
+- **Multi-Vector API** (`WeaviateEx.API.MultiVector`) - ColBERT-style embeddings:
+  - `muvera_encoding/1` - Muvera encoding configuration
+  - `multi_vector_config/1` - Multi-vector index configuration
+  - `self_provided/1` - Self-provided multi-vectors
+  - `text2colbert_jinaai/1` - Jina ColBERT vectorizer
+  - `multi2multivec_jinaai/1` - Jina multi-modal vectorizer
+
+#### Vectorizers
 - **New Vectorizers** (Dec 2025 Python client sync):
   - `text2vec_voyageai/1` - VoyageAI (voyage-3.5, voyage-3-large, voyage-context-3)
   - `text2vec_morph/1` - Morph embeddings
   - `text2vec_model2vec/1` - Model2Vec embeddings
-  - `text2colbert_jinaai/1` - ColBERT multi-vector
-  - `multi2multivec_jinaai/1` - Jina multi-modal
+  - `text2vec_aws_bedrock/1` - AWS Bedrock embeddings
+  - `text2vec_aws_sagemaker/1` - AWS SageMaker endpoints
+  - `text2vec_google_vertex/1` - Google Vertex AI
+  - `text2vec_google_gemini/1` - Google AI Studio (Gemini)
   - `reranker_cohere/1` - Cohere reranker with baseURL
+
+#### Other
+- **Object TTL Configuration** (`WeaviateEx.Config.ObjectTTL`)
 - **OpenAI O1/O3 Support**: `verbosity` and `reasoning_effort` parameters
 - **Cohere Enhancements**: `dimensions` parameter for embeddings
-- **CI Infrastructure**: Full GitHub Actions workflow (lint, dialyzer, unit tests, integration tests, publishing)
-- **Documentation**: CONTRIBUTING.md, RELEASING.md, updated CHANGELOG.md
+- **CI Infrastructure**: Full GitHub Actions workflow
 
 ### Changed
 - Updated Docker Compose to Weaviate 1.28.14
 - Copied full CI infrastructure from Python client (`ci/` directory)
 - Added default version to CI start/stop scripts
-- Removed obsolete `version:` from Docker Compose files
+
+### Stats
+- **694 tests passing** (up from 536)
+- Full Python client feature parity for core operations
 
 ## [0.2.0] - 2025-10-19
 

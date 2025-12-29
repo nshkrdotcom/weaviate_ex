@@ -8,18 +8,41 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-694%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
-A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+).
+A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
 ## Features
 
-- **Complete API Coverage** - Collections, objects, batch operations, queries, aggregations, tenants
-- **Type-Safe** - Protocol-based architecture with comprehensive specs
-- **Test-First Design** - 158+ tests with Mox-based mocking for fast, isolated testing
-- **Developer-Friendly** - Intuitive API, dedicated Mix tooling, and helpful error messages
+### Core Capabilities
+- **Complete API Coverage** - Collections, objects, batch operations, queries, aggregations, cross-references, tenants
+- **Type-Safe** - Protocol-based architecture with comprehensive typespecs
+- **Test-First Design** - 694 tests with Mox-based mocking for fast, isolated testing
 - **Production-Ready** - Connection pooling with Finch, proper error handling, health checks
 - **Easy Setup** - First-class Mix tasks for managing local Weaviate stacks
-- **Rich Examples** - 8 runnable examples covering all major features
+
+### Generative AI (RAG) - 20+ Providers
+- **OpenAI** (GPT-4, GPT-3.5, O1/O3 reasoning models)
+- **Anthropic** (Claude 3.5 Sonnet, Claude 3 Opus/Haiku)
+- **Cohere**, **Google Vertex/Gemini**, **AWS Bedrock/SageMaker**
+- **Mistral**, **Ollama**, **XAI (Grok)**, **ContextualAI**
+- **NEW in v0.3**: NVIDIA NIM, Databricks, FriendliAI
+- Typed provider configurations with full parameter support
+- Multimodal generation with image support
+
+### Vector Search
+- **Semantic Search** - near_text, near_vector, near_object
+- **Hybrid Search** - Combined keyword + vector with configurable alpha
+- **BM25 Keyword Search** - Full-text search with AND/OR operators
+- **Multi-Vector Support** - ColBERT-style embeddings with Muvera encoding
+- **Named Vectors** - Multiple vectors per object with targeting strategies
+
+### Advanced Features
+- **Cross-References** - Full CRUD for object relationships
+- **Multi-Tenancy** - HOT, COLD, FROZEN, OFFLOADED states
+- **Batch Operations** - Error tracking, retry logic, rate limit handling
+- **Embedded Mode** - Run Weaviate without Docker
+- **15+ Vectorizers** - OpenAI, Cohere, VoyageAI, Jina, and more
 
 ## Table of Contents
 
@@ -82,7 +105,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.2.0"}
+    {:weaviate_ex, "~> 0.3.0"}
   ]
 end
 ```
@@ -721,8 +744,8 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 **Mock Mode (Default)** - Fast, isolated unit tests:
 - ✅ Uses Mox to mock HTTP/Protocol responses
 - ✅ No Weaviate instance required
-- ✅ Fast execution (~0.1 seconds)
-- ✅ 158+ unit tests
+- ✅ Fast execution (~0.2 seconds)
+- ✅ 694 unit tests
 - ✅ Perfect for TDD and CI/CD
 
 **Integration Mode** - Real Weaviate testing:
@@ -730,7 +753,7 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 - ✅ Validates actual API behavior
 - ✅ Requires Weaviate running locally
 - ✅ Run with `--include integration` flag
-- ✅ 50+ integration tests
+- ✅ 53 integration tests
 
 ### Running Tests
 
@@ -793,12 +816,16 @@ Current test coverage by module:
 - ✅ **Filter System**: 26 tests - All operators, combinators, GraphQL conversion
 - ✅ **Data Operations**: 17 tests - Insert, get, patch, exists, delete with vectors
 - ✅ **Objects API**: 15+ tests - Full CRUD with pagination
-- ✅ **Batch Operations**: 10+ tests - Bulk create, delete with criteria
-- ✅ **Query System**: 20+ tests - GraphQL queries, near_text, hybrid, BM25
+- ✅ **Batch Operations**: 35+ tests - Bulk create, delete, error tracking, retry logic
+- ✅ **Query System**: 60+ tests - GraphQL, near_text, hybrid, BM25, move, rerank, groupBy
 - ✅ **Aggregations**: 15+ tests - Count, statistics, group by
-- ✅ **Tenants**: 12+ tests - Multi-tenancy operations
-- ✅ **Vector Config**: 10+ tests - HNSW, PQ, flat index
-- 🎯 **Total: 158+ tests passing**
+- ✅ **Tenants**: 20+ tests - Multi-tenancy with freeze/offload states
+- ✅ **References**: 10+ tests - Cross-reference CRUD, multi-target references
+- ✅ **Generative AI**: 62 tests - All providers, typed configs, result parsing
+- ✅ **Vector Config**: 15+ tests - HNSW, PQ, flat index, multi-vector
+- ✅ **Multi-Vector**: 10+ tests - ColBERT, Muvera encoding, Jina vectorizers
+
+**Total: 694 tests passing**
 
 ## Mix Tasks
 

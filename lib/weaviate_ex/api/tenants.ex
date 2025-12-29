@@ -190,6 +190,48 @@ defmodule WeaviateEx.API.Tenants do
   end
 
   @doc """
+  Freeze tenant (set to FROZEN status).
+
+  Frozen tenants have their data persisted but are not loaded into memory.
+  This is more aggressive than COLD status.
+
+  ## Examples
+
+      {:ok, _} = Tenants.freeze(client, "Article", "TenantA")
+      {:ok, _} = Tenants.freeze(client, "Article", ["TenantA", "TenantB"])
+
+  ## Returns
+    * `{:ok, [map()]}` - Updated tenants
+    * `{:error, Error.t()}` - Error if update fails
+  """
+  @spec freeze(Client.t(), collection_name(), tenant_names()) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def freeze(client, collection_name, tenant_names) do
+    update(client, collection_name, tenant_names, activity_status: :frozen)
+  end
+
+  @doc """
+  Offload tenant (set to OFFLOADED status).
+
+  Offloaded tenants are moved to cold storage. This is the most aggressive
+  deactivation option and may take longer to reactivate.
+
+  ## Examples
+
+      {:ok, _} = Tenants.offload(client, "Article", "TenantA")
+      {:ok, _} = Tenants.offload(client, "Article", ["TenantA", "TenantB"])
+
+  ## Returns
+    * `{:ok, [map()]}` - Updated tenants
+    * `{:error, Error.t()}` - Error if update fails
+  """
+  @spec offload(Client.t(), collection_name(), tenant_names()) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def offload(client, collection_name, tenant_names) do
+    update(client, collection_name, tenant_names, activity_status: :offloaded)
+  end
+
+  @doc """
   Count total tenants for a collection.
 
   ## Examples
@@ -259,5 +301,6 @@ defmodule WeaviateEx.API.Tenants do
   defp activity_to_string(:hot), do: "HOT"
   defp activity_to_string(:cold), do: "COLD"
   defp activity_to_string(:frozen), do: "FROZEN"
+  defp activity_to_string(:offloaded), do: "OFFLOADED"
   defp activity_to_string(status) when is_binary(status), do: String.upcase(status)
 end

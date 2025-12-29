@@ -1,7 +1,7 @@
 defmodule WeaviateEx.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/nshkrdotcom/weaviate_ex"
 
   def project do
@@ -101,14 +101,52 @@ defmodule WeaviateEx.MixProject do
         "README.md",
         "INSTALL.md",
         "CHANGELOG.md",
-        "LICENSE"
+        "LICENSE",
+        # Guides
+        "guides/getting_started.md",
+        "guides/collections.md",
+        "guides/crud_operations.md",
+        "guides/queries.md",
+        "guides/references.md",
+        "guides/generative_search.md",
+        "guides/multi_tenancy.md",
+        "guides/embedded_mode.md",
+        "guides/vectorizers.md"
       ],
       groups_for_extras: [
-        Guides: ["README.md", "INSTALL.md"],
+        Introduction: ["README.md", "INSTALL.md"],
+        Guides: [
+          "guides/getting_started.md",
+          "guides/collections.md",
+          "guides/crud_operations.md",
+          "guides/queries.md",
+          "guides/references.md",
+          "guides/generative_search.md",
+          "guides/multi_tenancy.md",
+          "guides/embedded_mode.md",
+          "guides/vectorizers.md"
+        ],
         "Release Notes": ["CHANGELOG.md"]
       ],
       groups_for_modules: [
-        "Core API": [WeaviateEx],
+        "Core API": [
+          WeaviateEx,
+          WeaviateEx.Collections,
+          WeaviateEx.Objects,
+          WeaviateEx.Query,
+          WeaviateEx.Batch
+        ],
+        "Advanced API": [
+          WeaviateEx.API.Generative,
+          WeaviateEx.API.References,
+          WeaviateEx.API.Tenants
+        ],
+        Infrastructure: [
+          WeaviateEx.Client,
+          WeaviateEx.Embedded,
+          WeaviateEx.Integrations,
+          WeaviateEx.Error
+        ],
         Application: [WeaviateEx.Application]
       ],
       before_closing_head_tag: fn

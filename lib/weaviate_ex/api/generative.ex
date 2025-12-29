@@ -2,7 +2,7 @@ defmodule WeaviateEx.API.Generative do
   @moduledoc """
   Generative Search (RAG) operations for Phase 2.3.
 
-  Provides AI-powered generation capabilities with 15+ provider integrations:
+  Provides AI-powered generation capabilities with 20+ provider integrations:
   - OpenAI (GPT-4, GPT-3.5, O1, O3 reasoning models, etc.)
   - Anthropic (Claude 3.5 Sonnet, etc.)
   - Cohere
@@ -18,6 +18,9 @@ defmodule WeaviateEx.API.Generative do
   - Voyage AI
   - XAI (Grok)
   - ContextualAI
+  - NVIDIA NIM
+  - Databricks
+  - FriendliAI
   """
 
   alias WeaviateEx.Client
@@ -45,6 +48,9 @@ defmodule WeaviateEx.API.Generative do
           | :voyage
           | :xai
           | :contextualai
+          | :nvidia
+          | :databricks
+          | :friendliai
 
   @valid_providers [
     :openai,
@@ -64,7 +70,10 @@ defmodule WeaviateEx.API.Generative do
     :together,
     :voyage,
     :xai,
-    :contextualai
+    :contextualai,
+    :nvidia,
+    :databricks,
+    :friendliai
   ]
 
   ## Single Prompt Generation
@@ -407,6 +416,9 @@ defmodule WeaviateEx.API.Generative do
   defp provider_to_string(:voyage), do: "voyage"
   defp provider_to_string(:xai), do: "xai"
   defp provider_to_string(:contextualai), do: "contextualai"
+  defp provider_to_string(:nvidia), do: "nvidia"
+  defp provider_to_string(:databricks), do: "databricks"
+  defp provider_to_string(:friendliai), do: "friendliai"
 
   defp validate_provider(nil) do
     {:error, %Error{type: :validation_error, message: "Provider is required"}}

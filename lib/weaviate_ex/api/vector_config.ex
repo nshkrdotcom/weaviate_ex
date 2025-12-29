@@ -718,6 +718,409 @@ defmodule WeaviateEx.API.VectorConfig do
     }
   end
 
+  ## Additional Vectorizers (Gap Analysis Dec 2025)
+
+  @doc """
+  Configure text2vec-ollama vectorizer.
+
+  ## Options
+    - `:model` - Ollama model name
+    - `:api_endpoint` - Ollama API endpoint (default: http://localhost:11434)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_ollama(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("apiEndpoint", Keyword.get(opts, :api_endpoint))
+
+    %{
+      "vectorizer" => "text2vec-ollama",
+      "moduleConfig" => %{
+        "text2vec-ollama" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-mistral vectorizer.
+
+  ## Options
+    - `:model` - Mistral model name
+    - `:base_url` - Base URL for API (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_mistral(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "vectorizer" => "text2vec-mistral",
+      "moduleConfig" => %{
+        "text2vec-mistral" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-nvidia vectorizer.
+
+  ## Options
+    - `:model` - NVIDIA model name
+    - `:base_url` - Base URL for API (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_nvidia(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "vectorizer" => "text2vec-nvidia",
+      "moduleConfig" => %{
+        "text2vec-nvidia" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-jinaai vectorizer.
+
+  ## Options
+    - `:model` - Jina model (e.g., "jina-embeddings-v3", "jina-embeddings-v4")
+    - `:base_url` - API base URL (optional)
+    - `:dimensions` - Output dimensions (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_jinaai(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("dimensions", Keyword.get(opts, :dimensions))
+
+    %{
+      "vectorizer" => "text2vec-jinaai",
+      "moduleConfig" => %{
+        "text2vec-jinaai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-weaviate vectorizer (Weaviate-hosted embeddings).
+
+  ## Options
+    - `:model` - Model name
+    - `:base_url` - Base URL for API (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_weaviate(opts \\ []) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true)
+      }
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "vectorizer" => "text2vec-weaviate",
+      "moduleConfig" => %{
+        "text2vec-weaviate" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-azure-openai vectorizer.
+
+  ## Options
+    - `:resource_name` - Azure resource name (required)
+    - `:deployment_id` - Azure deployment ID (required)
+    - `:base_url` - Custom base URL (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_azure_openai(opts) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true),
+        "resourceName" => Keyword.fetch!(opts, :resource_name),
+        "deploymentId" => Keyword.fetch!(opts, :deployment_id)
+      }
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "vectorizer" => "text2vec-azure-openai",
+      "moduleConfig" => %{
+        "text2vec-azure-openai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure text2vec-databricks vectorizer.
+
+  ## Options
+    - `:endpoint` - Databricks serving endpoint (required)
+    - `:instruction` - Instruction prefix (optional)
+    - `:vectorize_collection_name` - Whether to vectorize the collection name (default: true)
+  """
+  def text2vec_databricks(opts) do
+    config =
+      %{
+        "vectorizeClassName" => Keyword.get(opts, :vectorize_collection_name, true),
+        "endpoint" => Keyword.fetch!(opts, :endpoint)
+      }
+      |> maybe_put("instruction", Keyword.get(opts, :instruction))
+
+    %{
+      "vectorizer" => "text2vec-databricks",
+      "moduleConfig" => %{
+        "text2vec-databricks" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2vec-google (Palm) for multimodal embeddings.
+
+  ## Options
+    - `:project_id` - Google Cloud project ID (required)
+    - `:location` - Model location (required)
+    - `:model` - Model ID (optional)
+    - `:dimensions` - Output dimensions (optional)
+    - `:image_fields` - Image property fields (optional)
+    - `:text_fields` - Text property fields (optional)
+    - `:video_fields` - Video property fields (optional)
+  """
+  def multi2vec_google(opts) do
+    config =
+      %{
+        "projectId" => Keyword.fetch!(opts, :project_id),
+        "location" => Keyword.fetch!(opts, :location)
+      }
+      |> maybe_put("modelId", Keyword.get(opts, :model))
+      |> maybe_put("dimensions", Keyword.get(opts, :dimensions))
+      |> maybe_put("imageFields", format_multi2vec_fields(Keyword.get(opts, :image_fields)))
+      |> maybe_put("textFields", format_multi2vec_fields(Keyword.get(opts, :text_fields)))
+      |> maybe_put("videoFields", format_multi2vec_fields(Keyword.get(opts, :video_fields)))
+
+    %{
+      "vectorizer" => "multi2vec-palm",
+      "moduleConfig" => %{
+        "multi2vec-palm" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2vec-cohere for multimodal embeddings.
+
+  ## Options
+    - `:model` - Cohere model (optional)
+    - `:image_fields` - Image property fields (optional)
+    - `:text_fields` - Text property fields (optional)
+    - `:truncate` - Truncation mode (optional)
+  """
+  def multi2vec_cohere(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("truncate", Keyword.get(opts, :truncate))
+      |> maybe_put("imageFields", format_multi2vec_fields(Keyword.get(opts, :image_fields)))
+      |> maybe_put("textFields", format_multi2vec_fields(Keyword.get(opts, :text_fields)))
+
+    %{
+      "vectorizer" => "multi2vec-cohere",
+      "moduleConfig" => %{
+        "multi2vec-cohere" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2vec-jinaai for multimodal embeddings.
+
+  ## Options
+    - `:model` - Jina model (optional)
+    - `:image_fields` - Image property fields (optional)
+    - `:text_fields` - Text property fields (optional)
+    - `:base_url` - API base URL (optional)
+  """
+  def multi2vec_jinaai(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("imageFields", format_multi2vec_fields(Keyword.get(opts, :image_fields)))
+      |> maybe_put("textFields", format_multi2vec_fields(Keyword.get(opts, :text_fields)))
+
+    %{
+      "vectorizer" => "multi2vec-jinaai",
+      "moduleConfig" => %{
+        "multi2vec-jinaai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2vec-voyageai for multimodal embeddings.
+
+  ## Options
+    - `:model` - VoyageAI model (optional)
+    - `:image_fields` - Image property fields (optional)
+    - `:text_fields` - Text property fields (optional)
+    - `:base_url` - API base URL (optional)
+  """
+  def multi2vec_voyageai(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("imageFields", format_multi2vec_fields(Keyword.get(opts, :image_fields)))
+      |> maybe_put("textFields", format_multi2vec_fields(Keyword.get(opts, :text_fields)))
+
+    %{
+      "vectorizer" => "multi2vec-voyageai",
+      "moduleConfig" => %{
+        "multi2vec-voyageai" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2vec-nvidia for multimodal embeddings.
+
+  ## Options
+    - `:model` - NVIDIA model (optional)
+    - `:image_fields` - Image property fields (optional)
+    - `:text_fields` - Text property fields (optional)
+    - `:base_url` - API base URL (optional)
+  """
+  def multi2vec_nvidia(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("imageFields", format_multi2vec_fields(Keyword.get(opts, :image_fields)))
+      |> maybe_put("textFields", format_multi2vec_fields(Keyword.get(opts, :text_fields)))
+
+    %{
+      "vectorizer" => "multi2vec-nvidia",
+      "moduleConfig" => %{
+        "multi2vec-nvidia" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure multi2vec-aws for multimodal embeddings.
+
+  ## Options
+    - `:model` - AWS model (required)
+    - `:region` - AWS region (required)
+    - `:service` - AWS service (bedrock or sagemaker)
+    - `:image_fields` - Image property fields (optional)
+    - `:text_fields` - Text property fields (optional)
+  """
+  def multi2vec_aws(opts) do
+    config =
+      %{
+        "model" => Keyword.fetch!(opts, :model),
+        "region" => Keyword.fetch!(opts, :region)
+      }
+      |> maybe_put("service", Keyword.get(opts, :service, "bedrock"))
+      |> maybe_put("imageFields", format_multi2vec_fields(Keyword.get(opts, :image_fields)))
+      |> maybe_put("textFields", format_multi2vec_fields(Keyword.get(opts, :text_fields)))
+
+    %{
+      "vectorizer" => "multi2vec-aws",
+      "moduleConfig" => %{
+        "multi2vec-aws" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure img2vec-neural vectorizer for images.
+
+  ## Options
+    - `:image_fields` - Image property names
+  """
+  def img2vec_neural(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("imageFields", Keyword.get(opts, :image_fields))
+
+    %{
+      "vectorizer" => "img2vec-neural",
+      "moduleConfig" => %{
+        "img2vec-neural" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure ref2vec-centroid vectorizer.
+
+  Creates vectors from referenced objects using centroid calculation.
+
+  ## Options
+    - `:reference_properties` - List of reference property names
+  """
+  def ref2vec_centroid(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("referenceProperties", Keyword.get(opts, :reference_properties))
+
+    %{
+      "vectorizer" => "ref2vec-centroid",
+      "moduleConfig" => %{
+        "ref2vec-centroid" => config
+      }
+    }
+  end
+
+  @doc """
+  Configure Rotational Quantization (RQ).
+
+  RQ is an advanced quantization method that uses rotational transformations.
+
+  ## Options
+    - `:enabled` - Enable RQ (default: true)
+    - `:cache` - Enable cache (optional)
+    - `:bits` - Number of bits for quantization (default: 8)
+    - `:rescore_limit` - Number of candidates to rescore (optional)
+
+  ## Example
+
+      VectorConfig.hnsw_index(
+        quantizer: VectorConfig.rotational_quantization(bits: 8, cache: true)
+      )
+  """
+  def rotational_quantization(opts \\ []) do
+    rq_config =
+      %{
+        "enabled" => Keyword.get(opts, :enabled, true)
+      }
+      |> maybe_put("cache", Keyword.get(opts, :cache))
+      |> maybe_put("bits", Keyword.get(opts, :bits))
+      |> maybe_put("rescoreLimit", Keyword.get(opts, :rescore_limit))
+
+    %{"rq" => rq_config}
+  end
+
   ## Helper Functions
 
   @doc "List all supported vectorizers"
@@ -762,6 +1165,16 @@ defmodule WeaviateEx.API.VectorConfig do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp format_multi2vec_fields(nil), do: nil
+
+  defp format_multi2vec_fields(fields) when is_list(fields) do
+    Enum.map(fields, fn
+      field when is_binary(field) -> %{"name" => field}
+      %{name: name} = field -> %{"name" => name} |> maybe_put("weight", field[:weight])
+      field when is_map(field) -> field
+    end)
+  end
 
   defp distance_to_string(:cosine), do: "cosine"
   defp distance_to_string(:dot), do: "dot"

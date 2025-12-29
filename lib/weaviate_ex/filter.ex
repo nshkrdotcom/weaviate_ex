@@ -166,6 +166,67 @@ defmodule WeaviateEx.Filter do
     }
   end
 
+  @doc """
+  Filter by object creation time.
+
+  ## Examples
+
+      Filter.by_creation_time(:greater_than, "2024-01-01T00:00:00Z")
+  """
+  @spec by_creation_time(operator(), String.t()) :: filter()
+  def by_creation_time(operator, datetime) when is_binary(datetime) do
+    %{
+      path: ["_creationTimeUnix"],
+      operator: operator,
+      value_date: datetime
+    }
+  end
+
+  @doc """
+  Filter by object update time.
+
+  ## Examples
+
+      Filter.by_update_time(:greater_than, "2024-01-01T00:00:00Z")
+  """
+  @spec by_update_time(operator(), String.t()) :: filter()
+  def by_update_time(operator, datetime) when is_binary(datetime) do
+    %{
+      path: ["_lastUpdateTimeUnix"],
+      operator: operator,
+      value_date: datetime
+    }
+  end
+
+  @doc """
+  Filter by reference count.
+
+  ## Examples
+
+      Filter.by_ref_count("hasAuthor", :greater_than, 0)
+  """
+  @spec by_ref_count(String.t(), operator(), integer()) :: filter()
+  def by_ref_count(property, operator, count) when is_integer(count) do
+    %{
+      path: [property],
+      operator: operator,
+      value_int: count
+    }
+  end
+
+  @doc """
+  Contains none operator (array contains none of the values).
+
+  ## Examples
+
+      Filter.contains_none("tags", ["draft", "archived"])
+  """
+  @spec contains_none(String.t(), [String.t()]) :: filter()
+  def contains_none(property, values) when is_list(values) do
+    # ContainsNone is NOT(ContainsAny)
+    not_(contains_any(property, values))
+  end
+
   ## Combinators
 
   @doc """

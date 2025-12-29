@@ -264,6 +264,24 @@ defmodule WeaviateEx.API.TenantsTest do
 
       assert {:ok, _} = Tenants.activate(client, "Article", ["TenantA", "TenantB"])
     end
+
+    test "freeze/3 sets tenant to FROZEN", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, _path, body, _opts ->
+        assert hd(body)["activityStatus"] == "FROZEN"
+        {:ok, [%{"name" => "TenantA", "activityStatus" => "FROZEN"}]}
+      end)
+
+      assert {:ok, _} = Tenants.freeze(client, "Article", "TenantA")
+    end
+
+    test "offload/3 sets tenant to OFFLOADED", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, _path, body, _opts ->
+        assert hd(body)["activityStatus"] == "OFFLOADED"
+        {:ok, [%{"name" => "TenantA", "activityStatus" => "OFFLOADED"}]}
+      end)
+
+      assert {:ok, _} = Tenants.offload(client, "Article", "TenantA")
+    end
   end
 
   describe "count/2" do
