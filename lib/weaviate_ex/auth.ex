@@ -27,6 +27,8 @@ defmodule WeaviateEx.Auth do
       )
   """
 
+  alias WeaviateEx.Auth.TokenManager
+
   @type auth_type ::
           :api_key
           | :bearer_token
@@ -182,5 +184,97 @@ defmodule WeaviateEx.Auth do
   def to_headers(%{type: type}) when type in [:oidc_client_credentials, :oidc_password] do
     # OIDC types need token manager to get access token first
     []
+  end
+
+  @doc """
+  Get headers from an OIDC TokenManager.
+
+  This is a convenience function to get authorization headers when using
+  OIDC authentication with a TokenManager.
+
+  ## Examples
+
+      {:ok, headers} = Auth.get_oidc_headers(MyApp.TokenManager)
+      # => [{"Authorization", "Bearer <access-token>"}]
+  """
+  @spec get_oidc_headers(GenServer.server()) ::
+          {:ok, [{String.t(), String.t()}]} | {:error, term()}
+  def get_oidc_headers(token_manager) do
+    case TokenManager.get_access_token(token_manager) do
+      {:ok, access_token} ->
+        {:ok, [{"Authorization", "Bearer #{access_token}"}]}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Create OIDC configuration for use with TokenManager.
+
+  This creates a configuration that can be passed to TokenManager.start_link/1.
+
+  ## Options
+
+    - `:issuer_url` - OIDC issuer URL (required)
+    - `:client_id` - Client ID (required)
+    - `:client_secret` - Client secret (required for client_credentials)
+    - `:username` - Username (required for password grant)
+    - `:password` - Password (required for password grant)
+    - `:scopes` - OAuth scopes (default: [])
+    - `:grant_type` - Grant type: `:client_credentials` or `:password` (default: :client_credentials)
+
+  ## Examples
+
+      # Client credentials grant
+      config = Auth.oidc_config(
+        issuer_url: "https://auth.example.com",
+        client_id: "my-client",
+        client_secret: "my-secret"
+      )
+
+      {:ok, _pid} = WeaviateEx.Auth.TokenManager.start_link(
+        issuer_url: config.issuer_url,
+        auth: config.auth,
+        name: MyApp.WeaviateTokenManager
+      )
+
+      # Password grant
+      config = Auth.oidc_config(
+        issuer_url: "https://auth.example.com",
+        grant_type: :password,
+        username: "user@example.com",
+        password: "secret",
+        client_id: "my-client"
+      )
+  """
+  @spec oidc_config(keyword()) :: %{issuer_url: String.t(), auth: map()}
+  def oidc_config(opts) do
+    issuer_url = Keyword.fetch!(opts, :issuer_url)
+    grant_type = Keyword.get(opts, :grant_type, :client_credentials)
+
+    auth =
+      case grant_type do
+        :client_credentials ->
+          client_credentials(
+            Keyword.fetch!(opts, :client_id),
+            Keyword.fetch!(opts, :client_secret),
+            scopes: Keyword.get(opts, :scopes, [])
+          )
+
+        :password ->
+          client_password(
+            Keyword.fetch!(opts, :username),
+            Keyword.fetch!(opts, :password),
+            client_id: Keyword.get(opts, :client_id),
+            client_secret: Keyword.get(opts, :client_secret),
+            scopes: Keyword.get(opts, :scopes, [])
+          )
+      end
+
+    %{
+      issuer_url: issuer_url,
+      auth: auth
+    }
   end
 end

@@ -111,7 +111,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.5.0"}
+    {:weaviate_ex, "~> 0.6.0"}
   ]
 end
 ```

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-12-29
+
+### Added
+
+#### Quantizer Support
+- **Quantizer Module** (`WeaviateEx.API.Quantizer`) - Typed structs for vector quantization:
+  - `PQConfig` - Product Quantization with segments, centroids, encoder configuration
+  - `BQConfig` - Binary Quantization with cache and rescore options
+  - `SQConfig` - Scalar Quantization with training limit configuration
+  - `RQConfig` - Rotational Quantization with configurable bit depth
+  - Each config provides `new/1`, `to_api/1`, `from_api/1` for serialization round-trips
+  - Convenience aliases: `Quantizer.pq/1`, `Quantizer.bq/1`, `Quantizer.sq/1`, `Quantizer.rq/1`
+  - `detect_type/1` - Auto-detect quantizer type from API response
+  - `from_api/1` - Parse any quantizer from API response
+
+#### Core Vectorizer Modules
+- **Text2VecAWS** (`WeaviateEx.API.Vectorizers.Text2VecAWS`) - AWS vectorizer support:
+  - Bedrock service with model selection (Titan, Cohere, etc.)
+  - SageMaker service with endpoint, target model, and variant options
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecGoogle** (`WeaviateEx.API.Vectorizers.Text2VecGoogle`) - Google vectorizer support:
+  - Vertex AI service with project ID and region
+  - Gemini service (Google AI Studio) with auto-configured endpoint
+  - Task type, title property, and dimensions configuration
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Text2VecWeaviate** (`WeaviateEx.API.Vectorizers.Text2VecWeaviate`) - Weaviate-hosted embeddings:
+  - Model selection for Weaviate-managed embedding service
+  - Base URL configuration for custom deployments
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+- **Img2VecNeural** (`WeaviateEx.API.Vectorizers.Img2VecNeural`) - Neural image vectorizer:
+  - Image fields configuration for multi-image objects
+  - `new/1`, `to_api/1`, `from_api/1`, `vectorizer_name/0`
+
+#### OIDC Token Management
+- **OIDC Module** (`WeaviateEx.Auth.OIDC`) - OpenID Connect support:
+  - `discover/1` - OIDC configuration discovery from issuer URL
+  - `get_token/2` - Token exchange for client_credentials and password grants
+  - `refresh_token/2` - Token refresh using refresh tokens
+  - `OIDC.Config` struct for provider configuration
+  - `OIDC.TokenResponse` struct with expiration helpers:
+    - `expires_at/1` - Calculate expiration timestamp
+    - `expired?/1` - Check if token is expired
+    - `expiring_soon?/2` - Check if token expires within buffer time
+- **TokenManager GenServer** (`WeaviateEx.Auth.TokenManager`) - Automatic token management:
+  - `start_link/1` - Start with OIDC config or issuer URL
+  - `get_token/1` - Get current valid token
+  - `get_access_token/1` - Get just the access token string
+  - `force_refresh/1` - Force immediate token refresh
+  - Automatic background token refresh before expiration
+  - Configurable refresh buffer (default: 60 seconds before expiry)
+  - `child_spec/1` - Easy integration with supervision trees
+- **Auth Module Extensions**:
+  - `get_oidc_headers/1` - Get authorization headers from TokenManager
+  - `oidc_config/1` - Create OIDC configuration for TokenManager
+
 ## [0.5.0] - 2025-12-28
 
 ### Added
