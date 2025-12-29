@@ -206,4 +206,19 @@ defmodule WeaviateEx.Client do
   def grpc_metadata(%__MODULE__{config: config}) do
     Channel.build_metadata(%{api_key: config.api_key})
   end
+
+  @doc """
+  Execute a GraphQL query against Weaviate.
+
+  Used for queries that require GraphQL features not available in gRPC,
+  such as generative search.
+
+  ## Examples
+
+      {:ok, response} = WeaviateEx.Client.graphql(client, "{ Get { Article { title } } }")
+  """
+  @spec graphql(t(), String.t()) :: Protocol.response()
+  def graphql(%__MODULE__{} = client, query) when is_binary(query) do
+    request(client, :post, "/v1/graphql", %{query: query}, [])
+  end
 end

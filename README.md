@@ -8,7 +8,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-881%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Tests](https://img.shields.io/badge/tests-1793%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -395,6 +395,83 @@ Collections define the structure of your data:
 {:ok, _} = WeaviateEx.Collections.delete("Article")
 ```
 
+### Nested Properties
+
+Define complex object structures with nested properties:
+
+```elixir
+alias WeaviateEx.Property
+alias WeaviateEx.Property.Nested
+
+# Create a collection with nested object properties
+{:ok, _} = WeaviateEx.Collections.create("Product", %{
+  description: "Products with specifications",
+  properties: [
+    %{name: "name", dataType: ["text"]},
+    %{name: "price", dataType: ["number"]},
+    # Nested object property
+    Property.object("specs", [
+      Nested.new(name: "weight", data_type: :number),
+      Nested.new(name: "dimensions", data_type: :text),
+      Nested.new(name: "material", data_type: :text)
+    ]),
+    # Array of nested objects
+    Property.object_array("variants", [
+      Nested.new(name: "color", data_type: :text),
+      Nested.new(name: "size", data_type: :text),
+      Nested.new(name: "sku", data_type: :text),
+      Nested.new(name: "stock", data_type: :int)
+    ])
+  ]
+})
+
+# Insert object with nested data
+{:ok, product} = WeaviateEx.Objects.create("Product", %{
+  properties: %{
+    name: "Laptop Stand",
+    price: 79.99,
+    specs: %{
+      weight: 2.5,
+      dimensions: "30x25x15cm",
+      material: "aluminum"
+    },
+    variants: [
+      %{color: "silver", size: "standard", sku: "LS-001", stock: 50},
+      %{color: "black", size: "large", sku: "LS-002", stock: 30}
+    ]
+  }
+})
+
+# Deeply nested properties (object within object)
+{:ok, _} = WeaviateEx.Collections.create("Company", %{
+  properties: [
+    %{name: "name", dataType: ["text"]},
+    Property.object("headquarters", [
+      Nested.new(name: "city", data_type: :text),
+      Nested.new(name: "country", data_type: :text),
+      Nested.new(
+        name: "address",
+        data_type: :object,
+        nested_properties: [
+          Nested.new(name: "street", data_type: :text),
+          Nested.new(name: "zip", data_type: :text)
+        ]
+      )
+    ])
+  ]
+})
+
+# Parse nested properties from API response
+api_data = %{
+  "name" => "specs",
+  "dataType" => ["object"],
+  "nestedProperties" => [
+    %{"name" => "weight", "dataType" => ["number"]}
+  ]
+}
+nested = Nested.from_api(api_data)
+```
+
 ### Data Operations (CRUD)
 
 Simple CRUD operations with automatic UUID generation:
@@ -512,6 +589,83 @@ end)
 })
 ```
 
+### Concurrent Batch Operations
+
+High-throughput parallel batch processing with failure tracking:
+
+```elixir
+alias WeaviateEx.Batch.Concurrent
+alias WeaviateEx.Batch.Queue
+
+# Concurrent batch insertion with parallel processing
+objects = Enum.map(1..10_000, fn i ->
+  %{class: "Article", properties: %{title: "Article #{i}", content: "Content #{i}"}}
+end)
+
+{:ok, result} = Concurrent.insert_many(client, "Article", objects,
+  max_concurrency: 8,    # Parallel batch requests
+  batch_size: 200,       # Objects per request
+  ordered: false,        # Don't maintain order (faster)
+  timeout: 60_000        # Timeout per batch
+)
+
+# Check results
+IO.puts(Concurrent.Result.summary(result))
+# => "Inserted 10000/10000 objects in 50 batches (1234ms). Failures: 0, Batch errors: 0"
+
+if Concurrent.Result.all_successful?(result) do
+  IO.puts("All objects inserted successfully!")
+else
+  IO.puts("Some failures occurred")
+  for failed <- result.failed do
+    IO.puts("Failed: #{failed.id} - #{failed.error}")
+  end
+end
+
+# Batch Queue for failure tracking and re-queuing
+queue = Queue.new()
+
+# Add objects to queue
+queue = Enum.reduce(objects, queue, fn obj, q ->
+  Queue.enqueue(q, obj)
+end)
+
+# Dequeue a batch for processing
+{batch, queue} = Queue.dequeue_batch(queue, 100)
+
+# Process batch and mark failures
+queue = Enum.reduce(failed_objects, queue, fn {obj, reason}, q ->
+  Queue.mark_failed(q, obj, reason)
+end)
+
+# Re-queue failed objects for retry (with max retry limit)
+queue = Queue.requeue_failed(queue, max_retries: 3)
+
+# Get queue statistics
+IO.puts("Pending: #{Queue.pending_count(queue)}")
+IO.puts("Failed: #{Queue.failed_count(queue)}")
+IO.puts("Empty: #{Queue.empty?(queue)}")
+
+# Rate limit detection
+alias WeaviateEx.Batch.RateLimit
+
+response = %{status: 429, headers: [{"retry-after", "5"}]}
+case RateLimit.detect(response) do
+  :ok -> IO.puts("No rate limit")
+  {:rate_limited, wait_ms} ->
+    IO.puts("Rate limited, wait #{wait_ms}ms")
+    Process.sleep(wait_ms)
+end
+
+# Server queue monitoring for dynamic batch sizing
+alias WeaviateEx.API.Cluster
+
+{:ok, stats} = Cluster.batch_stats(client)
+IO.puts("Queue length: #{stats.queue_length}")
+IO.puts("Rate: #{stats.rate_per_second}/s")
+IO.puts("Failed: #{stats.failed_count}")
+```
+
 ### Queries & Vector Search
 
 Powerful query capabilities with semantic search:
@@ -577,6 +731,57 @@ query = Query.get("Article")
   |> Query.sort([%{path: ["publishedAt"], order: "desc"}])
 
 {:ok, results} = Query.execute(query)
+```
+
+### Generative Search (RAG)
+
+Combine search with AI generation for retrieval-augmented generation:
+
+```elixir
+alias WeaviateEx.Query.Generate
+
+# Single-object generation - generate for each result
+query = Generate.new("Article")
+  |> Generate.near_text("artificial intelligence")
+  |> Generate.single("Summarize this article in one sentence: {title}")
+  |> Generate.return_properties(["title", "content"])
+  |> Generate.limit(5)
+
+{:ok, result} = Generate.execute(query, client)
+
+# Access generated content per object
+for obj <- result.objects do
+  IO.puts("Title: #{obj["title"]}")
+  IO.puts("Generated: #{obj["_additional"]["generate"]["singleResult"]}")
+end
+
+# Grouped generation - generate once for all results combined
+query = Generate.new("Article")
+  |> Generate.bm25("machine learning")
+  |> Generate.grouped("Based on these articles, what are the main trends?",
+       properties: ["title", "content"])
+  |> Generate.return_properties(["title"])
+  |> Generate.limit(10)
+
+{:ok, result} = Generate.execute(query, client)
+IO.puts("Combined insight: #{result.generated}")
+
+# Hybrid search with generation
+query = Generate.new("Article")
+  |> Generate.hybrid("neural networks", alpha: 0.7)
+  |> Generate.single("Extract key points from: {content}")
+  |> Generate.return_properties(["title", "content"])
+
+{:ok, result} = Generate.execute(query, client)
+
+# Convert existing Query to generative query
+query = Query.get("Article")
+  |> Query.near_text("climate change")
+  |> Query.fields(["title", "content"])
+  |> Query.limit(5)
+
+gen_query = Query.generate(query, :single, "Summarize: {content}")
+{:ok, result} = Generate.execute(gen_query, client)
 ```
 
 ### Aggregations
@@ -1171,8 +1376,13 @@ Current test coverage by module:
 - ✅ **Multi-Vector**: 10+ tests - ColBERT, Muvera encoding, Jina vectorizers
 - ✅ **gRPC Services**: 50+ tests - Channel management, search, batch, aggregate, tenants, health
 - ✅ **gRPC Error Handling**: 30+ tests - Status code mapping, retryable errors
+- ✅ **Generative Search**: 25+ tests - Query.Generate, all search types, GraphQL generation
+- ✅ **Nested Properties**: 25+ tests - Property.Nested struct, serialization, validation
+- ✅ **Concurrent Batch**: 20+ tests - Parallel insertion, result aggregation
+- ✅ **Batch Queue**: 25+ tests - Queue operations, failure tracking, re-queue
+- ✅ **Rate Limit Detection**: 20+ tests - Provider patterns, backoff calculation
 
-**Total: 1575 tests passing**
+**Total: 1793 tests passing**
 
 ## Mix Tasks
 

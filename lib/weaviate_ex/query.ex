@@ -43,6 +43,7 @@ defmodule WeaviateEx.Query do
 
   alias WeaviateEx.Client
   alias WeaviateEx.GRPC.Services.Search, as: GRPCSearch
+  alias WeaviateEx.Query.Generate
   alias WeaviateEx.Query.GroupBy
   alias WeaviateEx.Query.Move
   alias WeaviateEx.Query.QueryReference
@@ -473,6 +474,121 @@ defmodule WeaviateEx.Query do
   @spec group_by(t(), GroupBy.t()) :: t()
   def group_by(%__MODULE__{} = query, %GroupBy{} = group_by_config) do
     %{query | group_by: group_by_config}
+  end
+
+  @doc """
+  Adds generative AI capabilities to a query.
+
+  Combines the existing query with generative configuration to produce
+  AI-generated content alongside search results.
+
+  ## Parameters
+
+  - `query` - The existing query struct
+  - `type` - Generation type (`:single` for per-object, `:grouped` for all results)
+  - `prompt` - The prompt to use for generation
+  - `opts` - Additional options
+
+  ## Options
+
+  - `:properties` - Properties to include in grouped context (for `:grouped` type)
+
+  ## Examples
+
+      # Add per-object generation to existing query
+      query
+      |> Query.near_text("machine learning")
+      |> Query.generate(:single, "Summarize: {title}")
+      |> Query.execute(client)
+
+      # Add grouped generation with specific properties
+      query
+      |> Query.bm25("elixir")
+      |> Query.generate(:grouped, "Write an overview", properties: ["title", "content"])
+      |> Query.execute(client)
+
+  ## Returns
+
+  A `Generate` struct that can be executed to get `GenerativeResult`.
+  """
+  @spec generate(t(), :single | :grouped, String.t(), keyword()) :: Generate.t()
+  def generate(query, type, prompt, opts \\ [])
+
+  def generate(%__MODULE__{} = query, :single, prompt, _opts) do
+    builder = convert_query_to_generate(query)
+    Generate.single_prompt(builder, prompt)
+  end
+
+  def generate(%__MODULE__{} = query, :grouped, prompt, opts) do
+    builder = convert_query_to_generate(query)
+    Generate.grouped_task(builder, prompt, opts)
+  end
+
+  # Convert a Query struct to a Generate builder, preserving search configuration
+  defp convert_query_to_generate(%__MODULE__{} = query) do
+    query.collection
+    |> Generate.new()
+    |> apply_search_type(query)
+    |> apply_query_settings(query)
+  end
+
+  defp apply_search_type(builder, %{near_text: params}) when not is_nil(params) do
+    concepts = params[:concepts] || []
+    text = if is_list(concepts), do: hd(concepts), else: concepts
+    opts = extract_search_opts(params, [:certainty, :distance])
+    Generate.near_text(builder, text, opts)
+  end
+
+  defp apply_search_type(builder, %{near_vector: params}) when not is_nil(params) do
+    opts = extract_search_opts(params, [:certainty, :distance])
+    Generate.near_vector(builder, params[:vector], opts)
+  end
+
+  defp apply_search_type(builder, %{near_object: params}) when not is_nil(params) do
+    opts = extract_search_opts(params, [:certainty, :distance])
+    Generate.near_object(builder, params[:id], opts)
+  end
+
+  defp apply_search_type(builder, %{bm25: params}) when not is_nil(params) do
+    opts = extract_search_opts(params, [:properties])
+    Generate.bm25(builder, params[:query], opts)
+  end
+
+  defp apply_search_type(builder, %{hybrid: params}) when not is_nil(params) do
+    opts = extract_search_opts(params, [:alpha, :fusion_type])
+    Generate.hybrid(builder, params[:query], opts)
+  end
+
+  defp apply_search_type(builder, _query), do: builder
+
+  defp apply_query_settings(builder, query) do
+    builder
+    |> maybe_set_properties(query.fields)
+    |> maybe_set_where(query.where)
+    |> maybe_set_limit(query.limit)
+    |> maybe_set_offset(query.offset)
+    |> maybe_set_tenant(query.tenant)
+  end
+
+  defp maybe_set_properties(builder, []), do: builder
+  defp maybe_set_properties(builder, fields), do: Generate.return_properties(builder, fields)
+
+  defp maybe_set_where(builder, nil), do: builder
+  defp maybe_set_where(builder, where), do: Generate.where(builder, where)
+
+  defp maybe_set_limit(builder, nil), do: builder
+  defp maybe_set_limit(builder, limit), do: Generate.limit(builder, limit)
+
+  defp maybe_set_offset(builder, nil), do: builder
+  defp maybe_set_offset(builder, offset), do: Generate.offset(builder, offset)
+
+  defp maybe_set_tenant(builder, nil), do: builder
+  defp maybe_set_tenant(builder, tenant), do: Generate.tenant(builder, tenant)
+
+  defp extract_search_opts(params, keys) when is_map(params) do
+    keys
+    |> Enum.map(fn key -> {key, Map.get(params, key)} end)
+    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
 
   @doc """

@@ -163,6 +163,73 @@ defmodule WeaviateEx.API.Cluster do
     Client.request(client, :get, "/v1/cluster/statistics", nil, [])
   end
 
+  @type batch_stats :: %{
+          queue_length: non_neg_integer(),
+          rate_per_second: float(),
+          failed_count: non_neg_integer()
+        }
+
+  @doc """
+  Get server batch statistics for dynamic batch sizing.
+
+  Polls the nodes endpoint to retrieve batch queue statistics,
+  which can be used to dynamically adjust batch sizes.
+
+  ## Examples
+
+      {:ok, stats} = Cluster.batch_stats(client)
+      # => %{queue_length: 42, rate_per_second: 150.5, failed_count: 0}
+
+  ## Returns
+
+  - `{:ok, batch_stats()}` - Aggregated batch stats from all nodes
+  - `{:error, Error.t()}` - Error if request fails
+  """
+  @spec batch_stats(Client.t()) :: {:ok, batch_stats()} | {:error, Error.t()}
+  def batch_stats(client) do
+    case nodes(client, output: :verbose) do
+      {:ok, nodes_list} ->
+        stats = aggregate_batch_stats(nodes_list)
+        {:ok, stats}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp aggregate_batch_stats(nodes_list) do
+    initial = %{
+      queue_length: 0,
+      rate_per_second: 0.0,
+      failed_count: 0
+    }
+
+    Enum.reduce(nodes_list, initial, fn node, acc ->
+      batch_stats = extract_node_batch_stats(node)
+
+      %{
+        queue_length: acc.queue_length + batch_stats.queue_length,
+        rate_per_second: acc.rate_per_second + batch_stats.rate_per_second,
+        failed_count: acc.failed_count + batch_stats.failed_count
+      }
+    end)
+  end
+
+  defp extract_node_batch_stats(%Node{stats: nil}),
+    do: %{queue_length: 0, rate_per_second: 0.0, failed_count: 0}
+
+  defp extract_node_batch_stats(%Node{stats: stats}) when is_map(stats) do
+    batch = Map.get(stats, "batchStats", %{}) || %{}
+
+    %{
+      queue_length: Map.get(batch, "queueLength", 0) || 0,
+      rate_per_second: Map.get(batch, "ratePerSecond", 0.0) || 0.0,
+      failed_count: Map.get(batch, "failedCount", 0) || 0
+    }
+  end
+
+  defp extract_node_batch_stats(_), do: %{queue_length: 0, rate_per_second: 0.0, failed_count: 0}
+
   @doc """
   Initiate shard replication.
 

@@ -37,6 +37,7 @@ defmodule WeaviateEx.Batch.Dynamic do
   require Logger
 
   alias WeaviateEx.API.Batch, as: BatchAPI
+  alias WeaviateEx.API.Cluster
   alias WeaviateEx.Batch.ErrorTracking.{ErrorObject, Results}
 
   @type batch_object :: %{
@@ -68,7 +69,10 @@ defmodule WeaviateEx.Batch.Dynamic do
           results: Results.t(),
           on_flush: (Results.t() -> any()) | nil,
           on_error: (WeaviateEx.Error.t() -> any()) | nil,
-          consistency_level: String.t() | nil
+          consistency_level: String.t() | nil,
+          monitor_server_stats: boolean(),
+          poll_interval: pos_integer(),
+          poll_timer_ref: reference() | nil
         }
 
   # Default options
@@ -76,6 +80,7 @@ defmodule WeaviateEx.Batch.Dynamic do
   @default_min_batch_size 10
   @default_max_batch_size 1000
   @default_concurrent_requests 2
+  @default_poll_interval 5_000
 
   # Queue thresholds for dynamic adjustment
   @queue_high_threshold 100
@@ -101,10 +106,15 @@ defmodule WeaviateEx.Batch.Dynamic do
     - `:on_flush` - Callback function called after each flush
     - `:on_error` - Callback function called on errors
     - `:consistency_level` - Consistency level for requests
+    - `:monitor_server_stats` - Poll server for batch stats to adjust sizing (default: false)
+    - `:poll_interval` - Interval in ms between server stat polls (default: 5000)
 
   ## Examples
 
       {:ok, batcher} = Dynamic.start(client: client, batch_size: 50)
+
+      # With server stats monitoring
+      {:ok, batcher} = Dynamic.start(client: client, monitor_server_stats: true)
   """
   @spec start(keyword()) :: {:ok, pid()} | {:error, term()}
   def start(opts) do
@@ -189,6 +199,33 @@ defmodule WeaviateEx.Batch.Dynamic do
     GenServer.cast(pid, {:report_queue_size, queue_size})
   end
 
+  @type batch_stats :: %{
+          queue_length: non_neg_integer(),
+          rate_per_second: float(),
+          failed_count: non_neg_integer()
+        }
+
+  @doc """
+  Get current server batch statistics.
+
+  Polls the `/v1/nodes` endpoint to retrieve batch queue information,
+  useful for monitoring and dynamic batch sizing.
+
+  ## Examples
+
+      {:ok, stats} = Dynamic.get_server_batch_stats(client)
+      # => %{queue_length: 42, rate_per_second: 150.5, failed_count: 0}
+
+  ## Returns
+
+  - `{:ok, batch_stats()}` - Current batch statistics
+  - `{:error, term()}` - Error if request fails
+  """
+  @spec get_server_batch_stats(WeaviateEx.Client.t()) :: {:ok, batch_stats()} | {:error, term()}
+  def get_server_batch_stats(client) do
+    Cluster.batch_stats(client)
+  end
+
   # ============================================================================
   # GenServer Callbacks
   # ============================================================================
@@ -196,6 +233,8 @@ defmodule WeaviateEx.Batch.Dynamic do
   @impl true
   def init(opts) do
     client = Keyword.fetch!(opts, :client)
+    monitor_server_stats = Keyword.get(opts, :monitor_server_stats, false)
+    poll_interval = Keyword.get(opts, :poll_interval, @default_poll_interval)
 
     state = %{
       client: client,
@@ -210,10 +249,26 @@ defmodule WeaviateEx.Batch.Dynamic do
       results: Results.new(),
       on_flush: Keyword.get(opts, :on_flush),
       on_error: Keyword.get(opts, :on_error),
-      consistency_level: Keyword.get(opts, :consistency_level)
+      consistency_level: Keyword.get(opts, :consistency_level),
+      monitor_server_stats: monitor_server_stats,
+      poll_interval: poll_interval,
+      poll_timer_ref: nil
     }
 
+    # Start polling timer if monitoring is enabled
+    state =
+      if monitor_server_stats do
+        timer_ref = schedule_poll(poll_interval)
+        %{state | poll_timer_ref: timer_ref}
+      else
+        state
+      end
+
     {:ok, state}
+  end
+
+  defp schedule_poll(interval) do
+    Process.send_after(self(), :poll_server_stats, interval)
   end
 
   @impl true
@@ -289,9 +344,42 @@ defmodule WeaviateEx.Batch.Dynamic do
     {:noreply, %{state | queue_size: queue_size, batch_size: new_batch_size}}
   end
 
+  @impl true
+  def handle_info(:poll_server_stats, state) do
+    state = poll_and_update_stats(state)
+
+    # Schedule next poll
+    timer_ref = schedule_poll(state.poll_interval)
+    {:noreply, %{state | poll_timer_ref: timer_ref}}
+  end
+
+  @impl true
+  def handle_info(_msg, state) do
+    {:noreply, state}
+  end
+
   # ============================================================================
   # Private Functions
   # ============================================================================
+
+  defp poll_and_update_stats(state) do
+    case Cluster.batch_stats(state.client) do
+      {:ok, stats} ->
+        queue_size = stats.queue_length
+        new_batch_size = adjust_batch_size(state.batch_size, queue_size, state)
+
+        Logger.debug(
+          "Batch stats: queue=#{queue_size}, rate=#{stats.rate_per_second}/s, " <>
+            "failed=#{stats.failed_count}, batch_size=#{new_batch_size}"
+        )
+
+        %{state | queue_size: queue_size, batch_size: new_batch_size}
+
+      {:error, reason} ->
+        Logger.warning("Failed to poll server batch stats: #{inspect(reason)}")
+        state
+    end
+  end
 
   defp do_flush(state) do
     start_time = System.monotonic_time(:millisecond)

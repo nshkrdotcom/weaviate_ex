@@ -62,6 +62,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_oidc_headers/1` - Get authorization headers from TokenManager
   - `oidc_config/1` - Create OIDC configuration for TokenManager
 
+#### Generative Search Integration
+- **Query.Generate Module** (`WeaviateEx.Query.Generate`) - Combine search with AI generation:
+  - `new/1` - Create generative query for collection
+  - `near_text/3`, `near_vector/3`, `near_object/3` - Vector similarity with generation
+  - `bm25/3`, `hybrid/3` - Keyword and hybrid search with generation
+  - `single/2` - Single-object generation (generate per result)
+  - `grouped/2` - Grouped generation (generate once for all results)
+  - `return_properties/2`, `where/2`, `limit/2`, `offset/2`, `tenant/2`
+  - `additional/2` - Request additional metadata fields
+  - `to_graphql/1` - Convert to GraphQL query string
+  - `execute/2` - Execute query and parse results
+  - `parse_response/2` - Parse API response to GenerativeResult
+- **GenerativeResult Struct** (`WeaviateEx.Query.GenerativeResult`):
+  - `objects` - List of result objects with properties
+  - `generated` - Grouped generation result
+  - `generated_per_object` - List of per-object generation results
+- **Query Module Integration**:
+  - `Query.generate/4` - Convert Query struct to Generate query
+
+#### Nested Properties Support
+- **Property.Nested Module** (`WeaviateEx.Property.Nested`) - Nested object schema support:
+  - `new/1` - Create nested property with name, data_type, nested_properties
+  - `to_api/1` - Serialize to Weaviate API format
+  - `from_api/1` - Parse from API response (supports recursive nesting)
+  - `valid?/1` - Validate nested property configuration
+  - `object_type?/1` - Check if property is object or object_array type
+- **Property Module Integration**:
+  - `Property.object/3` - Create object property with nested properties
+  - `Property.object_array/3` - Create object array property with nested properties
+- **DataType Module**:
+  - `:object` and `:object_array` data types for nested structures
+
+#### Batch Improvements
+- **Concurrent Batch Operations** (`WeaviateEx.Batch.Concurrent`):
+  - `insert_many/4` - Parallel batch insertion using Task.async_stream
+  - Configurable: `max_concurrency`, `batch_size`, `ordered`, `timeout`
+  - `split_into_batches/2` - Split objects into batches
+  - `aggregate_results/2` - Combine results from parallel batches
+  - `retryable_error?/1` - Detect retryable errors
+  - `Result` struct with `all_successful?/1`, `has_failures?/1`, `summary/1`
+- **Batch Queue** (`WeaviateEx.Batch.Queue`) - FIFO queue for failure tracking:
+  - `new/0` - Create empty queue
+  - `enqueue/2` - Add object to pending queue
+  - `dequeue_batch/2` - Get batch of objects for processing
+  - `mark_failed/3` - Move object to failed queue with reason
+  - `requeue_failed/2` - Move failed objects back to pending (respects max_retries)
+  - `pending_count/1`, `failed_count/1`, `empty?/1`
+  - `FailedObject` struct with retry count and failure timestamp
+- **Rate Limit Detection** (`WeaviateEx.Batch.RateLimit`):
+  - `detect/1` - Detect rate limiting from HTTP response
+  - `rate_limited?/1` - Check if error indicates rate limiting
+  - `calculate_backoff/1` - Calculate exponential backoff with jitter
+  - `extract_retry_after/1` - Extract retry-after from headers
+  - Provider-specific patterns: OpenAI (429), Cohere (rate limit errors)
+- **Server Queue Monitoring** (`WeaviateEx.API.Cluster`):
+  - `batch_stats/1` - Get cluster batch statistics (queue_length, rate_per_second, failed_count)
+  - Aggregates stats from all nodes for dynamic batch sizing
+- **Dynamic Batch Sizing** (`WeaviateEx.Batch.Dynamic`):
+  - `:monitor_server_stats` option - Enable server queue monitoring
+  - `:poll_interval` option - Configure stats polling frequency
+  - `get_server_batch_stats/1` - Get current server stats from GenServer
+
 ## [0.5.0] - 2025-12-28
 
 ### Added
