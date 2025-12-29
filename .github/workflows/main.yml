@@ -98,7 +98,7 @@ jobs:
       - run: mix deps.get
       - run: mix test --cover
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: matrix.otp == '27.0' && matrix.elixir == '1.18'
         with:
           name: coverage-report
@@ -154,7 +154,7 @@ jobs:
           elixir-version: '1.18'
       - run: mix deps.get
       - run: mix docs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: docs
           path: doc/
