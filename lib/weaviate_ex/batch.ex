@@ -62,8 +62,10 @@ defmodule WeaviateEx.Batch do
 
   import WeaviateEx, only: [request: 4]
   alias WeaviateEx.API.Batch, as: BatchAPI
+  alias WeaviateEx.API.Cluster
   alias WeaviateEx.Batch.{Dynamic, FixedSize, RateLimited}
   alias WeaviateEx.Batch.ErrorTracking.Results
+  alias WeaviateEx.Cluster.Shard
 
   @type batch_objects :: list(map())
   @type batch_references :: list(map())
@@ -196,6 +198,142 @@ defmodule WeaviateEx.Batch do
       {:ok, results} when is_list(results) -> {:ok, %{"results" => results}}
       other -> other
     end
+  end
+
+  @default_poll_interval 1000
+  @default_max_failures 5
+  @default_timeout 300_000
+
+  @doc """
+  Wait for all vectors to be indexed after batch insertion.
+
+  This function polls shard status until all vector queues are empty,
+  indicating that async vectorization is complete. This is useful when
+  you need to ensure all objects are searchable before proceeding.
+
+  ## Parameters
+
+  - `client` - WeaviateEx.Client instance
+  - `collection` - Collection name to wait for
+  - `opts` - Options
+
+  ## Options
+
+  - `:poll_interval` - Milliseconds between status checks (default: 1000)
+  - `:max_failures` - Max consecutive failures before error (default: 5)
+  - `:timeout` - Maximum wait time in milliseconds (default: 300000)
+  - `:shards` - Specific shards to monitor (default: all shards)
+
+  ## Examples
+
+      # Wait for all shards
+      :ok = Batch.wait_for_vector_indexing(client, "Article")
+
+      # Wait with custom timeout
+      :ok = Batch.wait_for_vector_indexing(client, "Article", timeout: 60_000)
+
+      # Wait for specific shards
+      :ok = Batch.wait_for_vector_indexing(client, "Article", shards: ["shard-0"])
+
+  ## Returns
+
+  - `:ok` - All vectors indexed successfully
+  - `{:error, :timeout}` - Timed out waiting for indexing
+  - `{:error, {:max_failures, reason}}` - Too many consecutive failures
+  """
+  @spec wait_for_vector_indexing(WeaviateEx.Client.t(), String.t(), keyword()) ::
+          :ok | {:error, term()}
+  def wait_for_vector_indexing(client, collection, opts \\ []) do
+    poll_interval = Keyword.get(opts, :poll_interval, @default_poll_interval)
+    max_failures = Keyword.get(opts, :max_failures, @default_max_failures)
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    target_shards = Keyword.get(opts, :shards)
+
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    do_wait_for_indexing(
+      client,
+      collection,
+      target_shards,
+      poll_interval,
+      max_failures,
+      deadline,
+      0
+    )
+  end
+
+  defp do_wait_for_indexing(
+         client,
+         collection,
+         target_shards,
+         interval,
+         max_fails,
+         deadline,
+         fail_count
+       ) do
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      now >= deadline ->
+        {:error, :timeout}
+
+      fail_count >= max_fails ->
+        {:error, {:max_failures, "exceeded #{max_fails} consecutive failures"}}
+
+      true ->
+        case check_indexing_status(client, collection, target_shards) do
+          {:ok, :complete} ->
+            :ok
+
+          {:ok, :in_progress} ->
+            Process.sleep(interval)
+
+            do_wait_for_indexing(
+              client,
+              collection,
+              target_shards,
+              interval,
+              max_fails,
+              deadline,
+              0
+            )
+
+          {:error, _reason} ->
+            Process.sleep(interval)
+
+            do_wait_for_indexing(
+              client,
+              collection,
+              target_shards,
+              interval,
+              max_fails,
+              deadline,
+              fail_count + 1
+            )
+        end
+    end
+  end
+
+  defp check_indexing_status(client, collection, target_shards) do
+    case Cluster.shards(client, collection) do
+      {:ok, shards} ->
+        shards_to_check = filter_shards(shards, target_shards)
+
+        if Enum.all?(shards_to_check, &Shard.vectors_indexed?/1) do
+          {:ok, :complete}
+        else
+          {:ok, :in_progress}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp filter_shards(shards, nil), do: shards
+
+  defp filter_shards(shards, target_names) do
+    Enum.filter(shards, fn shard -> shard.name in target_names end)
   end
 
   # Helper to build query strings

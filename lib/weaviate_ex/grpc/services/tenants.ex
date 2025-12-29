@@ -16,10 +16,7 @@ defmodule WeaviateEx.GRPC.Services.Tenants do
   alias WeaviateEx.Error
   alias WeaviateEx.GRPC.Channel
 
-  alias Weaviate.V1.{
-    TenantsGetReply,
-    TenantsGetRequest
-  }
+  alias Weaviate.V1.TenantsGetRequest
 
   alias Weaviate.V1.Weaviate.Stub, as: WeaviateStub
 
@@ -37,7 +34,7 @@ defmodule WeaviateEx.GRPC.Services.Tenants do
       tenants = reply.tenants
   """
   @spec list(GRPC.Channel.t(), String.t(), tenant_opts()) ::
-          {:ok, TenantsGetReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def list(channel, collection, opts \\ []) do
     request = %TenantsGetRequest{
       collection: collection
@@ -55,7 +52,7 @@ defmodule WeaviateEx.GRPC.Services.Tenants do
       {:ok, reply} = Tenants.get(channel, "Article", "tenant_a")
   """
   @spec get(GRPC.Channel.t(), String.t(), String.t() | [String.t()], tenant_opts()) ::
-          {:ok, TenantsGetReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def get(channel, collection, tenant_names, opts \\ []) do
     names = if is_binary(tenant_names), do: [tenant_names], else: tenant_names
 

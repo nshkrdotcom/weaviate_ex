@@ -22,7 +22,6 @@ defmodule WeaviateEx.GRPC.Services.Batch do
 
   # Import generated protobuf modules
   alias Weaviate.V1.{
-    BatchDeleteReply,
     BatchDeleteRequest,
     BatchObject,
     BatchObjectsReply,
@@ -74,7 +73,7 @@ defmodule WeaviateEx.GRPC.Services.Batch do
       {:ok, result} = Batch.insert_objects(channel, objects)
   """
   @spec insert_objects(GRPC.Channel.t(), [object()], batch_opts()) ::
-          {:ok, BatchObjectsReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def insert_objects(channel, objects, opts \\ []) when is_list(objects) do
     batch_objects = Enum.map(objects, &build_batch_object/1)
 
@@ -99,7 +98,7 @@ defmodule WeaviateEx.GRPC.Services.Batch do
       {:ok, result} = Batch.insert_references(channel, refs)
   """
   @spec insert_references(GRPC.Channel.t(), [batch_ref()], batch_opts()) ::
-          {:ok, BatchReferencesReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def insert_references(channel, references, opts \\ []) when is_list(references) do
     batch_refs = Enum.map(references, &build_batch_reference/1)
 
@@ -121,7 +120,7 @@ defmodule WeaviateEx.GRPC.Services.Batch do
       {:ok, result} = Batch.delete_objects(channel, "Article", filter)
   """
   @spec delete_objects(GRPC.Channel.t(), String.t(), map(), batch_opts()) ::
-          {:ok, BatchDeleteReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def delete_objects(channel, collection, filter, opts \\ []) do
     request = %BatchDeleteRequest{
       collection: collection,
@@ -146,7 +145,7 @@ defmodule WeaviateEx.GRPC.Services.Batch do
       {:ok, reply} = Batch.insert_objects(channel, objects)
       %{failed: 2, errors: [...]} = Batch.parse_result(reply)
   """
-  @spec parse_result(BatchObjectsReply.t() | BatchReferencesReply.t()) :: %{
+  @spec parse_result(struct()) :: %{
           failed: non_neg_integer(),
           errors: [map()],
           took_ms: float()

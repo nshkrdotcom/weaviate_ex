@@ -342,4 +342,113 @@ defmodule WeaviateEx do
   defdelegate get_restore_status(client, backup_id, backend),
     to: WeaviateEx.API.Backup,
     as: :get_restore_status
+
+  ## Cluster Convenience Functions
+
+  @doc """
+  Get cluster node information.
+
+  Delegates to `WeaviateEx.API.Cluster.nodes/2`.
+
+  ## Examples
+
+      {:ok, nodes} = WeaviateEx.cluster_nodes(client)
+      {:ok, nodes} = WeaviateEx.cluster_nodes(client, output: "verbose")
+  """
+  defdelegate cluster_nodes(client, opts \\ []), to: WeaviateEx.API.Cluster, as: :nodes
+
+  @doc """
+  Get shards for a collection.
+
+  Delegates to `WeaviateEx.API.Cluster.shards/2`.
+
+  ## Examples
+
+      {:ok, shards} = WeaviateEx.cluster_shards(client, "Article")
+  """
+  defdelegate cluster_shards(client, collection), to: WeaviateEx.API.Cluster, as: :shards
+
+  @doc """
+  Get cluster-wide statistics.
+
+  Delegates to `WeaviateEx.API.Cluster.statistics/1`.
+
+  ## Examples
+
+      {:ok, stats} = WeaviateEx.cluster_statistics(client)
+  """
+  defdelegate cluster_statistics(client), to: WeaviateEx.API.Cluster, as: :statistics
+
+  @doc """
+  Trigger shard replication.
+
+  Delegates to `WeaviateEx.API.Cluster.replicate/4`.
+
+  ## Examples
+
+      {:ok, operation} = WeaviateEx.replicate_shard(client, "Article", "shard-1",
+        source_node: "node-1",
+        target_node: "node-2"
+      )
+  """
+  defdelegate replicate_shard(client, collection, shard, opts),
+    to: WeaviateEx.API.Cluster,
+    as: :replicate
+
+  @doc """
+  List all ongoing replications.
+
+  Delegates to `WeaviateEx.API.Cluster.list_replications/2`.
+
+  ## Examples
+
+      {:ok, replications} = WeaviateEx.list_replications(client)
+      {:ok, replications} = WeaviateEx.list_replications(client, status: :running)
+  """
+  defdelegate list_replications(client, opts \\ []), to: WeaviateEx.API.Cluster
+
+  @doc """
+  Get replication operation status.
+
+  Delegates to `WeaviateEx.API.Cluster.get_replication/3`.
+
+  ## Examples
+
+      {:ok, operation} = WeaviateEx.get_replication(client, "op-id-123")
+  """
+  defdelegate get_replication(client, operation_id, opts \\ []), to: WeaviateEx.API.Cluster
+
+  @doc """
+  Cancel an ongoing replication.
+
+  Delegates to `WeaviateEx.API.Cluster.cancel_replication/2`.
+
+  ## Examples
+
+      :ok = WeaviateEx.cancel_replication(client, "op-id-123")
+  """
+  defdelegate cancel_replication(client, operation_id), to: WeaviateEx.API.Cluster
+
+  @doc """
+  Delete a replication operation record.
+
+  Delegates to `WeaviateEx.API.Cluster.delete_replication/2`.
+
+  ## Examples
+
+      :ok = WeaviateEx.delete_replication(client, "op-id-123")
+  """
+  defdelegate delete_replication(client, operation_id), to: WeaviateEx.API.Cluster
+
+  @doc """
+  Wait for all replications to complete.
+
+  Delegates to `WeaviateEx.API.Cluster.wait_for_replications/2`.
+
+  ## Examples
+
+      :ok = WeaviateEx.wait_for_replications(client)
+      :ok = WeaviateEx.wait_for_replications(client, timeout: 60_000)
+  """
+  defdelegate wait_for_replications(client, opts \\ []), to: WeaviateEx.API.Cluster
 end

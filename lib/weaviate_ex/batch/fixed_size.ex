@@ -25,6 +25,8 @@ defmodule WeaviateEx.Batch.FixedSize do
       end)
   """
 
+  alias WeaviateEx.Types.UUID
+
   @type batch_object :: %{
           collection: String.t(),
           properties: map(),
@@ -71,24 +73,38 @@ defmodule WeaviateEx.Batch.FixedSize do
   @doc """
   Add an object to the batch buffer.
 
+  UUID is auto-generated if not provided.
+
   ## Options
 
-    - `:uuid` - Custom UUID for the object
+    - `:uuid` - Custom UUID for the object (auto-generated if not provided)
     - `:vector` - Custom vector for the object
     - `:tenant` - Tenant name for multi-tenant collections
 
   ## Examples
 
+      # Auto-generate UUID
       batcher
       |> FixedSize.add_object("Article", %{title: "Test"})
+
+      # With explicit UUID
+      batcher
       |> FixedSize.add_object("Article", %{title: "Test 2"}, uuid: "custom-uuid")
+
+      # Deterministic UUID from value
+      uuid = WeaviateEx.Types.UUID.from_string("Article", "unique-id")
+      batcher
+      |> FixedSize.add_object("Article", %{title: "Test"}, uuid: uuid)
   """
   @spec add_object(t(), String.t(), map(), keyword()) :: t()
   def add_object(%__MODULE__{} = batcher, collection, properties, opts \\ []) do
+    # Auto-generate UUID if not provided
+    uuid = Keyword.get_lazy(opts, :uuid, fn -> UUID.generate() end)
+
     object = %{
       collection: collection,
       properties: properties,
-      uuid: Keyword.get(opts, :uuid),
+      uuid: uuid,
       vector: Keyword.get(opts, :vector),
       tenant: Keyword.get(opts, :tenant)
     }
@@ -99,22 +115,60 @@ defmodule WeaviateEx.Batch.FixedSize do
   @doc """
   Add a reference to the batch buffer.
 
-  ## Examples
+  Supports both single-target and multi-target references.
+
+  ## Single Target
 
       batcher
       |> FixedSize.add_reference("Article", "uuid-1", "hasAuthor", "uuid-2")
+
+  ## Multi-Target References
+
+      batcher
+      |> FixedSize.add_reference("Article", "uuid-1", "relatedTo", [
+        %{collection: "Article", uuid: "related-uuid-1"},
+        %{collection: "Video", uuid: "video-uuid-1"}
+      ])
+
+  ## Options
+
+    - `:tenant` - Tenant name for multi-tenant collections
   """
-  @spec add_reference(t(), String.t(), String.t(), String.t(), String.t(), keyword()) :: t()
-  def add_reference(%__MODULE__{} = batcher, collection, from_uuid, property, to_uuid, opts \\ []) do
+  @spec add_reference(t(), String.t(), String.t(), String.t(), String.t() | [map()], keyword()) ::
+          t()
+  def add_reference(batcher, collection, from_uuid, property, to_target, opts \\ [])
+
+  # Single target reference (existing behavior)
+  def add_reference(%__MODULE__{} = batcher, collection, from_uuid, property, to_uuid, opts)
+      when is_binary(to_uuid) do
     reference = %{
       collection: collection,
       from_uuid: from_uuid,
       property: property,
       to_uuid: to_uuid,
+      to_collection: collection,
       tenant: Keyword.get(opts, :tenant)
     }
 
     %{batcher | references_buffer: [reference | batcher.references_buffer]}
+  end
+
+  # Multi-target references (new behavior)
+  def add_reference(%__MODULE__{} = batcher, collection, from_uuid, property, targets, opts)
+      when is_list(targets) do
+    references =
+      Enum.map(targets, fn target ->
+        %{
+          collection: collection,
+          from_uuid: from_uuid,
+          property: property,
+          to_uuid: target.uuid,
+          to_collection: target.collection,
+          tenant: Keyword.get(opts, :tenant)
+        }
+      end)
+
+    %{batcher | references_buffer: references ++ batcher.references_buffer}
   end
 
   @doc """

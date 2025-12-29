@@ -787,4 +787,193 @@ defmodule WeaviateEx.API.VectorConfigTest do
       assert config["vectorIndexConfig"]["bq"]["enabled"] == true
     end
   end
+
+  describe "reranker configurations" do
+    test "reranker_cohere configuration" do
+      config = VectorConfig.reranker_cohere(model: "rerank-multilingual-v3.0")
+
+      assert config["reranker-cohere"]["model"] == "rerank-multilingual-v3.0"
+    end
+
+    test "reranker_cohere with base_url" do
+      config =
+        VectorConfig.reranker_cohere(
+          model: "rerank-english-v3.0",
+          base_url: "https://custom.cohere.ai"
+        )
+
+      assert config["reranker-cohere"]["model"] == "rerank-english-v3.0"
+      assert config["reranker-cohere"]["baseURL"] == "https://custom.cohere.ai"
+    end
+
+    test "reranker_transformers configuration" do
+      config = VectorConfig.reranker_transformers()
+
+      assert Map.has_key?(config, "reranker-transformers")
+    end
+
+    test "reranker_transformers with inference_url" do
+      config = VectorConfig.reranker_transformers(inference_url: "http://localhost:8080")
+
+      assert config["reranker-transformers"]["inferenceUrl"] == "http://localhost:8080"
+    end
+
+    test "reranker_voyageai configuration" do
+      config = VectorConfig.reranker_voyageai(model: "rerank-2")
+
+      assert config["reranker-voyageai"]["model"] == "rerank-2"
+    end
+
+    test "reranker_voyageai with all options" do
+      config =
+        VectorConfig.reranker_voyageai(
+          model: "rerank-lite-1",
+          base_url: "https://api.voyageai.com",
+          truncate: true
+        )
+
+      assert config["reranker-voyageai"]["model"] == "rerank-lite-1"
+      assert config["reranker-voyageai"]["baseURL"] == "https://api.voyageai.com"
+      assert config["reranker-voyageai"]["truncate"] == true
+    end
+
+    test "reranker_jinaai configuration" do
+      config = VectorConfig.reranker_jinaai(model: "jina-reranker-v2-base-multilingual")
+
+      assert config["reranker-jinaai"]["model"] == "jina-reranker-v2-base-multilingual"
+    end
+
+    test "reranker_jinaai with base_url" do
+      config =
+        VectorConfig.reranker_jinaai(
+          model: "jina-reranker-v1-base-en",
+          base_url: "https://api.jina.ai"
+        )
+
+      assert config["reranker-jinaai"]["model"] == "jina-reranker-v1-base-en"
+      assert config["reranker-jinaai"]["baseURL"] == "https://api.jina.ai"
+    end
+
+    test "reranker_nvidia configuration" do
+      config = VectorConfig.reranker_nvidia(model: "nvidia/nv-rerankqa-mistral-4b-v3")
+
+      assert config["reranker-nvidia"]["model"] == "nvidia/nv-rerankqa-mistral-4b-v3"
+    end
+
+    test "reranker_nvidia with base_url" do
+      config =
+        VectorConfig.reranker_nvidia(
+          model: "nvidia/nv-rerankqa-mistral-4b-v3",
+          base_url: "https://api.nvidia.com"
+        )
+
+      assert config["reranker-nvidia"]["model"] == "nvidia/nv-rerankqa-mistral-4b-v3"
+      assert config["reranker-nvidia"]["baseURL"] == "https://api.nvidia.com"
+    end
+
+    test "reranker_contextualai configuration" do
+      config = VectorConfig.reranker_contextualai(model: "contextual-rerank-v1")
+
+      assert config["reranker-contextualai"]["model"] == "contextual-rerank-v1"
+    end
+
+    test "reranker_contextualai with all options" do
+      config =
+        VectorConfig.reranker_contextualai(
+          model: "contextual-rerank-v1",
+          base_url: "https://api.contextual.ai",
+          context_source: "document"
+        )
+
+      assert config["reranker-contextualai"]["model"] == "contextual-rerank-v1"
+      assert config["reranker-contextualai"]["baseURL"] == "https://api.contextual.ai"
+      assert config["reranker-contextualai"]["contextSource"] == "document"
+    end
+  end
+
+  describe "with_reranker builder" do
+    test "adds cohere reranker to collection config" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_vectorizer(:text2vec_openai)
+        |> VectorConfig.with_reranker(:cohere, model: "rerank-multilingual-v3.0")
+
+      assert config["class"] == "Article"
+      assert config["moduleConfig"]["reranker-cohere"]["model"] == "rerank-multilingual-v3.0"
+    end
+
+    test "adds transformers reranker to collection config" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_reranker(:transformers)
+
+      assert Map.has_key?(config["moduleConfig"], "reranker-transformers")
+    end
+
+    test "adds voyageai reranker to collection config" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_reranker(:voyageai, model: "rerank-2")
+
+      assert config["moduleConfig"]["reranker-voyageai"]["model"] == "rerank-2"
+    end
+
+    test "adds jinaai reranker to collection config" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_reranker(:jinaai, model: "jina-reranker-v2-base-multilingual")
+
+      assert config["moduleConfig"]["reranker-jinaai"]["model"] ==
+               "jina-reranker-v2-base-multilingual"
+    end
+
+    test "adds nvidia reranker to collection config" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_reranker(:nvidia, model: "nvidia/nv-rerankqa-mistral-4b-v3")
+
+      assert config["moduleConfig"]["reranker-nvidia"]["model"] ==
+               "nvidia/nv-rerankqa-mistral-4b-v3"
+    end
+
+    test "adds contextualai reranker to collection config" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_reranker(:contextualai, model: "contextual-rerank-v1")
+
+      assert config["moduleConfig"]["reranker-contextualai"]["model"] == "contextual-rerank-v1"
+    end
+
+    test "reranker merges with existing moduleConfig" do
+      config =
+        VectorConfig.new("Article")
+        |> VectorConfig.with_vectorizer(:text2vec_openai, model: "text-embedding-ada-002")
+        |> VectorConfig.with_reranker(:cohere, model: "rerank-multilingual-v3.0")
+
+      # Both vectorizer and reranker should be in moduleConfig
+      assert Map.has_key?(config["moduleConfig"], "text2vec-openai")
+      assert Map.has_key?(config["moduleConfig"], "reranker-cohere")
+      assert config["moduleConfig"]["text2vec-openai"]["model"] == "text-embedding-ada-002"
+      assert config["moduleConfig"]["reranker-cohere"]["model"] == "rerank-multilingual-v3.0"
+    end
+
+    test "complete collection with vectorizer, index, and reranker" do
+      config =
+        VectorConfig.new("SearchableArticle")
+        |> VectorConfig.with_vectorizer(:text2vec_openai, model: "text-embedding-ada-002")
+        |> VectorConfig.with_hnsw_index(ef: 100, max_connections: 64)
+        |> VectorConfig.with_reranker(:cohere, model: "rerank-multilingual-v3.0")
+        |> VectorConfig.with_properties([
+          %{name: "title", dataType: ["text"]},
+          %{name: "content", dataType: ["text"]}
+        ])
+
+      assert config["class"] == "SearchableArticle"
+      assert config["vectorizer"] == "text2vec-openai"
+      assert config["vectorIndexType"] == "hnsw"
+      assert config["vectorIndexConfig"]["ef"] == 100
+      assert config["moduleConfig"]["reranker-cohere"]["model"] == "rerank-multilingual-v3.0"
+      assert length(config["properties"]) == 2
+    end
+  end
 end

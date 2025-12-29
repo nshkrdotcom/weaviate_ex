@@ -43,7 +43,9 @@ defmodule WeaviateEx.Query do
 
   alias WeaviateEx.Client
   alias WeaviateEx.GRPC.Services.Search, as: GRPCSearch
+  alias WeaviateEx.Query.GroupBy
   alias WeaviateEx.Query.QueryReference
+  alias WeaviateEx.Query.Rerank
   alias WeaviateEx.Query.Sort
 
   defstruct collection: nil,
@@ -61,7 +63,9 @@ defmodule WeaviateEx.Query do
             after: nil,
             sort: nil,
             return_references: nil,
-            tenant: nil
+            tenant: nil,
+            rerank: nil,
+            group_by: nil
 
   @type t :: %__MODULE__{}
 
@@ -377,6 +381,75 @@ defmodule WeaviateEx.Query do
   @spec tenant(t(), String.t()) :: t()
   def tenant(%__MODULE__{} = query, tenant_name) when is_binary(tenant_name) do
     %{query | tenant: tenant_name}
+  end
+
+  @doc """
+  Adds reranking to the query results.
+
+  Reranking uses a reranker model configured on the collection to re-order
+  search results based on relevance to the query. The reranker scores are
+  available in the `_additional { rerank { score } }` field.
+
+  ## Parameters
+
+  - `query` - The query struct
+  - `rerank` - A `WeaviateEx.Query.Rerank` struct
+
+  ## Examples
+
+      alias WeaviateEx.Query.Rerank
+
+      # Basic rerank
+      rerank = Rerank.new("content")
+      query
+      |> WeaviateEx.Query.rerank(rerank)
+
+      # Rerank with custom query
+      rerank = Rerank.new("content", query: "What is machine learning?")
+      query
+      |> WeaviateEx.Query.near_text("AI")
+      |> WeaviateEx.Query.rerank(rerank)
+  """
+  @spec rerank(t(), Rerank.t()) :: t()
+  def rerank(%__MODULE__{} = query, %Rerank{} = rerank_config) do
+    %{query | rerank: rerank_config}
+  end
+
+  @doc """
+  Groups query results by a property.
+
+  GroupBy clusters results based on a property path, returning groups
+  with their objects. This is useful for organizing search results by
+  category, type, or other grouping criteria.
+
+  ## Parameters
+
+  - `query` - The query struct
+  - `group_by` - A `WeaviateEx.Query.GroupBy` struct
+
+  ## Examples
+
+      alias WeaviateEx.Query.GroupBy
+
+      # Group by category
+      group_by = GroupBy.new("category")
+      query
+      |> WeaviateEx.Query.group_by(group_by)
+
+      # Group with custom limits
+      group_by = GroupBy.new("category", objects_per_group: 5, number_of_groups: 20)
+      query
+      |> WeaviateEx.Query.near_text("technology")
+      |> WeaviateEx.Query.group_by(group_by)
+
+      # Group by nested property
+      group_by = GroupBy.new(["metadata", "type"])
+      query
+      |> WeaviateEx.Query.group_by(group_by)
+  """
+  @spec group_by(t(), GroupBy.t()) :: t()
+  def group_by(%__MODULE__{} = query, %GroupBy{} = group_by_config) do
+    %{query | group_by: group_by_config}
   end
 
   @doc """
@@ -725,7 +798,10 @@ defmodule WeaviateEx.Query do
 
   defp build_graphql(%__MODULE__{} = query) do
     collection = query.collection
-    fields_str = build_fields(query.fields, query.additional, query.return_references)
+
+    fields_str =
+      build_fields(query.fields, query.additional, query.return_references, query.rerank)
+
     args = build_args(query)
 
     """
@@ -739,10 +815,10 @@ defmodule WeaviateEx.Query do
     """
   end
 
-  defp build_fields(fields, additional, return_references) do
+  defp build_fields(fields, additional, return_references, rerank) do
     field_list =
       fields ++
-        build_additional_fields(additional) ++
+        build_additional_fields(additional, rerank) ++
         build_reference_fields(return_references)
 
     Enum.join(field_list, "\n          ")
@@ -754,11 +830,32 @@ defmodule WeaviateEx.Query do
     [QueryReference.list_to_graphql(refs)]
   end
 
-  defp build_additional_fields([]), do: []
+  defp build_additional_fields([], nil), do: []
 
-  defp build_additional_fields(additional) do
-    additional_str = Enum.join(additional, " ")
-    ["_additional { #{additional_str} }"]
+  defp build_additional_fields(additional, rerank) do
+    # Build base additional fields
+    base_fields = additional || []
+    additional_str = Enum.join(base_fields, " ")
+
+    # Add rerank if configured
+    rerank_str = build_rerank_additional(rerank)
+
+    content =
+      [additional_str, rerank_str]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join(" ")
+
+    if content == "" do
+      []
+    else
+      ["_additional { #{content} }"]
+    end
+  end
+
+  defp build_rerank_additional(nil), do: ""
+
+  defp build_rerank_additional(%Rerank{} = rerank) do
+    "rerank#{Rerank.to_graphql(rerank)} { score }"
   end
 
   defp build_args(query) do
@@ -775,6 +872,7 @@ defmodule WeaviateEx.Query do
       |> maybe_add_near_object(query.near_object)
       |> maybe_add_hybrid(query.hybrid)
       |> maybe_add_bm25(query.bm25)
+      |> maybe_add_group_by(query.group_by)
 
     if args == [], do: "", else: "(#{Enum.join(args, ", ")})"
   end
@@ -831,6 +929,12 @@ defmodule WeaviateEx.Query do
 
   defp maybe_add_bm25(args, params) do
     args ++ ["bm25: #{map_to_graphql(params)}"]
+  end
+
+  defp maybe_add_group_by(args, nil), do: args
+
+  defp maybe_add_group_by(args, %GroupBy{} = group_by) do
+    args ++ ["groupBy: #{GroupBy.to_graphql(group_by)}"]
   end
 
   # Convert Elixir map/list to GraphQL object syntax (without quotes on keys)

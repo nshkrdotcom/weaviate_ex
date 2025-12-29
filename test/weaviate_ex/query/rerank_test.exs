@@ -12,28 +12,85 @@ defmodule WeaviateEx.Query.RerankTest do
     end
 
     test "creates rerank with property and query" do
-      rerank = Rerank.new("content", query: "deep learning applications")
+      rerank = Rerank.new("content", query: "What is machine learning?")
 
       assert rerank.prop == "content"
-      assert rerank.query == "deep learning applications"
+      assert rerank.query == "What is machine learning?"
     end
   end
 
   describe "to_graphql/1" do
-    test "converts rerank with property only to graphql" do
+    test "converts to GraphQL format with property only" do
       rerank = Rerank.new("content")
-      graphql = Rerank.to_graphql(rerank)
+      result = Rerank.to_graphql(rerank)
 
-      assert graphql =~ ~s(property: "content")
-      refute graphql =~ "query:"
+      assert result == ~s({property: "content"})
     end
 
-    test "converts rerank with property and query to graphql" do
+    test "converts to GraphQL format with property and query" do
       rerank = Rerank.new("content", query: "deep learning")
-      graphql = Rerank.to_graphql(rerank)
+      result = Rerank.to_graphql(rerank)
 
-      assert graphql =~ ~s(property: "content")
-      assert graphql =~ ~s(query: "deep learning")
+      assert result == ~s({property: "content", query: "deep learning"})
+    end
+
+    test "escapes special characters in property" do
+      rerank = Rerank.new("has\"quote")
+      result = Rerank.to_graphql(rerank)
+
+      assert result == ~s({property: "has\\"quote"})
+    end
+
+    test "escapes special characters in query" do
+      rerank = Rerank.new("content", query: "what is \"AI\"?")
+      result = Rerank.to_graphql(rerank)
+
+      assert result == ~s({property: "content", query: "what is \\"AI\\"?"})
+    end
+
+    test "escapes newlines in query" do
+      rerank = Rerank.new("content", query: "line1\nline2")
+      result = Rerank.to_graphql(rerank)
+
+      assert result == ~s({property: "content", query: "line1\\nline2"})
+    end
+  end
+
+  describe "to_map/1" do
+    test "converts to map format without query" do
+      rerank = Rerank.new("content")
+      result = Rerank.to_map(rerank)
+
+      assert result == %{property: "content"}
+    end
+
+    test "converts to map format with query" do
+      rerank = Rerank.new("content", query: "deep learning")
+      result = Rerank.to_map(rerank)
+
+      assert result == %{property: "content", query: "deep learning"}
+    end
+  end
+
+  describe "valid?/1" do
+    test "returns true for valid rerank with property" do
+      rerank = Rerank.new("content")
+      assert Rerank.valid?(rerank) == true
+    end
+
+    test "returns true for valid rerank with property and query" do
+      rerank = Rerank.new("content", query: "test")
+      assert Rerank.valid?(rerank) == true
+    end
+
+    test "returns false for nil property" do
+      rerank = %Rerank{prop: nil}
+      assert Rerank.valid?(rerank) == false
+    end
+
+    test "returns false for empty property" do
+      rerank = %Rerank{prop: ""}
+      assert Rerank.valid?(rerank) == false
     end
   end
 end

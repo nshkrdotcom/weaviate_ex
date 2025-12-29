@@ -18,10 +18,7 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
   alias WeaviateEx.Error
   alias WeaviateEx.GRPC.Channel
 
-  alias Weaviate.V1.{
-    AggregateReply,
-    AggregateRequest
-  }
+  alias Weaviate.V1.AggregateRequest
 
   alias Weaviate.V1.Weaviate.Stub, as: WeaviateStub
 
@@ -45,7 +42,7 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
       {:ok, result} = Aggregate.count(channel, "Article", tenant: "tenant_a")
   """
   @spec count(GRPC.Channel.t(), String.t(), aggregate_opts()) ::
-          {:ok, AggregateReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def count(channel, collection, opts \\ []) do
     request = build_aggregate_request(collection, opts)
     request = %{request | objects_count: true}
@@ -70,7 +67,7 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
       )
   """
   @spec over_property(GRPC.Channel.t(), String.t(), String.t(), aggregate_opts()) ::
-          {:ok, AggregateReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def over_property(channel, collection, property, opts \\ []) do
     aggregations = Keyword.get(opts, :aggregations, [:count])
     property_type = Keyword.get(opts, :property_type, :number)
@@ -93,7 +90,7 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
       )
   """
   @spec group_by(GRPC.Channel.t(), String.t(), String.t(), aggregate_opts()) ::
-          {:ok, AggregateReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def group_by(channel, collection, property, opts \\ []) do
     group_by = %AggregateRequest.GroupBy{
       collection: collection,
@@ -117,8 +114,8 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
       }
       {:ok, result} = Aggregate.execute(channel, request)
   """
-  @spec execute(GRPC.Channel.t(), AggregateRequest.t(), keyword()) ::
-          {:ok, AggregateReply.t()} | {:error, Error.t()}
+  @spec execute(GRPC.Channel.t(), struct(), keyword()) ::
+          {:ok, struct()} | {:error, Error.t()}
   def execute(channel, %AggregateRequest{} = request, opts \\ []) do
     execute_aggregate(channel, request, opts)
   end

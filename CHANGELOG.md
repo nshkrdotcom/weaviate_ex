@@ -11,6 +11,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Cluster Management
+- **Cluster API** (`WeaviateEx.API.Cluster`) - Complete cluster management:
+  - `nodes/2` - Get cluster node information with optional verbose output
+  - `shards/2` - Get shards for a collection
+  - `statistics/1` - Get cluster-wide statistics
+  - `replicate/4` - Trigger shard replication between nodes
+  - `list_replications/2` - List ongoing replication operations
+  - `get_replication/3` - Get replication operation status
+  - `cancel_replication/2` - Cancel an ongoing replication
+  - `delete_replication/2` - Delete a replication operation record
+  - `wait_for_replications/2` - Wait for all replications to complete
+- **Cluster Type Structs**:
+  - `WeaviateEx.Cluster.Node` - Node with status, version, shards, stats
+  - `WeaviateEx.Cluster.Shard` - Shard with status, vector indexing, object count
+  - `WeaviateEx.Cluster.Replication` - Replication operation with progress tracking
+  - `WeaviateEx.Cluster.Replication.Operation` - Individual replication operation
+
+#### Query Rerank & GroupBy Integration
+- **Query.Rerank** enhancements:
+  - `to_map/1` - Convert to map format for gRPC
+  - `valid?/1` - Validate rerank configuration
+  - Improved `to_graphql/1` with proper string escaping
+- **Query.GroupBy** enhancements:
+  - Support for list paths (nested properties)
+  - `to_map/1` - Convert to map format for gRPC
+  - `valid?/1` - Validate group_by configuration
+- **Query Builder Integration**:
+  - `Query.rerank/2` - Add rerank to query
+  - `Query.group_by/2` - Add group_by to query
+  - Works with all query types: near_text, near_vector, hybrid, bm25
+
+#### Batch Advanced Features
+- **wait_for_vector_indexing** (`WeaviateEx.Batch`):
+  - Poll until all vectors are indexed
+  - Configurable timeout, poll interval, max failures
+  - Optional shard filtering
+- **Auto UUID Generation** (`WeaviateEx.Batch.FixedSize`):
+  - `add_object/4` auto-generates UUID if not provided
+  - Uses `WeaviateEx.Types.UUID.generate/0`
+- **Multi-Target References** (`WeaviateEx.Batch.FixedSize`):
+  - `add_reference/6` now supports list of targets
+  - Each target specifies collection and uuid
+- **DeleteResult Struct** (`WeaviateEx.Batch.DeleteResult`):
+  - Typed result for batch delete operations
+  - `from_api/1` - Parse API response
+  - `all_successful?/1`, `has_failures?/1`
+  - `failed_objects/1`, `successful_objects/1`
+  - `summary/1` - Human-readable summary
+  - `DeletedObject` submodule for individual objects
+
+#### Reranker Configurations
+- **6 Reranker Types** in `WeaviateEx.API.VectorConfig`:
+  - `reranker_cohere/1` - Cohere reranker (existing)
+  - `reranker_transformers/1` - Local transformers reranker
+  - `reranker_voyageai/1` - VoyageAI reranker
+  - `reranker_jinaai/1` - Jina AI reranker
+  - `reranker_nvidia/1` - NVIDIA reranker
+  - `reranker_contextualai/1` - Contextual AI reranker
+- **Builder Function**: `with_reranker/3` - Add reranker to collection config
+
 #### Backup & Restore Module
 - **Backup API** (`WeaviateEx.API.Backup`) - Complete backup and restore functionality:
   - `create/4` - Create backup with include/exclude collections, config, wait_for_completion
@@ -108,7 +168,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `assign_roles/3` - Assign roles to group
   - `revoke_roles/3` - Revoke roles from group
 
-#### Error Handling
+#### Error Types
+- **Cluster Errors** (`WeaviateEx.Error`):
+  - `node_not_found/1` - Node not found in cluster
+  - `shard_not_found/2` - Shard not found in collection
+  - `replication_failed/2` - Replication operation failed
+  - `replication_timeout/1` - Replication timed out
+  - `cluster_not_ready/0` - Cluster not ready
+  - `vector_indexing_timeout/1` - Vector indexing timed out
 - **RBAC-specific Errors** (`WeaviateEx.Error`):
   - `rbac_error/3` - Create RBAC error with category
   - `role_not_found/1` - Role not found error
@@ -116,7 +183,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `user_not_found/1` - User not found error
   - `invalid_permission/1` - Invalid permission error
 
-#### Main Module Convenience Functions
+#### Main Module Delegations
+- Cluster convenience functions: `cluster_nodes/2`, `cluster_shards/2`, `cluster_statistics/1`
+- Replication functions: `replicate_shard/4`, `list_replications/2`, `get_replication/3`
+- Replication control: `cancel_replication/2`, `delete_replication/2`, `wait_for_replications/2`
 - `list_roles/1`, `get_role/2`, `create_role/3`, `delete_role/2`
 - `create_user/2`, `get_user/2`, `list_users/1`, `delete_user/2`, `get_my_user/1`
 - `list_groups/1`, `assign_group_roles/3`, `revoke_group_roles/3`
@@ -150,6 +220,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `use_tls?/1` - TLS detection for gRPC connections
 
 ### Changed
+- Updated documentation with new module groups
+- Improved test coverage for all new features
 - **Hybrid Architecture**: gRPC for data operations (queries, batch, aggregations), HTTP retained for schema operations (Weaviate gRPC API doesn't support schema management)
 - **Client Connection** (`WeaviateEx.Client`):
   - `connect/1` now establishes both HTTP (Finch) and gRPC channels
@@ -174,11 +246,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retained `{:finch, "~> 0.18"}` - For schema operations and HTTP fallback
 
 ### Stats
-- **290+ new tests** for Backup, RBAC, Users, and Groups modules
-- **~980 tests passing** (up from 694)
 - Full gRPC support for data operations
 - Complete Backup & Restore support with 4 storage backends
 - Complete RBAC support matching Python client functionality
+- Complete Cluster management with replication support
 - Backwards compatible - existing code continues to work
 
 ## [0.3.0] - 2025-12-28

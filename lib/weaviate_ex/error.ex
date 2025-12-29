@@ -324,4 +324,108 @@ defmodule WeaviateEx.Error do
       status_code: nil
     }
   end
+
+  ## Cluster-Specific Errors
+
+  @doc """
+  Create a node not found error.
+
+  ## Examples
+
+      error = Error.node_not_found("node-1")
+  """
+  @spec node_not_found(String.t()) :: t()
+  def node_not_found(node_name) do
+    %__MODULE__{
+      type: :not_found,
+      message: "Node '#{node_name}' not found in cluster",
+      details: %{category: :cluster, node: node_name},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a shard not found error.
+
+  ## Examples
+
+      error = Error.shard_not_found("Article", "shard-1")
+  """
+  @spec shard_not_found(String.t(), String.t()) :: t()
+  def shard_not_found(collection, shard_name) do
+    %__MODULE__{
+      type: :not_found,
+      message: "Shard '#{shard_name}' not found in collection '#{collection}'",
+      details: %{category: :cluster, collection: collection, shard: shard_name},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a replication failed error.
+
+  ## Examples
+
+      error = Error.replication_failed("op-123", "target node unavailable")
+  """
+  @spec replication_failed(String.t(), String.t()) :: t()
+  def replication_failed(operation_id, reason) do
+    %__MODULE__{
+      type: :replication_failed,
+      message: "Replication operation '#{operation_id}' failed: #{reason}",
+      details: %{category: :cluster, operation_id: operation_id},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a replication timeout error.
+
+  ## Examples
+
+      error = Error.replication_timeout("op-123")
+  """
+  @spec replication_timeout(String.t()) :: t()
+  def replication_timeout(operation_id) do
+    %__MODULE__{
+      type: :timeout_error,
+      message: "Replication operation '#{operation_id}' timed out",
+      details: %{category: :cluster, operation_id: operation_id},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a cluster not ready error.
+
+  ## Examples
+
+      error = Error.cluster_not_ready()
+  """
+  @spec cluster_not_ready() :: t()
+  def cluster_not_ready do
+    %__MODULE__{
+      type: :service_unavailable,
+      message: "Cluster is not ready to accept requests",
+      details: %{category: :cluster},
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a vector indexing timeout error.
+
+  ## Examples
+
+      error = Error.vector_indexing_timeout("Article")
+  """
+  @spec vector_indexing_timeout(String.t()) :: t()
+  def vector_indexing_timeout(collection) do
+    %__MODULE__{
+      type: :timeout_error,
+      message: "Vector indexing for collection '#{collection}' timed out",
+      details: %{category: :batch, collection: collection},
+      status_code: nil
+    }
+  end
 end

@@ -27,7 +27,6 @@ defmodule WeaviateEx.GRPC.Services.Search do
     NearTextSearch,
     NearVector,
     PropertiesRequest,
-    SearchReply,
     SearchRequest
   }
 
@@ -65,7 +64,7 @@ defmodule WeaviateEx.GRPC.Services.Search do
       )
   """
   @spec near_vector(GRPC.Channel.t(), String.t(), [float()], search_opts()) ::
-          {:ok, SearchReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def near_vector(channel, collection, vector, opts \\ []) do
     near_vector_msg = build_near_vector(vector, opts)
 
@@ -91,7 +90,7 @@ defmodule WeaviateEx.GRPC.Services.Search do
       )
   """
   @spec near_text(GRPC.Channel.t(), String.t(), String.t() | [String.t()], search_opts()) ::
-          {:ok, SearchReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def near_text(channel, collection, query, opts \\ []) do
     concepts = if is_binary(query), do: [query], else: query
 
@@ -117,7 +116,7 @@ defmodule WeaviateEx.GRPC.Services.Search do
       )
   """
   @spec near_object(GRPC.Channel.t(), String.t(), String.t(), search_opts()) ::
-          {:ok, SearchReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def near_object(channel, collection, object_id, opts \\ []) do
     near_object_msg = %NearObject{
       id: object_id,
@@ -146,7 +145,7 @@ defmodule WeaviateEx.GRPC.Services.Search do
       )
   """
   @spec bm25(GRPC.Channel.t(), String.t(), String.t(), search_opts()) ::
-          {:ok, SearchReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def bm25(channel, collection, query, opts \\ []) do
     bm25_msg = %BM25{
       query: query,
@@ -176,7 +175,7 @@ defmodule WeaviateEx.GRPC.Services.Search do
       )
   """
   @spec hybrid(GRPC.Channel.t(), String.t(), String.t(), search_opts()) ::
-          {:ok, SearchReply.t()} | {:error, Error.t()}
+          {:ok, struct()} | {:error, Error.t()}
   def hybrid(channel, collection, query, opts \\ []) do
     alpha = Keyword.get(opts, :alpha, 0.5)
     properties = Keyword.get(opts, :properties, [])
@@ -207,8 +206,8 @@ defmodule WeaviateEx.GRPC.Services.Search do
       }
       {:ok, results} = Search.execute(channel, request)
   """
-  @spec execute(GRPC.Channel.t(), SearchRequest.t(), keyword()) ::
-          {:ok, SearchReply.t()} | {:error, Error.t()}
+  @spec execute(GRPC.Channel.t(), struct(), keyword()) ::
+          {:ok, struct()} | {:error, Error.t()}
   def execute(channel, %SearchRequest{} = request, opts \\ []) do
     execute_search(channel, request, opts)
   end

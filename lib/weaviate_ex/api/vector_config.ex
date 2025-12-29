@@ -781,12 +781,19 @@ defmodule WeaviateEx.API.VectorConfig do
     }
   end
 
+  ## Reranker Configurations
+
   @doc """
   Configure reranker-cohere module.
 
   ## Options
     - `:model` - Model to use (optional)
     - `:base_url` - Base URL for API (optional)
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_reranker(:cohere, model: "rerank-multilingual-v3.0")
   """
   def reranker_cohere(opts \\ []) do
     config =
@@ -798,6 +805,163 @@ defmodule WeaviateEx.API.VectorConfig do
       "reranker-cohere" => config
     }
   end
+
+  @doc """
+  Configure reranker-transformers module (local model).
+
+  Runs locally using a transformer model.
+
+  ## Options
+    - `:model` - Model to use (optional)
+    - `:inference_url` - Inference URL (optional)
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_reranker(:transformers)
+  """
+  def reranker_transformers(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("inferenceUrl", Keyword.get(opts, :inference_url))
+
+    %{
+      "reranker-transformers" => config
+    }
+  end
+
+  @doc """
+  Configure reranker-voyageai module.
+
+  ## Options
+    - `:model` - Model to use (e.g., "rerank-2", "rerank-lite-1")
+    - `:base_url` - Base URL for API (optional)
+    - `:truncate` - Truncation mode (optional)
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_reranker(:voyageai, model: "rerank-2")
+  """
+  def reranker_voyageai(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("truncate", Keyword.get(opts, :truncate))
+
+    %{
+      "reranker-voyageai" => config
+    }
+  end
+
+  @doc """
+  Configure reranker-jinaai module.
+
+  ## Options
+    - `:model` - Model to use (e.g., "jina-reranker-v2-base-multilingual")
+    - `:base_url` - Base URL for API (optional)
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_reranker(:jinaai, model: "jina-reranker-v2-base-multilingual")
+  """
+  def reranker_jinaai(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "reranker-jinaai" => config
+    }
+  end
+
+  @doc """
+  Configure reranker-nvidia module.
+
+  ## Options
+    - `:model` - Model to use (e.g., "nvidia/nv-rerankqa-mistral-4b-v3")
+    - `:base_url` - Base URL for API (optional)
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_reranker(:nvidia, model: "nvidia/nv-rerankqa-mistral-4b-v3")
+  """
+  def reranker_nvidia(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{
+      "reranker-nvidia" => config
+    }
+  end
+
+  @doc """
+  Configure reranker-contextualai module.
+
+  Contextual AI reranker with retrieval augmentation capabilities.
+
+  ## Options
+    - `:model` - Model to use
+    - `:base_url` - Base URL for API (optional)
+    - `:context_source` - Context source (optional)
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_reranker(:contextualai, model: "contextual-rerank-v1")
+  """
+  def reranker_contextualai(opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", Keyword.get(opts, :model))
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("contextSource", Keyword.get(opts, :context_source))
+
+    %{
+      "reranker-contextualai" => config
+    }
+  end
+
+  @doc """
+  Add reranker configuration to a collection.
+
+  ## Rerankers
+    - `:cohere` - Cohere reranker
+    - `:transformers` - Local transformers reranker
+    - `:voyageai` - VoyageAI reranker
+    - `:jinaai` - Jina AI reranker
+    - `:nvidia` - NVIDIA reranker
+    - `:contextualai` - Contextual AI reranker
+
+  ## Example
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_vectorizer(:text2vec_openai)
+      |> VectorConfig.with_reranker(:cohere, model: "rerank-multilingual-v3.0")
+  """
+  @spec with_reranker(map(), atom(), keyword()) :: map()
+  def with_reranker(config, reranker, opts \\ []) do
+    reranker_config = reranker_config_for(reranker, opts)
+
+    module_config = Map.get(config, "moduleConfig", %{})
+    updated_module_config = Map.merge(module_config, reranker_config)
+
+    Map.put(config, "moduleConfig", updated_module_config)
+  end
+
+  defp reranker_config_for(:cohere, opts), do: reranker_cohere(opts)
+  defp reranker_config_for(:transformers, opts), do: reranker_transformers(opts)
+  defp reranker_config_for(:voyageai, opts), do: reranker_voyageai(opts)
+  defp reranker_config_for(:jinaai, opts), do: reranker_jinaai(opts)
+  defp reranker_config_for(:nvidia, opts), do: reranker_nvidia(opts)
+  defp reranker_config_for(:contextualai, opts), do: reranker_contextualai(opts)
 
   ## Additional Vectorizers (Gap Analysis Dec 2025)
 

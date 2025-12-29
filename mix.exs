@@ -140,7 +140,24 @@ defmodule WeaviateEx.MixProject do
         "Advanced API": [
           WeaviateEx.API.Generative,
           WeaviateEx.API.References,
-          WeaviateEx.API.Tenants
+          WeaviateEx.API.Tenants,
+          WeaviateEx.API.Cluster,
+          WeaviateEx.API.VectorConfig
+        ],
+        "Query Features": [
+          WeaviateEx.Query.Rerank,
+          WeaviateEx.Query.GroupBy
+        ],
+        "Batch Features": [
+          WeaviateEx.Batch.FixedSize,
+          WeaviateEx.Batch.Dynamic,
+          WeaviateEx.Batch.RateLimited,
+          WeaviateEx.Batch.DeleteResult
+        ],
+        "Cluster Types": [
+          WeaviateEx.Cluster.Node,
+          WeaviateEx.Cluster.Shard,
+          WeaviateEx.Cluster.Replication
         ],
         Infrastructure: [
           WeaviateEx.Client,
