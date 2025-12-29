@@ -150,4 +150,74 @@ defmodule WeaviateEx.Error do
   def grpc_retryable?(:aborted), do: true
   def grpc_retryable?(:deadline_exceeded), do: true
   def grpc_retryable?(_), do: false
+
+  ## RBAC-Specific Errors
+
+  @doc """
+  Create an RBAC-specific error with category metadata.
+
+  ## Examples
+
+      error = Error.rbac_error(:not_found, "Role not found", %{role: "admin"})
+  """
+  @spec rbac_error(atom(), String.t(), map()) :: t()
+  def rbac_error(type, message, details \\ %{}) do
+    %__MODULE__{
+      type: type,
+      message: message,
+      details: Map.put(details, :category, :rbac),
+      status_code: nil
+    }
+  end
+
+  @doc """
+  Create a role not found error.
+
+  ## Examples
+
+      error = Error.role_not_found("admin")
+  """
+  @spec role_not_found(String.t()) :: t()
+  def role_not_found(role_name) do
+    rbac_error(:not_found, "Role '#{role_name}' not found", %{role: role_name})
+  end
+
+  @doc """
+  Create a permission denied error.
+
+  ## Examples
+
+      error = Error.permission_denied(:delete, "Article")
+  """
+  @spec permission_denied(atom(), String.t()) :: t()
+  def permission_denied(action, resource) do
+    rbac_error(:forbidden, "Permission denied for #{action} on #{resource}", %{
+      action: action,
+      resource: resource
+    })
+  end
+
+  @doc """
+  Create a user not found error.
+
+  ## Examples
+
+      error = Error.user_not_found("john.doe")
+  """
+  @spec user_not_found(String.t()) :: t()
+  def user_not_found(user_id) do
+    rbac_error(:not_found, "User '#{user_id}' not found", %{user_id: user_id})
+  end
+
+  @doc """
+  Create an invalid permission error.
+
+  ## Examples
+
+      error = Error.invalid_permission("Invalid action for collection type")
+  """
+  @spec invalid_permission(String.t()) :: t()
+  def invalid_permission(reason) do
+    rbac_error(:bad_request, "Invalid permission: #{reason}", %{})
+  end
 end

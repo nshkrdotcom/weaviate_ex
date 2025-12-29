@@ -11,6 +11,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Role-Based Access Control (RBAC)
+- **RBAC Module** (`WeaviateEx.RBAC`) - Complete role-based access control support:
+  - `Actions` - Action type definitions and conversions for all 11 permission types
+  - `Permission` - Permission struct with encoding/decoding for API communication
+  - `Permissions` - Builder API for constructing permissions fluently
+  - `Role` - Role struct with permission management
+- **RBAC API** (`WeaviateEx.API.RBAC`) - Role CRUD operations:
+  - `list_roles/1` - List all roles
+  - `get_role/2` - Get role by name
+  - `create_role/3` - Create role with permissions
+  - `delete_role/2` - Delete a role
+  - `add_permissions/3` - Add permissions to role
+  - `remove_permissions/3` - Remove permissions from role
+  - `has_permissions?/3` - Check if role has permissions
+  - `get_users_for_role/2` - Get users assigned to role
+  - `get_groups_for_role/2` - Get groups assigned to role
+  - `exists?/2` - Check if role exists
+- **11 Permission Types**: collections, data, tenants, roles, users, groups, cluster, nodes, backups, replicate, alias
+- **Type-safe Permissions Builder** (`WeaviateEx.RBAC.Permissions`):
+  - `collections/2` - Collection schema permissions
+  - `data/3` - Data CRUD permissions with tenant/object filters
+  - `tenants/3` - Tenant management permissions
+  - `roles/2` - Role management permissions
+  - `users/2` - User management permissions
+  - `groups/2` - OIDC group permissions
+  - `cluster/1` - Cluster info permissions
+  - `nodes/1` - Node info permissions (minimal/verbose)
+  - `backups/1` - Backup management permissions
+  - `replicate/2` - Replication permissions
+  - `alias_permission/2` - Collection alias permissions
+
+#### User Management
+- **User Structs** (`WeaviateEx.Users.User`):
+  - `User.DB` - Database-managed users with API key
+  - `User.OIDC` - OIDC-managed users with groups
+  - `User.Own` - Current authenticated user info
+- **Users API** (`WeaviateEx.API.Users`) - User lifecycle management:
+  - `create/2` - Create DB user (returns API key)
+  - `get/2` - Get user by ID
+  - `list_all/1` - List all users
+  - `delete/2` - Delete user
+  - `activate/2` - Activate user
+  - `deactivate/2` - Deactivate user
+  - `rotate_key/2` - Rotate API key
+  - `assign_roles/3` - Assign roles to user
+  - `revoke_roles/3` - Revoke roles from user
+  - `get_assigned_roles/2` - Get user's roles
+  - `get_my_user/1` - Get current user info
+
+#### Group Management
+- **Group Struct** (`WeaviateEx.Groups.Group`) - OIDC group representation
+- **Groups API** (`WeaviateEx.API.Groups`) - OIDC group operations:
+  - `list_known/1` - List known OIDC groups
+  - `get_assigned_roles/2` - Get roles assigned to group
+  - `assign_roles/3` - Assign roles to group
+  - `revoke_roles/3` - Revoke roles from group
+
+#### Error Handling
+- **RBAC-specific Errors** (`WeaviateEx.Error`):
+  - `rbac_error/3` - Create RBAC error with category
+  - `role_not_found/1` - Role not found error
+  - `permission_denied/2` - Permission denied error
+  - `user_not_found/1` - User not found error
+  - `invalid_permission/1` - Invalid permission error
+
+#### Main Module Convenience Functions
+- `list_roles/1`, `get_role/2`, `create_role/3`, `delete_role/2`
+- `create_user/2`, `get_user/2`, `list_users/1`, `delete_user/2`, `get_my_user/1`
+- `list_groups/1`, `assign_group_roles/3`, `revoke_group_roles/3`
+
 #### gRPC Protocol Support
 - **gRPC Channel Management** (`WeaviateEx.GRPC.Channel`) - Persistent connection management:
   - `connect/3` - Establish gRPC channel with TLS support
@@ -64,8 +134,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retained `{:finch, "~> 0.18"}` - For schema operations and HTTP fallback
 
 ### Stats
+- **195+ new tests** for RBAC, Users, and Groups modules
 - **881 tests passing** (up from 694)
 - Full gRPC support for data operations
+- Complete RBAC support matching Python client functionality
 - Backwards compatible - existing code continues to work
 
 ## [0.3.0] - 2025-12-28

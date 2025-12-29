@@ -16,9 +16,10 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 
 ### Core Capabilities
 - **Complete API Coverage** - Collections, objects, batch operations, queries, aggregations, cross-references, tenants
+- **RBAC & User Management** - Full role-based access control, user lifecycle management, OIDC groups
 - **Hybrid Protocol Architecture** - gRPC for high-performance data operations, HTTP for schema management
 - **Type-Safe** - Protocol-based architecture with comprehensive typespecs
-- **Test-First Design** - 881 tests with Mox-based mocking for fast, isolated testing
+- **Test-First Design** - 1000+ tests with Mox-based mocking for fast, isolated testing
 - **Production-Ready** - gRPC persistent channels, Finch HTTP pooling, proper error handling, health checks
 - **Easy Setup** - First-class Mix tasks for managing local Weaviate stacks
 
@@ -62,6 +63,9 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
   - [Advanced Filtering](#advanced-filtering)
   - [Vector Configuration](#vector-configuration)
   - [Multi-Tenancy](#multi-tenancy)
+  - [RBAC (Role-Based Access Control)](#rbac-role-based-access-control)
+  - [User Management](#user-management)
+  - [Group Management](#group-management)
 - [Examples](#examples)
 - [Testing](#testing)
 - [Mix Tasks](#mix-tasks)
@@ -155,16 +159,16 @@ You can also run `mix weaviate.status` to see every profile that’s currently o
 If configuration is missing, you'll get helpful error messages:
 
 ```
-╔════════════════════════════════════════════════════════════════╗
-║                  WeaviateEx Configuration Error                 ║
-╠════════════════════════════════════════════════════════════════╣
-║  Missing required configuration: WEAVIATE_URL                    ║
-║                                                                  ║
-║  Please set the Weaviate URL using one of these methods:        ║
-║  1. Environment variable: export WEAVIATE_URL=http://localhost:8080
-║  2. Application configuration (config/config.exs)                ║
-║  3. Runtime configuration (config/runtime.exs)                   ║
-╚════════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════════════╗
+║                  WeaviateEx Configuration Error                      ║
+╠══════════════════════════════════════════════════════════════════════╣
+║  Missing required configuration: WEAVIATE_URL                        ║
+║                                                                      ║
+║  Please set the Weaviate URL using one of these methods:             ║
+║  1. Environment variable: export WEAVIATE_URL=http://localhost:8080  ║
+║  2. Application configuration (config/config.exs)                    ║
+║  3. Runtime configuration (config/runtime.exs)                       ║
+╚══════════════════════════════════════════════════════════════════════╝
 ```
 
 ### 5. Shape a Tenant-Aware Collection and Load Data
@@ -698,6 +702,114 @@ Collections.create(client, config)
 
 # Use tenant in queries (specify tenant parameter)
 {:ok, objects} = Data.insert(client, "TenantArticle", data, tenant: "CompanyA")
+```
+
+### RBAC (Role-Based Access Control)
+
+WeaviateEx provides full RBAC support for managing roles, permissions, users, and groups.
+
+#### Creating Roles with Permissions
+
+```elixir
+alias WeaviateEx.API.RBAC
+alias WeaviateEx.RBAC.Permissions
+
+# Define permissions using the builder API
+permissions = [
+  Permissions.collections("Article", [:read, :create]),
+  Permissions.data("Article", [:read, :create, :update]),
+  Permissions.tenants("Article", [:read])
+]
+
+# Create a role
+{:ok, role} = RBAC.create_role(client, "article-editor", permissions)
+
+# List all roles
+{:ok, roles} = RBAC.list_roles(client)
+
+# Check if role has specific permissions
+{:ok, true} = RBAC.has_permissions?(client, "article-editor",
+  [Permissions.data("Article", :read)]
+)
+
+# Add more permissions to a role
+:ok = RBAC.add_permissions(client, "article-editor",
+  [Permissions.nodes(:verbose)]
+)
+
+# Delete a role
+:ok = RBAC.delete_role(client, "article-editor")
+```
+
+#### Permission Types
+
+| Type | Actions | Description |
+|------|---------|-------------|
+| collections | create, read, update, delete, manage | Collection schema operations |
+| data | create, read, update, delete, manage | Object CRUD operations |
+| tenants | create, read, update, delete | Multi-tenancy management |
+| roles | create, read, update, delete | Role management |
+| users | create, read, update, delete, assign_and_revoke | User management |
+| groups | read, assign_and_revoke | OIDC group management |
+| cluster | read | Cluster information |
+| nodes | read (minimal/verbose) | Node information |
+| backups | manage | Backup operations |
+| replicate | create, read, update, delete | Replication management |
+| alias | create, read, update, delete | Collection aliases |
+
+### User Management
+
+```elixir
+alias WeaviateEx.API.Users
+
+# Create a new DB user (returns API key)
+{:ok, user} = Users.create(client, "john.doe")
+IO.puts("API Key: #{user.api_key}")
+
+# Get user info
+{:ok, user} = Users.get(client, "john.doe")
+
+# Get current authenticated user
+{:ok, me} = Users.get_my_user(client)
+
+# Assign roles to user
+:ok = Users.assign_roles(client, "john.doe", ["article-editor", "viewer"])
+
+# Revoke roles from user
+:ok = Users.revoke_roles(client, "john.doe", ["viewer"])
+
+# Get user's assigned roles
+{:ok, roles} = Users.get_assigned_roles(client, "john.doe")
+
+# Rotate API key
+{:ok, new_key} = Users.rotate_key(client, "john.doe")
+
+# Deactivate/activate user
+:ok = Users.deactivate(client, "john.doe")
+:ok = Users.activate(client, "john.doe")
+
+# Delete user
+:ok = Users.delete(client, "john.doe")
+```
+
+### Group Management
+
+OIDC group management for role assignments:
+
+```elixir
+alias WeaviateEx.API.Groups
+
+# List known OIDC groups
+{:ok, groups} = Groups.list_known(client)
+
+# Assign roles to a group
+:ok = Groups.assign_roles(client, "engineering", ["developer", "viewer"])
+
+# Get roles assigned to a group
+{:ok, roles} = Groups.get_assigned_roles(client, "engineering")
+
+# Revoke roles from a group
+:ok = Groups.revoke_roles(client, "engineering", ["admin"])
 ```
 
 ## Examples

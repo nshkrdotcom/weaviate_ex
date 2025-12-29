@@ -165,4 +165,98 @@ defmodule WeaviateEx do
     # Delegate to the client
     WeaviateEx.Client.request(client, method, path, body, opts)
   end
+
+  ## RBAC Convenience Functions
+
+  @doc """
+  List all roles.
+
+  Delegates to `WeaviateEx.API.RBAC.list_roles/1`.
+  """
+  defdelegate list_roles(client), to: WeaviateEx.API.RBAC
+
+  @doc """
+  Get a role by name.
+
+  Delegates to `WeaviateEx.API.RBAC.get_role/2`.
+  """
+  defdelegate get_role(client, name), to: WeaviateEx.API.RBAC
+
+  @doc """
+  Create a role with permissions.
+
+  Delegates to `WeaviateEx.API.RBAC.create_role/3`.
+  """
+  defdelegate create_role(client, name, permissions), to: WeaviateEx.API.RBAC
+
+  @doc """
+  Delete a role.
+
+  Delegates to `WeaviateEx.API.RBAC.delete_role/2`.
+  """
+  defdelegate delete_role(client, name), to: WeaviateEx.API.RBAC
+
+  ## User Management Convenience Functions
+
+  @doc """
+  Create a new DB user.
+
+  Delegates to `WeaviateEx.API.Users.create/2`.
+  """
+  defdelegate create_user(client, user_id), to: WeaviateEx.API.Users, as: :create
+
+  @doc """
+  Get a user by ID.
+
+  Delegates to `WeaviateEx.API.Users.get/2`.
+  """
+  defdelegate get_user(client, user_id), to: WeaviateEx.API.Users, as: :get
+
+  @doc """
+  List all users.
+
+  Delegates to `WeaviateEx.API.Users.list_all/1`.
+  """
+  defdelegate list_users(client), to: WeaviateEx.API.Users, as: :list_all
+
+  @doc """
+  Delete a user.
+
+  Delegates to `WeaviateEx.API.Users.delete/2`.
+  """
+  defdelegate delete_user(client, user_id), to: WeaviateEx.API.Users, as: :delete
+
+  @doc """
+  Get the current authenticated user.
+
+  Delegates to `WeaviateEx.API.Users.get_my_user/1`.
+  """
+  defdelegate get_my_user(client), to: WeaviateEx.API.Users
+
+  ## Group Management Convenience Functions
+
+  @doc """
+  List known OIDC groups.
+
+  Delegates to `WeaviateEx.API.Groups.list_known/1`.
+  """
+  defdelegate list_groups(client), to: WeaviateEx.API.Groups, as: :list_known
+
+  @doc """
+  Assign roles to an OIDC group.
+
+  Delegates to `WeaviateEx.API.Groups.assign_roles/3`.
+  """
+  defdelegate assign_group_roles(client, group, roles),
+    to: WeaviateEx.API.Groups,
+    as: :assign_roles
+
+  @doc """
+  Revoke roles from an OIDC group.
+
+  Delegates to `WeaviateEx.API.Groups.revoke_roles/3`.
+  """
+  defdelegate revoke_group_roles(client, group, roles),
+    to: WeaviateEx.API.Groups,
+    as: :revoke_roles
 end
