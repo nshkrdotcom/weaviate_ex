@@ -8,7 +8,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2151%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Tests](https://img.shields.io/badge/tests-2303%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -955,6 +955,45 @@ query = Query.get("MultiVectorCollection")
 {:ok, results} = Query.execute(query, client)
 ```
 
+#### Updating Named Vector Configuration (v0.7.0+)
+
+Update existing named vector index settings and quantization:
+
+```elixir
+alias WeaviateEx.API.NamedVectors
+
+# Update vector index parameters
+update = NamedVectors.update_config("title_vector",
+  vector_index: [
+    ef: 200,
+    dynamic_ef_min: 100,
+    dynamic_ef_max: 500,
+    dynamic_ef_factor: 8,
+    flat_search_cutoff: 40000
+  ]
+)
+
+# Update with quantization settings
+update = NamedVectors.update_config("content_vector",
+  vector_index: [ef: 150],
+  quantizer: [
+    type: :pq,
+    segments: 128,
+    centroids: 256,
+    training_limit: 100000
+  ]
+)
+
+# Build update config for multiple vectors at once
+updates = NamedVectors.build_update_config([
+  {"title_vector", [vector_index: [ef: 200]]},
+  {"content_vector", [quantizer: [type: :sq, rescore_limit: 200]]}
+])
+
+# Convert to API format
+api_config = NamedVectors.update_to_api(update)
+```
+
 ### Advanced Hybrid Search (v0.7.0+)
 
 Use HybridVector for sophisticated hybrid queries with Move operations:
@@ -1138,6 +1177,47 @@ gen_query = Query.generate(query, :single, "Summarize: {content}")
 {:ok, result} = Generate.execute(gen_query, client)
 ```
 
+### Query References (v0.7.0+)
+
+Query cross-references with multi-target support and metadata:
+
+```elixir
+alias WeaviateEx.Query.QueryReference
+
+# Basic reference query
+ref = QueryReference.new("hasAuthor", return_properties: ["name", "email"])
+
+# Multi-target reference query (for references pointing to multiple collections)
+ref = QueryReference.multi_target("relatedTo", "Article",
+  return_properties: ["title", "publishedAt"]
+)
+
+# Check if reference is multi-target
+QueryReference.multi_target?(ref)  # => true
+
+# Request metadata in referenced objects
+ref = QueryReference.new("hasAuthor",
+  return_properties: ["name"],
+  return_metadata: [:uuid, :distance, :certainty]
+)
+
+# Use metadata presets
+ref = QueryReference.new("hasAuthor",
+  return_properties: ["name"],
+  return_metadata: :full    # All available metadata
+)
+
+ref = QueryReference.new("hasAuthor",
+  return_properties: ["name"],
+  return_metadata: :common  # uuid, distance, certainty, creation_time
+)
+
+# Use in queries
+query = Query.get("Article")
+  |> Query.fields(["title", "content"])
+  |> Query.reference(ref)
+```
+
 ### Aggregations
 
 Statistical analysis over your data:
@@ -1195,6 +1275,10 @@ filter = Filter.greater_than("publishedAt", "2025-01-01T00:00:00Z")
 # Null checks
 filter = Filter.is_null("deletedAt")
 
+# Property length filtering (v0.7.0+)
+filter = Filter.by_property_length("title", :greater_than, 10)
+filter = Filter.by_property_length("tags", :greater_or_equal, 3)
+
 # Combine filters with AND
 combined = Filter.all_of([
   Filter.equal("status", "published"),
@@ -1217,6 +1301,91 @@ not_filter = Filter.none_of([
 query = Query.get("Article")
   |> Query.where(Filter.to_graphql(combined))
   |> Query.fields(["title", "views"])
+```
+
+#### Deep Reference Filtering (v0.7.0+)
+
+Filter through chains of references to reach nested properties:
+
+```elixir
+alias WeaviateEx.Filter
+alias WeaviateEx.Filter.RefPath
+
+# Filter articles where the author's company is in technology
+filter = RefPath.through("hasAuthor", "Author")
+  |> RefPath.through("worksAt", "Company")
+  |> RefPath.property("industry", :equal, "Technology")
+
+# Filter by author name directly
+filter = RefPath.through("hasAuthor", "Author")
+  |> RefPath.property("name", :like, "John*")
+
+# Combine with other filters
+combined = Filter.all_of([
+  RefPath.through("hasAuthor", "Author")
+  |> RefPath.property("verified", :equal, true),
+  Filter.equal("status", "published")
+])
+
+# Get path depth
+path = RefPath.through("hasAuthor", "Author")
+  |> RefPath.through("worksAt", "Company")
+RefPath.depth(path)  # => 2
+
+# Use convenience function
+filter = Filter.by_ref_path(
+  RefPath.through("hasAuthor", "Author"),
+  "name",
+  :equal,
+  "Jane"
+)
+```
+
+#### Multi-Target Reference Filtering (v0.7.0+)
+
+Filter on multi-target reference properties that can point to different collections:
+
+```elixir
+alias WeaviateEx.Filter
+alias WeaviateEx.Filter.{MultiTargetRef, RefPath}
+
+# Filter where "relatedTo" points to an Article with specific title
+filter = MultiTargetRef.new("relatedTo", "Article")
+  |> MultiTargetRef.where("title", :equal, "My Article")
+
+# Filter where "mentions" points to a verified Person
+filter = MultiTargetRef.new("mentions", "Person")
+  |> MultiTargetRef.where("verified", :equal, true)
+
+# Deep path filtering through multi-target reference
+filter = MultiTargetRef.new("mentions", "Person")
+  |> MultiTargetRef.deep_where(fn path ->
+    path
+    |> RefPath.through("worksAt", "Company")
+    |> RefPath.property("industry", :equal, "Tech")
+  end)
+
+# Convert to RefPath for chaining
+ref_path = MultiTargetRef.new("mentions", "Person")
+  |> MultiTargetRef.as_ref_path()
+  |> RefPath.through("worksAt", "Company")
+  |> RefPath.property("name", :equal, "Acme")
+
+# Combine with other filters
+combined = Filter.all_of([
+  MultiTargetRef.new("relatedTo", "Article")
+  |> MultiTargetRef.where("status", :equal, "published"),
+  Filter.equal("featured", true)
+])
+
+# Use convenience function
+filter = Filter.by_ref_multi_target(
+  "relatedTo",
+  "Article",
+  "status",
+  :equal,
+  "published"
+)
 ```
 
 ### Vector Configuration
@@ -1289,6 +1458,77 @@ config = InvertedIndexConfig.build(
 
 # Merge configurations
 merged = InvertedIndexConfig.merge(base_config, override_config)
+```
+
+### Reranker Configuration (v0.7.0+)
+
+Configure reranking models to improve search result relevance:
+
+```elixir
+alias WeaviateEx.API.RerankerConfig
+
+# Cohere reranker (default or specific model)
+config = RerankerConfig.cohere()
+config = RerankerConfig.cohere("rerank-english-v3.0")
+config = RerankerConfig.cohere("rerank-multilingual-v3.0", base_url: "https://api.cohere.ai")
+
+# Local transformers reranker
+config = RerankerConfig.transformers()
+config = RerankerConfig.transformers(inference_url: "http://localhost:8080")
+
+# Voyage AI reranker
+config = RerankerConfig.voyageai("rerank-1")
+config = RerankerConfig.voyageai("rerank-lite-1", base_url: "https://api.voyageai.com")
+
+# Jina AI reranker
+config = RerankerConfig.jinaai("jina-reranker-v1-base-en")
+config = RerankerConfig.jinaai("jina-reranker-v1-turbo-en")
+
+# Custom/unlisted reranker provider
+config = RerankerConfig.custom("my-reranker",
+  api_endpoint: "https://reranker.example.com",
+  model: "rerank-v1",
+  max_tokens: 512
+)
+
+# Disable reranking
+config = RerankerConfig.none()
+
+# Use in collection creation
+{:ok, _} = Collections.create("Article", %{
+  properties: [...],
+  reranker_config: config
+})
+```
+
+### Custom Generative Provider Configuration (v0.7.0+)
+
+Configure unlisted generative AI providers with custom settings:
+
+```elixir
+alias WeaviateEx.API.GenerativeConfig
+
+# Custom generative provider for unlisted LLMs
+config = GenerativeConfig.custom("my-llm",
+  api_endpoint: "https://llm.example.com",
+  model: "custom-gpt",
+  temperature: 0.7,
+  max_tokens: 2048
+)
+
+# Custom provider with authentication options
+config = GenerativeConfig.custom("enterprise-llm",
+  api_endpoint: "https://llm.internal.corp",
+  model: "llm-v2",
+  api_key_header: "X-API-Key",
+  temperature: 0.5
+)
+
+# Use with collection
+{:ok, _} = Collections.create("Article", %{
+  properties: [...],
+  generative_config: config
+})
 ```
 
 ### Backup & Restore
@@ -1736,7 +1976,7 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 - ✅ Uses Mox to mock HTTP/Protocol and gRPC responses
 - ✅ No Weaviate instance required
 - ✅ Fast execution (~0.2 seconds)
-- ✅ 1575 unit tests
+- ✅ 2248+ unit tests
 - ✅ Perfect for TDD and CI/CD
 
 **Integration Mode** - Real Weaviate testing:
@@ -1744,7 +1984,7 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 - ✅ Validates actual API behavior
 - ✅ Requires Weaviate running locally
 - ✅ Run with `--include integration` flag
-- ✅ 53 integration tests
+- ✅ 55 integration tests
 
 ### Running Tests
 
@@ -1804,14 +2044,14 @@ test/
 Current test coverage by module:
 
 - ✅ **Collections API**: 17 tests - Create, list, get, exists, delete, add property
-- ✅ **Filter System**: 26 tests - All operators, combinators, GraphQL conversion
+- ✅ **Filter System**: 80+ tests - All operators, combinators, RefPath, MultiTargetRef, property length
 - ✅ **Data Operations**: 17 tests - Insert, get, patch, exists, delete with vectors
 - ✅ **Objects API**: 15+ tests - Full CRUD with pagination
 - ✅ **Batch Operations**: 35+ tests - Bulk create, delete, error tracking, retry logic
 - ✅ **Query System**: 60+ tests - GraphQL, near_text, hybrid, BM25, move, rerank, groupBy
 - ✅ **Aggregations**: 15+ tests - Count, statistics, group by
 - ✅ **Tenants**: 20+ tests - Multi-tenancy with freeze/offload states
-- ✅ **References**: 10+ tests - Cross-reference CRUD, multi-target references
+- ✅ **References**: 30+ tests - Cross-reference CRUD, multi-target references, QueryReference metadata
 - ✅ **Generative AI**: 62 tests - All providers, typed configs, result parsing
 - ✅ **Vector Config**: 15+ tests - HNSW, PQ, flat index, multi-vector
 - ✅ **Multi-Vector**: 10+ tests - ColBERT, Muvera encoding, Jina vectorizers
@@ -1822,8 +2062,9 @@ Current test coverage by module:
 - ✅ **Concurrent Batch**: 20+ tests - Parallel insertion, result aggregation
 - ✅ **Batch Queue**: 25+ tests - Queue operations, failure tracking, re-queue
 - ✅ **Rate Limit Detection**: 20+ tests - Provider patterns, backoff calculation
+- ✅ **Custom Providers**: 20+ tests - Custom generative configs, reranker configurations
 
-**Total: 2151 tests passing**
+**Total: 2303 tests passing**
 
 ## Mix Tasks
 

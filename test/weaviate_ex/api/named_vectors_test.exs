@@ -211,4 +211,136 @@ defmodule WeaviateEx.API.NamedVectorsTest do
       assert Map.has_key?(result, "custom_vector")
     end
   end
+
+  describe "update_config/2" do
+    test "creates update config for vector index" do
+      update =
+        NamedVectors.update_config("title_vector",
+          vector_index: [
+            ef: 200,
+            dynamic_ef_min: 50,
+            dynamic_ef_max: 500
+          ]
+        )
+
+      assert update.name == "title_vector"
+      assert update.vector_index_config["ef"] == 200
+      assert update.vector_index_config["dynamicEfMin"] == 50
+      assert update.vector_index_config["dynamicEfMax"] == 500
+    end
+
+    test "creates update config for quantizer" do
+      update =
+        NamedVectors.update_config("content_vector",
+          quantizer: [
+            type: :pq,
+            segments: 128
+          ]
+        )
+
+      assert update.name == "content_vector"
+      assert update.quantizer_config["type"] == "pq"
+      assert update.quantizer_config["segments"] == 128
+    end
+
+    test "creates update config with both vector_index and quantizer" do
+      update =
+        NamedVectors.update_config("embedding",
+          vector_index: [ef: 150],
+          quantizer: [type: :bq, rescore_limit: 200]
+        )
+
+      assert update.vector_index_config["ef"] == 150
+      assert update.quantizer_config["type"] == "bq"
+      assert update.quantizer_config["rescoreLimit"] == 200
+    end
+
+    test "supports all vector index options" do
+      update =
+        NamedVectors.update_config("test_vector",
+          vector_index: [
+            ef: 200,
+            dynamic_ef_min: 50,
+            dynamic_ef_max: 500,
+            dynamic_ef_factor: 8,
+            flat_search_cutoff: 40_000
+          ]
+        )
+
+      vic = update.vector_index_config
+      assert vic["ef"] == 200
+      assert vic["dynamicEfMin"] == 50
+      assert vic["dynamicEfMax"] == 500
+      assert vic["dynamicEfFactor"] == 8
+      assert vic["flatSearchCutoff"] == 40_000
+    end
+
+    test "supports all quantizer types" do
+      pq_update = NamedVectors.update_config("pq_vector", quantizer: [type: :pq])
+      bq_update = NamedVectors.update_config("bq_vector", quantizer: [type: :bq])
+      sq_update = NamedVectors.update_config("sq_vector", quantizer: [type: :sq])
+
+      assert pq_update.quantizer_config["type"] == "pq"
+      assert bq_update.quantizer_config["type"] == "bq"
+      assert sq_update.quantizer_config["type"] == "sq"
+    end
+  end
+
+  describe "update_to_api/1" do
+    test "converts update to API format" do
+      update =
+        NamedVectors.update_config("title_vector",
+          vector_index: [ef: 200]
+        )
+
+      api = NamedVectors.update_to_api(update)
+
+      assert api["vectorConfig"]["title_vector"]["vectorIndexConfig"]["ef"] == 200
+    end
+
+    test "includes quantizer in vectorIndexConfig" do
+      update =
+        NamedVectors.update_config("content_vector",
+          quantizer: [type: :pq, segments: 128]
+        )
+
+      api = NamedVectors.update_to_api(update)
+
+      assert api["vectorConfig"]["content_vector"]["vectorIndexConfig"]["quantizer"]["type"] ==
+               "pq"
+
+      assert api["vectorConfig"]["content_vector"]["vectorIndexConfig"]["quantizer"]["segments"] ==
+               128
+    end
+
+    test "combines vector_index and quantizer" do
+      update =
+        NamedVectors.update_config("embedding",
+          vector_index: [ef: 300],
+          quantizer: [type: :bq]
+        )
+
+      api = NamedVectors.update_to_api(update)
+
+      vic = api["vectorConfig"]["embedding"]["vectorIndexConfig"]
+      assert vic["ef"] == 300
+      assert vic["quantizer"]["type"] == "bq"
+    end
+  end
+
+  describe "build_update_config/1" do
+    test "builds combined update config for multiple vectors" do
+      updates = [
+        NamedVectors.update_config("title_vector", vector_index: [ef: 200]),
+        NamedVectors.update_config("content_vector", vector_index: [ef: 150])
+      ]
+
+      result = NamedVectors.build_update_config(updates)
+
+      assert Map.has_key?(result["vectorConfig"], "title_vector")
+      assert Map.has_key?(result["vectorConfig"], "content_vector")
+      assert result["vectorConfig"]["title_vector"]["vectorIndexConfig"]["ef"] == 200
+      assert result["vectorConfig"]["content_vector"]["vectorIndexConfig"]["ef"] == 150
+    end
+  end
 end

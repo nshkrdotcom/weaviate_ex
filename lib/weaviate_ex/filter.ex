@@ -1,4 +1,6 @@
 defmodule WeaviateEx.Filter do
+  alias WeaviateEx.Filter.{MultiTargetRef, RefPath}
+
   @moduledoc """
   Filter system for building complex query filters.
 
@@ -212,6 +214,116 @@ defmodule WeaviateEx.Filter do
       operator: operator,
       value_int: count
     }
+  end
+
+  @length_operators [
+    :equal,
+    :not_equal,
+    :greater_than,
+    :greater_or_equal,
+    :less_than,
+    :less_or_equal
+  ]
+
+  @doc """
+  Filter by property string or array length.
+
+  Use this to filter based on the length of text properties or the number
+  of elements in array properties.
+
+  ## Arguments
+
+    - `property` - Property name
+    - `operator` - Comparison operator: `:equal`, `:not_equal`, `:greater_than`,
+      `:greater_or_equal`, `:less_than`, `:less_or_equal`
+    - `value` - Length value (non-negative integer)
+
+  ## Examples
+
+      # Title must be at least 10 characters
+      Filter.by_property_length("title", :greater_or_equal, 10)
+
+      # Tags array must have exactly 3 elements
+      Filter.by_property_length("tags", :equal, 3)
+
+      # Content must be less than 5000 characters
+      Filter.by_property_length("content", :less_than, 5000)
+  """
+  @spec by_property_length(String.t(), operator(), non_neg_integer()) :: filter()
+  def by_property_length(property, operator, value)
+      when operator in @length_operators and is_integer(value) and value >= 0 do
+    %{
+      path: [len(property)],
+      operator: operator,
+      value_int: value
+    }
+  end
+
+  def by_property_length(_property, operator, _value) when operator not in @length_operators do
+    raise ArgumentError,
+          "invalid operator for length filter: #{inspect(operator)}. " <>
+            "Must be one of: #{inspect(@length_operators)}"
+  end
+
+  def by_property_length(_property, _operator, value) when not is_integer(value) or value < 0 do
+    raise ArgumentError, "length value must be a non-negative integer, got: #{inspect(value)}"
+  end
+
+  @doc """
+  Create a length path for a property.
+
+  This wraps the property name in the `len()` function for length-based filtering.
+
+  ## Examples
+
+      Filter.len("description")
+      #=> "len(description)"
+  """
+  @spec len(String.t()) :: String.t()
+  def len(property) when is_binary(property) do
+    "len(#{property})"
+  end
+
+  @doc """
+  Create a filter using a reference path.
+
+  This is a convenience wrapper around `WeaviateEx.Filter.RefPath`.
+
+  ## Examples
+
+      alias WeaviateEx.Filter.RefPath
+
+      path = RefPath.through("hasAuthor", "Author")
+      Filter.by_ref_path(path, "name", :equal, "John")
+  """
+  @spec by_ref_path(RefPath.t(), String.t(), operator(), value()) :: filter()
+  def by_ref_path(%RefPath{} = ref_path, property, operator, value) do
+    RefPath.property(ref_path, property, operator, value)
+  end
+
+  @doc """
+  Create a filter for a multi-target reference property.
+
+  For reference properties that can point to multiple collections,
+  this allows filtering by a specific target collection.
+
+  ## Arguments
+
+    - `property` - Multi-target reference property name
+    - `target_collection` - Specific target collection to filter
+    - `target_property` - Property in the target collection
+    - `operator` - Filter operator
+    - `value` - Filter value
+
+  ## Examples
+
+      Filter.by_ref_multi_target("relatedTo", "Article", "title", :equal, "Test")
+      Filter.by_ref_multi_target("mentions", "Person", "verified", :equal, true)
+  """
+  @spec by_ref_multi_target(String.t(), String.t(), String.t(), operator(), value()) :: filter()
+  def by_ref_multi_target(property, target_collection, target_property, operator, value) do
+    MultiTargetRef.new(property, target_collection)
+    |> MultiTargetRef.where(target_property, operator, value)
   end
 
   @doc """

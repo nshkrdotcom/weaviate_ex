@@ -109,6 +109,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Version Module** (`WeaviateEx.Version`):
   - `get_grpc_max_message_size/1` - Extract gRPC max message size from server meta
 
+#### Filter Enhancements (Phase 4)
+- **Property Length Filtering** (`WeaviateEx.Filter`):
+  - `by_property_length/3` - Filter by string or array length
+  - `len/1` - Create length path helper (e.g., `len("title")`)
+  - Operators: `:equal`, `:not_equal`, `:greater_than`, `:greater_or_equal`, `:less_than`, `:less_or_equal`
+  - Use for filtering empty strings, minimum content length, array element counts
+
+- **Reference Path Traversal** (`WeaviateEx.Filter.RefPath`):
+  - `through/2`, `through/3` - Build multi-level reference paths
+  - `property/4` - Terminate path with property filter
+  - `build_path/2` - Build path list from segments
+  - `to_path/1` - Get path without final property
+  - `depth/1` - Get number of hops in reference path
+  - Enables deep filtering: `RefPath.through("hasAuthor", "Author") |> RefPath.through("worksAt", "Company") |> RefPath.property("industry", :equal, "Tech")`
+
+- **Multi-Target Reference Filters** (`WeaviateEx.Filter.MultiTargetRef`):
+  - `new/2` - Create multi-target reference filter builder
+  - `where/4` - Add property filter on specific target collection
+  - `deep_where/2` - Deep path filtering with RefPath
+  - `as_ref_path/1` - Convert to RefPath for chaining
+  - Filter different target collections: `MultiTargetRef.new("relatedTo", "Article") |> MultiTargetRef.where("title", :like, "Tech*")`
+
+- **Filter Module Integration**:
+  - `by_ref_path/4` - Create filter from RefPath
+  - `by_ref_multi_target/5` - Create multi-target reference filter
+
+#### Query Reference Enhancements (Phase 4)
+- **Multi-Target References** (`WeaviateEx.Query.QueryReference`):
+  - `multi_target/3` - Create query for specific target collection
+  - `multi_target?/1` - Check if reference is multi-target
+  - Query different targets: `QueryReference.multi_target("relatedTo", "Article", return_properties: ["title"])`
+
+- **Return Metadata Option**:
+  - `return_metadata` option for references
+  - Accepts `:full`, `:common`, or list of atoms (`:uuid`, `:distance`, `:certainty`, `:creation_time`, etc.)
+  - Include metadata in referenced objects: `QueryReference.new("hasAuthor", return_metadata: [:uuid, :distance])`
+
+#### Named Vector Config Updates (Phase 4)
+- **Update Configuration** (`WeaviateEx.API.NamedVectors`):
+  - `update_config/2` - Create update config for existing named vector
+  - `update_to_api/1` - Convert update to API format
+  - `build_update_config/1` - Build combined update for multiple vectors
+  - Vector index options: `:ef`, `:dynamic_ef_min`, `:dynamic_ef_max`, `:dynamic_ef_factor`, `:flat_search_cutoff`
+  - Quantizer options: `:type` (`:pq`, `:bq`, `:sq`), `:segments`, `:centroids`, `:training_limit`, `:rescore_limit`
+  - Example: `NamedVectors.update_config("title_vector", vector_index: [ef: 200], quantizer: [type: :pq, segments: 128])`
+
+#### Custom Provider Configurations (Phase 4)
+- **Custom Generative Providers** (`WeaviateEx.API.GenerativeConfig`):
+  - `custom/2` - Create config for unlisted generative AI providers
+  - Automatic snake_case to camelCase conversion
+  - Pass any options: api_endpoint, model, api_key_header, temperature, max_tokens, etc.
+  - Example: `GenerativeConfig.custom("my-llm", api_endpoint: "https://llm.example.com", model: "custom-gpt")`
+
+- **Reranker Configuration Module** (`WeaviateEx.API.RerankerConfig`):
+  - `cohere/2` - Cohere Rerank configuration
+  - `transformers/1` - Local transformers reranker
+  - `voyageai/2` - Voyage AI reranker
+  - `jinaai/2` - Jina AI reranker
+  - `custom/2` - Custom/unlisted reranker providers
+  - `none/0` - Disable reranking
+  - All providers support `:base_url` option for custom endpoints
+
 ### Changed
 - Updated Query struct to include `near_image` and `near_media` fields
 - Enhanced GraphQL query building with nearImage and nearMedia support
@@ -128,7 +190,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All 2151 tests pass with full async execution support
 
 ### Stats
-- 5 new feature modules/functions
+- Phase 1-4: 20+ new feature modules/functions
+- Phase 4: 6 new modules (RefPath, MultiTargetRef, RerankerConfig) + major enhancements
 - Full test coverage for all new features
 - Backward compatible with v0.6.0
 - Test suite now fully async-safe with zero timing-based synchronization

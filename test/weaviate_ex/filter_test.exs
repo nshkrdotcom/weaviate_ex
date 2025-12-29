@@ -181,6 +181,109 @@ defmodule WeaviateEx.FilterTest do
     end
   end
 
+  describe "by_property_length/3" do
+    test "filters by text property length equal" do
+      filter = Filter.by_property_length("title", :equal, 10)
+
+      assert filter == %{
+               path: ["len(title)"],
+               operator: :equal,
+               value_int: 10
+             }
+    end
+
+    test "filters by text property length greater than" do
+      filter = Filter.by_property_length("content", :greater_than, 100)
+
+      assert filter == %{
+               path: ["len(content)"],
+               operator: :greater_than,
+               value_int: 100
+             }
+    end
+
+    test "filters by array property length" do
+      filter = Filter.by_property_length("tags", :greater_or_equal, 3)
+
+      assert filter == %{
+               path: ["len(tags)"],
+               operator: :greater_or_equal,
+               value_int: 3
+             }
+    end
+
+    test "supports less_than operator" do
+      filter = Filter.by_property_length("description", :less_than, 500)
+
+      assert filter[:operator] == :less_than
+      assert filter[:value_int] == 500
+    end
+
+    test "supports less_or_equal operator" do
+      filter = Filter.by_property_length("summary", :less_or_equal, 200)
+
+      assert filter[:operator] == :less_or_equal
+    end
+
+    test "supports not_equal operator" do
+      filter = Filter.by_property_length("title", :not_equal, 0)
+
+      assert filter[:operator] == :not_equal
+    end
+
+    test "raises on invalid operator" do
+      assert_raise ArgumentError, ~r/invalid operator for length filter/, fn ->
+        Filter.by_property_length("title", :like, 10)
+      end
+    end
+
+    test "raises on negative value" do
+      assert_raise ArgumentError, ~r/non-negative integer/, fn ->
+        Filter.by_property_length("title", :equal, -1)
+      end
+    end
+  end
+
+  describe "len/1" do
+    test "creates length path for property" do
+      path = Filter.len("description")
+
+      assert path == "len(description)"
+    end
+  end
+
+  describe "length filter integration" do
+    test "combines length filter with AND" do
+      filter =
+        Filter.all_of([
+          Filter.by_property_length("title", :greater_than, 5),
+          Filter.equal("status", "published")
+        ])
+
+      assert filter[:operator] == :and
+      assert length(filter[:operands]) == 2
+    end
+
+    test "combines length filter with OR" do
+      filter =
+        Filter.any_of([
+          Filter.by_property_length("tags", :equal, 0),
+          Filter.null?("tags")
+        ])
+
+      assert filter[:operator] == :or
+    end
+
+    test "converts length filter to GraphQL" do
+      filter = Filter.by_property_length("content", :less_than, 1000)
+      gql = Filter.to_graphql(filter)
+
+      assert gql[:path] == ["len(content)"]
+      assert gql[:operator] == "LessThan"
+      assert gql[:valueInt] == 1000
+    end
+  end
+
   describe "to_graphql/1" do
     test "converts simple filter to GraphQL" do
       filter = Filter.equal("status", "published")

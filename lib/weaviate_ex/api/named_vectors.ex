@@ -397,6 +397,151 @@ defmodule WeaviateEx.API.NamedVectors do
     end)
   end
 
+  @type update_config :: %{
+          name: String.t(),
+          vector_index_config: map() | nil,
+          quantizer_config: map() | nil
+        }
+
+  @doc """
+  Create an update configuration for an existing named vector.
+
+  This allows updating the vector index parameters (like HNSW ef values)
+  or quantizer settings for an existing named vector in a collection.
+
+  ## Options
+
+    - `:vector_index` - Vector index settings to update
+      - `:ef` - ef parameter for HNSW search
+      - `:dynamic_ef_min` - Minimum dynamic ef
+      - `:dynamic_ef_max` - Maximum dynamic ef
+      - `:dynamic_ef_factor` - Dynamic ef factor
+      - `:flat_search_cutoff` - Flat search cutoff
+    - `:quantizer` - Quantizer settings to update
+      - `:type` - Quantizer type: `:pq`, `:bq`, `:sq`
+      - `:segments` - Number of segments (PQ)
+      - `:centroids` - Number of centroids (PQ)
+      - `:training_limit` - Training limit
+      - `:rescore_limit` - Rescore limit (BQ)
+
+  ## Examples
+
+      # Update HNSW ef parameter
+      NamedVectors.update_config("title_vector",
+        vector_index: [ef: 200, dynamic_ef_max: 500]
+      )
+
+      # Update quantizer
+      NamedVectors.update_config("content_vector",
+        quantizer: [type: :pq, segments: 128]
+      )
+
+      # Update both
+      NamedVectors.update_config("embedding",
+        vector_index: [ef: 150],
+        quantizer: [type: :bq, rescore_limit: 200]
+      )
+  """
+  @spec update_config(String.t(), keyword()) :: update_config()
+  def update_config(name, opts) when is_binary(name) do
+    %{
+      name: name,
+      vector_index_config: build_vector_index_update(Keyword.get(opts, :vector_index)),
+      quantizer_config: build_quantizer_update(Keyword.get(opts, :quantizer))
+    }
+  end
+
+  @doc """
+  Convert an update config to API format for Collections.update.
+
+  ## Examples
+
+      update = NamedVectors.update_config("title_vector",
+        vector_index: [ef: 200]
+      )
+
+      api_format = NamedVectors.update_to_api(update)
+      # => %{"vectorConfig" => %{"title_vector" => %{"vectorIndexConfig" => %{"ef" => 200}}}}
+  """
+  @spec update_to_api(update_config()) :: map()
+  def update_to_api(%{name: name} = update) do
+    inner = %{}
+
+    inner =
+      if update.vector_index_config do
+        Map.put(inner, "vectorIndexConfig", update.vector_index_config)
+      else
+        inner
+      end
+
+    inner =
+      if update.quantizer_config do
+        existing_vic = Map.get(inner, "vectorIndexConfig", %{})
+        updated_vic = Map.put(existing_vic, "quantizer", update.quantizer_config)
+        Map.put(inner, "vectorIndexConfig", updated_vic)
+      else
+        inner
+      end
+
+    %{"vectorConfig" => %{name => inner}}
+  end
+
+  @doc """
+  Build update configs for multiple named vectors.
+
+  ## Examples
+
+      updates = NamedVectors.build_update_config([
+        NamedVectors.update_config("title_vector", vector_index: [ef: 200]),
+        NamedVectors.update_config("content_vector", vector_index: [ef: 150])
+      ])
+  """
+  @spec build_update_config([update_config()]) :: map()
+  def build_update_config(updates) when is_list(updates) do
+    vector_configs =
+      Enum.reduce(updates, %{}, fn update, acc ->
+        api = update_to_api(update)
+        inner = api["vectorConfig"][update.name]
+        Map.put(acc, update.name, inner)
+      end)
+
+    %{"vectorConfig" => vector_configs}
+  end
+
+  defp build_vector_index_update(nil), do: nil
+
+  defp build_vector_index_update(opts) when is_list(opts) do
+    %{}
+    |> maybe_put("ef", Keyword.get(opts, :ef))
+    |> maybe_put("dynamicEfMin", Keyword.get(opts, :dynamic_ef_min))
+    |> maybe_put("dynamicEfMax", Keyword.get(opts, :dynamic_ef_max))
+    |> maybe_put("dynamicEfFactor", Keyword.get(opts, :dynamic_ef_factor))
+    |> maybe_put("flatSearchCutoff", Keyword.get(opts, :flat_search_cutoff))
+    |> maybe_put("skip", Keyword.get(opts, :skip))
+    |> maybe_put("cleanupIntervalSeconds", Keyword.get(opts, :cleanup_interval_seconds))
+  end
+
+  defp build_quantizer_update(nil), do: nil
+
+  defp build_quantizer_update(opts) when is_list(opts) do
+    type = Keyword.get(opts, :type)
+
+    base =
+      case type do
+        :pq -> %{"type" => "pq"}
+        :bq -> %{"type" => "bq"}
+        :sq -> %{"type" => "sq"}
+        _ -> %{}
+      end
+
+    base
+    |> maybe_put("segments", Keyword.get(opts, :segments))
+    |> maybe_put("centroids", Keyword.get(opts, :centroids))
+    |> maybe_put("trainingLimit", Keyword.get(opts, :training_limit))
+    |> maybe_put("rescoreLimit", Keyword.get(opts, :rescore_limit))
+    |> maybe_put("enabled", Keyword.get(opts, :enabled))
+  end
+
   # Private helpers
 
   defp build_named_vector(vectorizer_name, opts, extra_keys) do

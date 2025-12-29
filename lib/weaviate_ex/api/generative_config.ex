@@ -500,6 +500,58 @@ defmodule WeaviateEx.API.GenerativeConfig do
     ])
   end
 
+  @doc """
+  Create a configuration for a custom/unlisted generative provider.
+
+  Use this when connecting to a generative AI provider not natively
+  supported by Weaviate. All options are passed through with automatic
+  camelCase conversion.
+
+  ## Arguments
+
+    - `name` - Identifier for the custom provider (for your reference)
+    - `opts` - Provider configuration options
+
+  ## Common Options
+
+    - `:api_endpoint` - API endpoint URL (required for most providers)
+    - `:model` - Model identifier
+    - `:api_key_header` - Header name for API key authentication
+    - `:base_url` - Base URL for the API
+
+  Any additional options are passed through with snake_case to camelCase conversion.
+
+  ## Examples
+
+      # Custom LLM endpoint
+      GenerativeConfig.custom("my-llm",
+        api_endpoint: "https://my-llm.example.com/v1/generate",
+        model: "custom-model-v1"
+      )
+
+      # Local LLM
+      GenerativeConfig.custom("local-ollama",
+        api_endpoint: "http://localhost:11434",
+        model: "llama2"
+      )
+
+      # Enterprise LLM with custom auth header
+      GenerativeConfig.custom("enterprise-llm",
+        api_endpoint: "https://llm.enterprise.com/api",
+        model: "enterprise-gpt",
+        api_key_header: "X-API-Key"
+      )
+  """
+  @spec custom(String.t(), keyword()) :: config()
+  def custom(name, opts) when is_binary(name) do
+    options =
+      opts
+      |> Enum.map(fn {k, v} -> {camelize(k), v} end)
+      |> Map.new()
+
+    %{"generative-custom" => Map.put(options, :_custom_name, name)}
+  end
+
   # Build configuration map from options and field mappings
   defp build_config(module_name, opts, field_mappings) do
     config =
@@ -512,5 +564,16 @@ defmodule WeaviateEx.API.GenerativeConfig do
       end)
 
     %{module_name => config}
+  end
+
+  defp camelize(atom) when is_atom(atom) do
+    atom
+    |> Atom.to_string()
+    |> camelize_string()
+  end
+
+  defp camelize_string(string) do
+    [first | rest] = String.split(string, "_")
+    Enum.join([first | Enum.map(rest, &String.capitalize/1)])
   end
 end
