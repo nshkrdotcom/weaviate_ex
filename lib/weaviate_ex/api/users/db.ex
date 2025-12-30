@@ -177,17 +177,39 @@ defmodule WeaviateEx.API.Users.DB do
   @doc """
   Gets roles assigned to a user.
 
+  ## Options
+
+  - `:include_permissions` - If true, returns a map of role names to Role structs
+    with full permission details instead of just role names (default: false)
+
   ## Examples
 
-      {:ok, roles} = DB.get_roles(client, "john.doe")
+      # Get role names only
+      {:ok, ["admin", "editor"]} = DB.get_roles(client, "john.doe")
+
+      # Get roles with full permission details
+      {:ok, %{"admin" => %Role{...}}} = DB.get_roles(client, "john.doe", include_permissions: true)
   """
-  @spec get_roles(Client.t(), String.t(), opts()) :: {:ok, [String.t()]} | {:error, Error.t()}
+  @spec get_roles(Client.t(), String.t(), opts()) ::
+          {:ok, [String.t()] | map()} | {:error, Error.t()}
   def get_roles(client, user_id, opts \\ []) do
-    path = "/v1/users/#{URI.encode_www_form(user_id)}/roles?user_type=db"
+    include_permissions = Keyword.get(opts, :include_permissions, false)
+    query = if include_permissions, do: "&include_permissions=true", else: ""
+    path = "/v1/users/#{URI.encode_www_form(user_id)}/roles?user_type=db#{query}"
 
     case Client.request(client, :get, path, nil, opts) do
-      {:ok, roles} when is_list(roles) -> {:ok, roles}
-      {:error, error} -> {:error, error}
+      {:ok, roles} when is_list(roles) and not include_permissions ->
+        {:ok, roles}
+
+      {:ok, roles} when is_map(roles) and include_permissions ->
+        {:ok, roles}
+
+      {:ok, roles} when is_list(roles) and include_permissions ->
+        # Server may return list even with include_permissions
+        {:ok, roles}
+
+      {:error, error} ->
+        {:error, error}
     end
   end
 
@@ -211,15 +233,25 @@ defmodule WeaviateEx.API.Users.DB do
   @doc """
   Deactivates a user.
 
+  ## Options
+
+  - `:revoke_key` - If true, also revokes the user's API key (default: false)
+
   ## Examples
 
+      # Deactivate user, keeping API key
       :ok = DB.deactivate(client, "john.doe")
+
+      # Deactivate user and revoke their API key
+      :ok = DB.deactivate(client, "john.doe", revoke_key: true)
   """
   @spec deactivate(Client.t(), String.t(), opts()) :: :ok | {:error, Error.t()}
   def deactivate(client, user_id, opts \\ []) do
+    revoke_key = Keyword.get(opts, :revoke_key, false)
     path = "/v1/users/#{URI.encode_www_form(user_id)}/deactivate?user_type=db"
+    body = if revoke_key, do: %{"revokeKey" => true}, else: nil
 
-    case Client.request(client, :post, path, nil, opts) do
+    case Client.request(client, :post, path, body, opts) do
       {:ok, _} -> :ok
       {:error, error} -> {:error, error}
     end

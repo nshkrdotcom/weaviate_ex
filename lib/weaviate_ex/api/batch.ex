@@ -7,8 +7,17 @@ defmodule WeaviateEx.API.Batch do
 
   When used with a client that has an active gRPC connection, operations
   use gRPC for optimal performance. Falls back to HTTP otherwise.
+
+  ## Wait for Vector Indexing
+
+  After batch operations, vectors are indexed asynchronously. Use
+  `wait_for_vector_indexing/3` to ensure all vectors are queryable:
+
+      {:ok, _} = Batch.create_objects(client, objects)
+      :ok = Batch.wait_for_vector_indexing(client, "Article")
   """
 
+  alias WeaviateEx.Batch.VectorIndexing
   alias WeaviateEx.Client
   alias WeaviateEx.Error
   alias WeaviateEx.GRPC.Services.Batch, as: GRPCBatch
@@ -367,5 +376,40 @@ defmodule WeaviateEx.API.Batch do
     value
     |> to_string()
     |> URI.encode_www_form()
+  end
+
+  @doc """
+  Wait for all vectors to be indexed after batch operations.
+
+  After batch inserts, vectors are indexed asynchronously. This function
+  polls shard status until all vectors are indexed and queryable.
+
+  ## Options
+
+  - `:timeout` - Maximum wait time in milliseconds (default: 60_000)
+  - `:poll_interval` - Milliseconds between status checks (default: 250)
+  - `:how_many_failures` - Number of consecutive failures before giving up (default: 5)
+  - `:tenant` - Filter to specific tenant (optional)
+
+  ## Examples
+
+      # Wait for all shards in a collection
+      :ok = Batch.wait_for_vector_indexing(client, "Article")
+
+      # Wait with custom timeout
+      :ok = Batch.wait_for_vector_indexing(client, "Article", timeout: 120_000)
+
+      # Wait for specific tenant
+      :ok = Batch.wait_for_vector_indexing(client, "Article", tenant: "tenant-a")
+
+  ## Returns
+
+  - `:ok` - All vectors indexed
+  - `{:error, :timeout}` - Timed out waiting for indexing
+  - `{:error, {:max_failures_exceeded, last_error}}` - Too many consecutive failures
+  """
+  @spec wait_for_vector_indexing(Client.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def wait_for_vector_indexing(client, collection, opts \\ []) do
+    VectorIndexing.wait_for_indexing(client, collection, opts)
   end
 end

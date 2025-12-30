@@ -13,6 +13,8 @@ defmodule WeaviateEx.Types.Tenant do
   - `:cold` - Tenant is temporarily deactivated
   - `:frozen` - Tenant data is persisted but not in memory
   - `:offloaded` - Tenant data moved to cold storage
+  - `:offloading` - Tenant is being offloaded to cold storage (transitional)
+  - `:onloading` - Tenant is being loaded from cold storage (transitional)
 
   ## Examples
 
@@ -28,7 +30,8 @@ defmodule WeaviateEx.Types.Tenant do
       # => %Tenant{name: "customer_789", activity_status: :frozen}
   """
 
-  @type activity_status :: :active | :inactive | :hot | :cold | :frozen | :offloaded
+  @type activity_status ::
+          :active | :inactive | :hot | :cold | :frozen | :offloaded | :offloading | :onloading
 
   @type t :: %__MODULE__{
           name: String.t(),
@@ -37,7 +40,7 @@ defmodule WeaviateEx.Types.Tenant do
 
   defstruct [:name, activity_status: :active]
 
-  @valid_statuses ~w(active inactive hot cold frozen offloaded)a
+  @valid_statuses ~w(active inactive hot cold frozen offloaded offloading onloading)a
 
   @doc """
   Creates a new Tenant struct.
@@ -191,6 +194,8 @@ defmodule WeaviateEx.Types.Tenant do
   defp activity_status_to_string(:cold), do: "COLD"
   defp activity_status_to_string(:frozen), do: "FROZEN"
   defp activity_status_to_string(:offloaded), do: "OFFLOADED"
+  defp activity_status_to_string(:offloading), do: "OFFLOADING"
+  defp activity_status_to_string(:onloading), do: "ONLOADING"
 
   # Status string to atom mapping
   @status_string_map %{
@@ -203,8 +208,8 @@ defmodule WeaviateEx.Types.Tenant do
     "OFFLOADED" => :offloaded,
     "FREEZING" => :frozen,
     "UNFREEZING" => :hot,
-    "OFFLOADING" => :offloaded,
-    "ONLOADING" => :hot
+    "OFFLOADING" => :offloading,
+    "ONLOADING" => :onloading
   }
 
   # Convert API string format to activity status atom

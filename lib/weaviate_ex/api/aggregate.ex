@@ -162,6 +162,56 @@ defmodule WeaviateEx.API.Aggregate do
   end
 
   @doc """
+  Aggregate with near_image similarity constraint.
+
+  Aggregates objects that are semantically similar to a given image.
+  The image can be provided as a base64-encoded string or a URL.
+
+  Requires a multi2vec-clip or similar image-capable vectorizer.
+
+  ## Parameters
+    * `client` - WeaviateEx client
+    * `collection_name` - Name of the collection
+    * `image_data` - Base64-encoded image string or image URL
+    * `opts` - Options including:
+      - `:certainty` - Minimum certainty threshold
+      - `:distance` - Maximum distance threshold
+      - `:target_vectors` - Target named vectors for multi-vector collections
+      - Plus standard aggregation options
+
+  ## Examples
+
+      # With base64 image
+      {:ok, results} = Aggregate.with_near_image(client, "Products",
+        base64_image_string,
+        metrics: [:count]
+      )
+
+      # With certainty threshold
+      {:ok, results} = Aggregate.with_near_image(client, "Products",
+        image_data,
+        certainty: 0.7,
+        metrics: [:count]
+      )
+
+      # Target specific named vector
+      {:ok, results} = Aggregate.with_near_image(client, "Products",
+        image_data,
+        target_vectors: ["image_vector"],
+        properties: [{:price, [:mean, :sum]}]
+      )
+
+  ## Returns
+    * `{:ok, [map()]}` - List of aggregation results
+    * `{:error, Error.t()}` - Error if aggregation fails
+  """
+  @spec with_near_image(Client.t(), collection_name(), String.t(), opts()) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def with_near_image(client, collection_name, image_data, opts \\ []) do
+    execute_aggregate(client, collection_name, :near_image, image_data, nil, opts)
+  end
+
+  @doc """
   Aggregate with hybrid search constraint.
 
   Combines vector similarity and keyword (BM25) search for aggregation.
@@ -537,6 +587,38 @@ defmodule WeaviateEx.API.Aggregate do
       end
 
     "(\n      nearObject: { #{Enum.join(Enum.reverse(parts), ", ")} }\n    )"
+  end
+
+  defp build_search_clause(:near_image, image_data, _filter, opts) do
+    certainty = Keyword.get(opts, :certainty)
+    distance = Keyword.get(opts, :distance)
+    target_vectors = Keyword.get(opts, :target_vectors)
+
+    parts = [~s(image: "#{image_data}")]
+
+    parts =
+      if certainty do
+        [~s(certainty: #{certainty}) | parts]
+      else
+        parts
+      end
+
+    parts =
+      if distance do
+        [~s(distance: #{distance}) | parts]
+      else
+        parts
+      end
+
+    parts =
+      if target_vectors && is_list(target_vectors) do
+        vectors_str = Enum.map_join(target_vectors, ", ", &~s("#{&1}"))
+        [~s(targetVectors: [#{vectors_str}]) | parts]
+      else
+        parts
+      end
+
+    "(\n      nearImage: { #{Enum.join(Enum.reverse(parts), ", ")} }\n    )"
   end
 
   defp build_search_clause(:hybrid, query, _filter, opts) do

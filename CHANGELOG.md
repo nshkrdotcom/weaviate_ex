@@ -11,6 +11,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Batch Operations
+- **Wait for Vector Indexing** (`WeaviateEx.Batch.VectorIndexing`):
+  - `wait_for_indexing/3` - Wait for all vectors to be indexed after batch operations
+  - `wait_for_shards/3` - Wait for specific shards to have vectors indexed
+  - `shard_ready?/3` - Check if a specific shard is ready for queries
+  - `get_queue_status/2` - Get vector queue status for all shards
+  - `total_pending_vectors/2` - Get total pending vector count
+  - `all_indexed?/2` - Check if all vectors are indexed
+  - Options: `:timeout`, `:poll_interval`, `:how_many_failures`, `:tenant`
+  - Exposed via `WeaviateEx.API.Batch.wait_for_vector_indexing/3`
+
+#### RBAC Enhancements
+- **User Assignments with Type** (`WeaviateEx.API.RBAC`):
+  - `get_user_assignments/3` - Get users assigned to role with type info
+  - `UserAssignment` struct with `user_id` and `user_type` fields
+  - Supports `:db_user`, `:db_env_user`, `:oidc` user types
+
+- **Group Assignments with Type** (`WeaviateEx.API.RBAC`):
+  - `get_group_assignments/3` - Get groups assigned to role with type info
+  - `GroupAssignment` struct with `group_id` and `group_type` fields
+
+- **Nodes Permission Collection Filter** (`WeaviateEx.RBAC.Permissions`):
+  - `nodes/2` now supports `:collection` option for verbose mode
+  - Example: `Permissions.nodes(:verbose, collection: "Article")`
+
+#### Collections/Schema
+- **Reconfigure Module** (`WeaviateEx.Reconfigure`):
+  - `inverted_index/1` - Build inverted index update config (BM25, cleanup, stopwords)
+  - `replication/1` - Build replication update config (factor, async, deletion strategy)
+  - `vector_index_hnsw/1` - Build HNSW index update config (ef, max_connections, etc.)
+  - `named_vectors_update/2` - Build named vector update config
+  - `multi_tenancy/1` - Build multi-tenancy update config
+  - `description/1` - Build description update
+  - `merge/1` - Combine multiple update configs
+
+#### Query Enhancements
+- **Multi-Vector Queries** (`WeaviateEx.Query.NearVector`):
+  - `single/2` - Single vector query with options
+  - `list_of_vectors/2` - Query with multiple vectors over single space
+  - `per_target/2` - Query with different vectors per named vector space
+  - `weighted_targets/2` - Weighted multi-target vector query
+  - `to_api/1` - Convert to API format
+
+#### Aggregation
+- **Near Image Aggregation** (`WeaviateEx.API.Aggregate`):
+  - `with_near_image/4` - Aggregate with near_image similarity constraint
+  - Support for `:certainty`, `:distance`, `:target_vectors` options
+
+#### Users Management
+- **Include Permissions Parameter** (`WeaviateEx.API.Users.DB`):
+  - `get_roles/3` now supports `:include_permissions` option
+  - When true, returns roles with full permission details
+
+- **Deactivate with Key Revocation** (`WeaviateEx.API.Users.DB`):
+  - `deactivate/3` now supports `:revoke_key` option
+  - When true, also revokes the user's API key
+
+#### Vectorizers
+- **Multi-Vector Encoding** (`WeaviateEx.API.MultiVector.Encoding`):
+  - `muvera/1` - Configure Muvera encoding for ColBERT-style multi-vectors
+  - Options: `:ksim`, `:dprojections`, `:repetitions`
+  - `none/0` - Raw multi-vectors without encoding
+
+#### Tenant Statuses
+- **Transitional Tenant Statuses** (`WeaviateEx.Types.Tenant`):
+  - Added `:offloading` status - Tenant is being offloaded to cold storage
+  - Added `:onloading` status - Tenant is being loaded from cold storage
+  - Full type support in `activity_status` type
+
 #### Cluster API Enhancements
 - **Shard Name Filtering** (`WeaviateEx.API.Cluster`):
   - `nodes/2` now supports `:shard` option to filter nodes by specific shard name
@@ -103,6 +172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Validation of OIDC grant types on startup
   - Supported types: `:oidc_client_credentials`, `:oidc_password`
   - Clear error messages for invalid or missing auth configuration
+
+### Changed
+- Updated `@valid_statuses` in `Tenant` to include transitional statuses
+- Improved alias ordering in multiple modules for consistency
 
 ### Stats
 - 2612 tests passing (138 new tests added)

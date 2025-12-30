@@ -30,7 +30,7 @@ defmodule WeaviateEx.API.RBAC do
 
   alias WeaviateEx.Client
   alias WeaviateEx.Error
-  alias WeaviateEx.RBAC.{Permission, Permissions, Role}
+  alias WeaviateEx.RBAC.{GroupAssignment, Permission, Permissions, Role, UserAssignment}
 
   @type opts :: keyword()
 
@@ -252,6 +252,84 @@ defmodule WeaviateEx.API.RBAC do
     case Client.request(client, :get, path, nil, opts) do
       {:ok, groups} when is_list(groups) -> {:ok, groups}
       {:error, error} -> {:error, error}
+    end
+  end
+
+  @doc """
+  Get users assigned to a role with type information.
+
+  Returns a list of `UserAssignment` structs containing user ID and type.
+  The user type indicates how the user was created/authenticated:
+
+  - `:db_user` - Database-backed user
+  - `:db_env_user` - Database user from environment variables
+  - `:oidc` - OpenID Connect authenticated user
+
+  ## Examples
+
+      {:ok, assignments} = RBAC.get_user_assignments(client, "editor")
+      for assignment <- assignments do
+        IO.puts("\#{assignment.user_id} (\#{assignment.user_type})")
+      end
+
+  ## Returns
+
+  - `{:ok, [UserAssignment.t()]}` - List of user assignments with types
+  - `{:error, Error.t()}` - Error if request fails
+  """
+  @spec get_user_assignments(Client.t(), String.t(), opts()) ::
+          {:ok, [UserAssignment.t()]} | {:error, Error.t()}
+  def get_user_assignments(client, role_name, opts \\ []) do
+    path = "/v1/authz/roles/#{URI.encode_www_form(role_name)}/user-assignments"
+
+    case Client.request(client, :get, path, nil, opts) do
+      {:ok, response} when is_list(response) ->
+        assignments = Enum.map(response, &UserAssignment.from_api/1)
+        {:ok, assignments}
+
+      {:ok, %{"userAssignments" => response}} when is_list(response) ->
+        assignments = Enum.map(response, &UserAssignment.from_api/1)
+        {:ok, assignments}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  @doc """
+  Get groups assigned to a role with type information.
+
+  Returns a list of `GroupAssignment` structs containing group ID and type.
+  Currently, only OIDC groups are supported.
+
+  ## Examples
+
+      {:ok, assignments} = RBAC.get_group_assignments(client, "viewer")
+      for assignment <- assignments do
+        IO.puts("\#{assignment.group_id} (\#{assignment.group_type})")
+      end
+
+  ## Returns
+
+  - `{:ok, [GroupAssignment.t()]}` - List of group assignments with types
+  - `{:error, Error.t()}` - Error if request fails
+  """
+  @spec get_group_assignments(Client.t(), String.t(), opts()) ::
+          {:ok, [GroupAssignment.t()]} | {:error, Error.t()}
+  def get_group_assignments(client, role_name, opts \\ []) do
+    path = "/v1/authz/roles/#{URI.encode_www_form(role_name)}/group-assignments"
+
+    case Client.request(client, :get, path, nil, opts) do
+      {:ok, response} when is_list(response) ->
+        assignments = Enum.map(response, &GroupAssignment.from_api/1)
+        {:ok, assignments}
+
+      {:ok, %{"groupAssignments" => response}} when is_list(response) ->
+        assignments = Enum.map(response, &GroupAssignment.from_api/1)
+        {:ok, assignments}
+
+      {:error, error} ->
+        {:error, error}
     end
   end
 end

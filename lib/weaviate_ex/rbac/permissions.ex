@@ -244,17 +244,31 @@ defmodule WeaviateEx.RBAC.Permissions do
   ## Parameters
 
     * `verbosity` - `:minimal` or `:verbose`. Defaults to `:minimal`.
+    * `opts` - Optional keyword list:
+      - `:collection` - Filter to specific collection (only valid with `:verbose`)
 
   ## Examples
 
       Permissions.nodes()          # Minimal verbosity
       Permissions.nodes(:minimal)
       Permissions.nodes(:verbose)
+
+      # With collection filter (verbose only)
+      Permissions.nodes(:verbose, collection: "Article")
   """
   @spec nodes() :: Permission.t()
   @spec nodes(:minimal | :verbose) :: Permission.t()
-  def nodes(verbosity \\ :minimal) do
-    Permission.new(:nodes, :read, verbosity: verbosity)
+  @spec nodes(:minimal | :verbose, keyword()) :: Permission.t()
+  def nodes(verbosity \\ :minimal, opts \\ [])
+
+  def nodes(verbosity, opts) when is_atom(verbosity) and is_list(opts) do
+    collection = Keyword.get(opts, :collection)
+
+    if collection && verbosity == :verbose do
+      Permission.new(:nodes, :read, verbosity: verbosity, collection: collection)
+    else
+      Permission.new(:nodes, :read, verbosity: verbosity)
+    end
   end
 
   @doc """
