@@ -54,6 +54,15 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
           error: String.t() | nil
         }
 
+  @type reply ::
+          {:started, map()}
+          | {:shutdown, map()}
+          | {:shutting_down, map()}
+          | {:backoff, %{batch_size: non_neg_integer() | nil}}
+          | {:acks, %{uuids: [String.t()], beacons: [String.t()]}}
+          | {:results, %{successes: [batch_result()], errors: [batch_result()]}}
+          | {:unknown, map()}
+
   @doc """
   Opens a bidirectional batch stream on the given gRPC channel.
 
@@ -222,7 +231,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
   @doc """
   Parses a BatchStreamReply into a more usable format.
   """
-  @spec parse_reply(struct()) :: {atom(), map()}
+  @spec parse_reply(struct()) :: reply()
   def parse_reply(%Weaviate.V1.BatchStreamReply{message: message}) do
     case message do
       {:started, _} ->
@@ -315,6 +324,7 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
     end)
   end
 
+  @spec parse_results(struct()) :: %{successes: [batch_result()], errors: [batch_result()]}
   defp parse_results(%Weaviate.V1.BatchStreamReply.Results{
          successes: successes,
          errors: errors
@@ -322,9 +332,9 @@ defmodule WeaviateEx.GRPC.Services.BatchStream do
     parsed_successes =
       Enum.map(successes, fn success ->
         case success.detail do
-          {:uuid, uuid} -> %{uuid: uuid, beacon: nil, status: :success}
-          {:beacon, beacon} -> %{uuid: nil, beacon: beacon, status: :success}
-          nil -> %{uuid: nil, beacon: nil, status: :success}
+          {:uuid, uuid} -> %{uuid: uuid, beacon: nil, status: :success, error: nil}
+          {:beacon, beacon} -> %{uuid: nil, beacon: beacon, status: :success, error: nil}
+          nil -> %{uuid: nil, beacon: nil, status: :success, error: nil}
         end
       end)
 

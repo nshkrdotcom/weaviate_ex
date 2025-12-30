@@ -58,8 +58,8 @@ defmodule WeaviateEx.Batch.Stream do
   @type t :: %__MODULE__{
           client: map(),
           collection: String.t(),
-          stream_handle: reference() | nil,
-          buffer: [object()],
+          stream_handle: BatchStreamService.stream_handle() | nil,
+          buffer: [prepared_object()],
           buffer_size: pos_integer(),
           results: [batch_result()],
           state: state(),
@@ -72,20 +72,20 @@ defmodule WeaviateEx.Batch.Stream do
           max_reconnect_attempts: pos_integer()
         }
 
-  @type object :: %{
-          optional(:uuid) => String.t(),
-          optional(:collection) => String.t(),
+  @type object :: BatchStreamService.object()
+
+  @typedoc """
+  Batch stream result entries (uuid, beacon, status, error).
+  """
+  @type batch_result :: map()
+
+  @type prepared_object :: %{
+          required(:uuid) => String.t(),
+          required(:collection) => String.t(),
           optional(:tenant) => String.t(),
           optional(:vector) => [float()],
           optional(:vectors) => %{String.t() => [float()]},
-          :properties => map()
-        }
-
-  @type batch_result :: %{
-          uuid: String.t() | nil,
-          beacon: String.t() | nil,
-          status: :success | :error,
-          error: String.t() | nil
+          optional(:properties) => map()
         }
 
   @type state :: :initialized | :connected | :streaming | :closing | :closed | :error
@@ -135,12 +135,13 @@ defmodule WeaviateEx.Batch.Stream do
       stream = %__MODULE__{
         client: client,
         collection: collection,
-        buffer_size: Keyword.get(opts, :buffer_size, 100),
-        flush_interval_ms: Keyword.get(opts, :flush_interval_ms, 1000),
+        buffer_size: normalize_pos_integer(Keyword.get(opts, :buffer_size), 100),
+        flush_interval_ms: normalize_pos_integer(Keyword.get(opts, :flush_interval_ms), 1000),
         server_side_batching: Keyword.get(opts, :server_side_batching, true),
         consistency_level: Keyword.get(opts, :consistency_level),
         tenant: Keyword.get(opts, :tenant),
-        max_reconnect_attempts: Keyword.get(opts, :max_reconnect_attempts, 3),
+        max_reconnect_attempts:
+          normalize_pos_integer(Keyword.get(opts, :max_reconnect_attempts), 3),
         last_flush_at: DateTime.utc_now()
       }
 
@@ -439,7 +440,7 @@ defmodule WeaviateEx.Batch.Stream do
 
   Adds collection, generates UUID if missing, and adds tenant if specified.
   """
-  @spec prepare_object(t(), object()) :: object()
+  @spec prepare_object(t(), object()) :: prepared_object()
   def prepare_object(%__MODULE__{} = stream, object) do
     object
     |> ensure_uuid()
@@ -448,7 +449,7 @@ defmodule WeaviateEx.Batch.Stream do
   end
 
   @doc false
-  @spec apply_backoff(t(), integer() | nil) :: t()
+  @spec apply_backoff(t(), pos_integer() | nil) :: t()
   def apply_backoff(%__MODULE__{} = stream, backoff_size)
       when is_integer(backoff_size) and backoff_size > 0 do
     %{stream | buffer_size: backoff_size}
@@ -460,28 +461,18 @@ defmodule WeaviateEx.Batch.Stream do
 
   defp ensure_uuid(object) do
     uuid = Map.get(object, :uuid) || Map.get(object, "uuid")
-
-    if uuid do
-      object
-    else
-      Map.put(object, :uuid, UUID.generate())
-    end
+    Map.put(object, :uuid, normalize_uuid(uuid))
   end
 
   defp ensure_collection(object, collection) do
     existing = Map.get(object, :collection) || Map.get(object, "collection")
-
-    if existing do
-      object
-    else
-      Map.put(object, :collection, collection)
-    end
+    Map.put(object, :collection, normalize_string(existing) || normalize_string(collection))
   end
 
   defp maybe_add_tenant(object, nil), do: object
 
   defp maybe_add_tenant(object, tenant) do
-    Map.put(object, :tenant, tenant)
+    Map.put(object, :tenant, normalize_string(tenant))
   end
 
   defp flush_interval_exceeded?(%__MODULE__{last_flush_at: nil}), do: false
@@ -494,6 +485,8 @@ defmodule WeaviateEx.Batch.Stream do
     diff >= interval
   end
 
+  @spec send_batch(t(), [object()]) ::
+          {:ok, [batch_result()], pos_integer() | nil} | {:error, term()}
   defp send_batch(%__MODULE__{stream_handle: handle}, objects) do
     # Send the data message (returns the stream handle)
     message = BatchStreamService.data_message(objects, [])
@@ -504,18 +497,26 @@ defmodule WeaviateEx.Batch.Stream do
       {:ok, reply} ->
         case BatchStreamService.parse_reply(reply) do
           {:results, %{successes: successes, errors: errors}} ->
-            results = successes ++ errors
+            results = normalize_results(successes) ++ normalize_results(errors)
             {:ok, results, nil}
 
           {:acks, %{uuids: uuids}} ->
-            results = Enum.map(uuids, &%{uuid: &1, status: :success})
+            results =
+              uuids
+              |> Enum.map(&%{uuid: &1, status: :success})
+              |> normalize_results()
+
             {:ok, results, nil}
 
           {:backoff, %{batch_size: size}} ->
             # Server is asking us to slow down, but we can still consider this a success
             # The objects have been received
-            results = Enum.map(objects, &%{uuid: &1[:uuid], status: :success})
-            {:ok, results, size}
+            results =
+              objects
+              |> Enum.map(&%{uuid: &1[:uuid], status: :success})
+              |> normalize_results()
+
+            {:ok, results, normalize_backoff_size(size)}
 
           {:shutting_down, _} ->
             {:error, :stream_shutting_down}
@@ -536,10 +537,12 @@ defmodule WeaviateEx.Batch.Stream do
          %__MODULE__{reconnect_attempts: attempts, max_reconnect_attempts: max} = stream,
          _reason
        ) do
-    if attempts >= max do
+    max_attempts = normalize_pos_integer(max, 3)
+
+    if attempts >= max_attempts do
       {:error, :max_reconnect_attempts_exceeded}
     else
-      case reconnect(stream, max) do
+      case reconnect(stream, max_attempts) do
         {:ok, reconnected} ->
           # Try flushing again
           flush(reconnected)
@@ -572,4 +575,45 @@ defmodule WeaviateEx.Batch.Stream do
         results
     end
   end
+
+  @spec normalize_pos_integer(term(), pos_integer()) :: pos_integer()
+  defp normalize_pos_integer(value, _default) when is_integer(value) and value > 0 do
+    value
+  end
+
+  defp normalize_pos_integer(_value, default), do: default
+
+  @spec normalize_backoff_size(term()) :: pos_integer() | nil
+  defp normalize_backoff_size(value) when is_integer(value) and value > 0, do: value
+  defp normalize_backoff_size(_value), do: nil
+
+  @spec normalize_results([map()]) :: [batch_result()]
+  defp normalize_results(results) do
+    Enum.map(results, &normalize_result/1)
+  end
+
+  @spec normalize_result(map()) :: batch_result()
+  defp normalize_result(result) do
+    %{
+      uuid: normalize_string(Map.get(result, :uuid) || Map.get(result, "uuid")),
+      beacon: normalize_string(Map.get(result, :beacon) || Map.get(result, "beacon")),
+      status: normalize_status(Map.get(result, :status) || Map.get(result, "status")),
+      error: normalize_string(Map.get(result, :error) || Map.get(result, "error"))
+    }
+  end
+
+  @spec normalize_status(term()) :: :success | :error
+  defp normalize_status(:success), do: :success
+  defp normalize_status(:error), do: :error
+  defp normalize_status(_status), do: :error
+
+  @spec normalize_uuid(term()) :: String.t()
+  defp normalize_uuid(nil), do: UUID.generate()
+  defp normalize_uuid(value) when is_binary(value), do: value
+  defp normalize_uuid(value), do: to_string(value)
+
+  @spec normalize_string(term()) :: String.t() | nil
+  defp normalize_string(nil), do: nil
+  defp normalize_string(value) when is_binary(value), do: value
+  defp normalize_string(value), do: to_string(value)
 end
