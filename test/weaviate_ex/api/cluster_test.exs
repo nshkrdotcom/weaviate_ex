@@ -57,6 +57,78 @@ defmodule WeaviateEx.API.ClusterTest do
       assert length(node.shards) == 1
     end
 
+    test "filters by shard name", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        assert path == "/v1/nodes?shardName=shard-0"
+
+        {:ok,
+         %{
+           "nodes" => [
+             %{
+               "name" => "node-0",
+               "status" => "HEALTHY",
+               "shards" => [
+                 %{"name" => "shard-0", "status" => "READY", "objectCount" => 100}
+               ]
+             }
+           ]
+         }}
+      end)
+
+      assert {:ok, [node]} = Cluster.nodes(client, shard: "shard-0")
+      assert length(node.shards) == 1
+    end
+
+    test "filters by collection and shard", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        assert String.contains?(path, "class=Article")
+        assert String.contains?(path, "shardName=shard-0")
+
+        {:ok,
+         %{
+           "nodes" => [
+             %{
+               "name" => "node-0",
+               "status" => "HEALTHY",
+               "shards" => [
+                 %{"name" => "shard-0", "status" => "READY", "objectCount" => 100}
+               ]
+             }
+           ]
+         }}
+      end)
+
+      assert {:ok, [node]} = Cluster.nodes(client, collection: "Article", shard: "shard-0")
+      assert length(node.shards) == 1
+    end
+
+    test "filters by collection, shard, and verbose output", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        assert String.contains?(path, "class=Article")
+        assert String.contains?(path, "shardName=shard-0")
+        assert String.contains?(path, "output=verbose")
+
+        {:ok,
+         %{
+           "nodes" => [
+             %{
+               "name" => "node-0",
+               "status" => "HEALTHY",
+               "stats" => %{"objectCount" => 5000},
+               "shards" => [
+                 %{"name" => "shard-0", "status" => "READY", "objectCount" => 100}
+               ]
+             }
+           ]
+         }}
+      end)
+
+      assert {:ok, [node]} =
+               Cluster.nodes(client, collection: "Article", shard: "shard-0", output: :verbose)
+
+      assert node.stats == %{"objectCount" => 5000}
+    end
+
     test "handles list response format", %{client: client} do
       Mox.expect(Mock, :request, fn _client, :get, "/v1/nodes", nil, _opts ->
         {:ok, [%{"name" => "node-0", "status" => "HEALTHY"}]}
@@ -356,6 +428,97 @@ defmodule WeaviateEx.API.ClusterTest do
 
       assert {:error, %WeaviateEx.Error{type: :conflict}} =
                Cluster.delete_replication(client, "uuid-123")
+    end
+  end
+
+  describe "delete_all_replications/1" do
+    test "deletes all replication records", %{client: client} do
+      Mox.expect(
+        Mock,
+        :request,
+        fn _client, :delete, "/v1/cluster/replications", nil, _opts ->
+          {:ok, %{}}
+        end
+      )
+
+      assert :ok = Cluster.delete_all_replications(client)
+    end
+
+    test "returns error on failure", %{client: client} do
+      Mox.expect(
+        Mock,
+        :request,
+        fn _client, :delete, "/v1/cluster/replications", nil, _opts ->
+          {:error, %WeaviateEx.Error{type: :server_error, message: "Internal error"}}
+        end
+      )
+
+      assert {:error, %WeaviateEx.Error{type: :server_error}} =
+               Cluster.delete_all_replications(client)
+    end
+  end
+
+  describe "query_sharding_state/3" do
+    alias WeaviateEx.Cluster.ShardingState
+
+    test "returns sharding state for collection", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        assert String.contains?(path, "collection=Article")
+
+        {:ok,
+         %{
+           "shardingState" => %{
+             "collection" => "Article",
+             "shards" => [
+               %{"shard" => "shard-0", "replicas" => ["node-0", "node-1"]},
+               %{"shard" => "shard-1", "replicas" => ["node-1", "node-2"]}
+             ]
+           }
+         }}
+      end)
+
+      assert {:ok, state} = Cluster.query_sharding_state(client, "Article")
+      assert %ShardingState{} = state
+      assert state.collection == "Article"
+      assert length(state.shards) == 2
+      assert hd(state.shards).name == "shard-0"
+      assert hd(state.shards).replicas == ["node-0", "node-1"]
+    end
+
+    test "filters by shard name", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, path, nil, _opts ->
+        assert String.contains?(path, "collection=Article")
+        assert String.contains?(path, "shard=shard-0")
+
+        {:ok,
+         %{
+           "shardingState" => %{
+             "collection" => "Article",
+             "shards" => [
+               %{"shard" => "shard-0", "replicas" => ["node-0", "node-1"]}
+             ]
+           }
+         }}
+      end)
+
+      assert {:ok, state} = Cluster.query_sharding_state(client, "Article", shard: "shard-0")
+      assert length(state.shards) == 1
+    end
+
+    test "returns nil for non-existent collection", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, _path, nil, _opts ->
+        {:error, %WeaviateEx.Error{type: :not_found, message: "Collection not found"}}
+      end)
+
+      assert {:ok, nil} = Cluster.query_sharding_state(client, "NonExistent")
+    end
+
+    test "returns nil when response is empty map", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, _path, nil, _opts ->
+        {:ok, %{}}
+      end)
+
+      assert {:ok, nil} = Cluster.query_sharding_state(client, "Article")
     end
   end
 end

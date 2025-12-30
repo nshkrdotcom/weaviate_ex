@@ -12,7 +12,9 @@ defmodule WeaviateEx.Cluster.ShardTest do
         "objectCount" => 1000,
         "vectorQueueSize" => 0,
         "vectorIndexingStatus" => "INDEXED",
-        "compressed" => true
+        "compressed" => true,
+        "node" => "node-0",
+        "loaded" => true
       }
 
       shard = Shard.from_api(api_data)
@@ -24,6 +26,8 @@ defmodule WeaviateEx.Cluster.ShardTest do
       assert shard.vector_queue_size == 0
       assert shard.vector_indexing_status == "INDEXED"
       assert shard.compressed == true
+      assert shard.node == "node-0"
+      assert shard.loaded == true
     end
 
     test "handles minimal shard data with defaults" do
@@ -39,6 +43,18 @@ defmodule WeaviateEx.Cluster.ShardTest do
       assert shard.object_count == 0
       assert shard.vector_queue_size == 0
       assert shard.compressed == false
+      assert shard.node == nil
+      assert shard.loaded == nil
+    end
+
+    test "parses loaded field when false" do
+      api_data = %{
+        "name" => "shard-2",
+        "loaded" => false
+      }
+
+      shard = Shard.from_api(api_data)
+      assert shard.loaded == false
     end
 
     test "parses various status values" do
@@ -46,6 +62,7 @@ defmodule WeaviateEx.Cluster.ShardTest do
       assert Shard.from_api(%{"name" => "s", "status" => "READONLY"}).status == :readonly
       assert Shard.from_api(%{"name" => "s", "status" => "INDEXING"}).status == :indexing
       assert Shard.from_api(%{"name" => "s", "status" => "LOADING"}).status == :loading
+      assert Shard.from_api(%{"name" => "s", "status" => "LAZY_LOADING"}).status == :lazy_loading
       assert Shard.from_api(%{"name" => "s", "status" => "UNKNOWN"}).status == :ready
     end
   end
@@ -56,6 +73,7 @@ defmodule WeaviateEx.Cluster.ShardTest do
       assert Shard.parse_status("READONLY") == :readonly
       assert Shard.parse_status("INDEXING") == :indexing
       assert Shard.parse_status("LOADING") == :loading
+      assert Shard.parse_status("LAZY_LOADING") == :lazy_loading
     end
 
     test "defaults to ready for unknown status" do
@@ -70,6 +88,7 @@ defmodule WeaviateEx.Cluster.ShardTest do
       assert Shard.status_to_api(:readonly) == "READONLY"
       assert Shard.status_to_api(:indexing) == "INDEXING"
       assert Shard.status_to_api(:loading) == "LOADING"
+      assert Shard.status_to_api(:lazy_loading) == "LAZY_LOADING"
     end
   end
 

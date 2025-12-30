@@ -45,7 +45,7 @@ defmodule WeaviateEx.API.Cluster do
   """
 
   alias WeaviateEx.Client
-  alias WeaviateEx.Cluster.{Node, Replication, Shard}
+  alias WeaviateEx.Cluster.{Node, Replication, Shard, ShardingState}
   alias WeaviateEx.Error
 
   @type output_verbosity :: :minimal | :verbose
@@ -60,6 +60,7 @@ defmodule WeaviateEx.API.Cluster do
   ## Options
 
   - `:collection` - Filter by collection (shows shards for that collection)
+  - `:shard` - Filter by shard name
   - `:output` - Verbosity level (`:minimal` or `:verbose`)
 
   ## Examples
@@ -73,6 +74,12 @@ defmodule WeaviateEx.API.Cluster do
       # Get nodes with shard info for specific collection
       {:ok, nodes} = Cluster.nodes(client, collection: "Article")
 
+      # Get nodes hosting a specific shard
+      {:ok, nodes} = Cluster.nodes(client, shard: "shard-0")
+
+      # Get nodes with collection and shard filter
+      {:ok, nodes} = Cluster.nodes(client, collection: "Article", shard: "shard-0")
+
   ## Returns
 
   - `{:ok, [Node.t()]}` - List of nodes
@@ -81,9 +88,10 @@ defmodule WeaviateEx.API.Cluster do
   @spec nodes(Client.t(), opts()) :: {:ok, [Node.t()]} | {:error, Error.t()}
   def nodes(client, opts \\ []) do
     collection = Keyword.get(opts, :collection)
+    shard = Keyword.get(opts, :shard)
     output = Keyword.get(opts, :output, :minimal)
 
-    path = build_nodes_path(collection, output)
+    path = build_nodes_path(collection, shard, output)
 
     case Client.request(client, :get, path, nil, []) do
       {:ok, %{"nodes" => nodes_data}} ->
@@ -99,12 +107,19 @@ defmodule WeaviateEx.API.Cluster do
     end
   end
 
-  defp build_nodes_path(nil, :minimal), do: "/v1/nodes"
-  defp build_nodes_path(nil, :verbose), do: "/v1/nodes?output=verbose"
-  defp build_nodes_path(collection, :minimal), do: "/v1/nodes?class=#{collection}"
+  defp build_nodes_path(collection, shard, output) do
+    base = "/v1/nodes"
+    params = []
 
-  defp build_nodes_path(collection, :verbose),
-    do: "/v1/nodes?class=#{collection}&output=verbose"
+    params = if collection, do: [{"class", collection} | params], else: params
+    params = if shard, do: [{"shardName", shard} | params], else: params
+    params = if output == :verbose, do: [{"output", "verbose"} | params], else: params
+
+    case params do
+      [] -> base
+      _ -> "#{base}?#{URI.encode_query(params)}"
+    end
+  end
 
   @doc """
   Get shards for a collection.
@@ -439,6 +454,69 @@ defmodule WeaviateEx.API.Cluster do
   def delete_replication(client, operation_id) do
     case Client.request(client, :delete, "/v1/cluster/replications/#{operation_id}", nil, []) do
       {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Delete all replication operation records.
+
+  Removes all completed, failed, and cancelled replication records.
+  Running operations are not affected.
+
+  ## Examples
+
+      :ok = Cluster.delete_all_replications(client)
+
+  ## Returns
+
+  - `:ok` - All records deleted
+  - `{:error, Error.t()}` - Error if deletion fails
+  """
+  @spec delete_all_replications(Client.t()) :: :ok | {:error, Error.t()}
+  def delete_all_replications(client) do
+    case Client.request(client, :delete, "/v1/cluster/replications", nil, []) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Query the sharding state of a collection.
+
+  Returns information about which shards exist and their replica nodes.
+
+  ## Options
+
+  - `:shard` - Filter by specific shard name
+
+  ## Examples
+
+      # Get sharding state for collection
+      {:ok, state} = Cluster.query_sharding_state(client, "Article")
+
+      # Filter by specific shard
+      {:ok, state} = Cluster.query_sharding_state(client, "Article", shard: "shard-0")
+
+  ## Returns
+
+  - `{:ok, ShardingState.t()}` - Sharding state information
+  - `{:ok, nil}` - Collection or shard not found
+  - `{:error, Error.t()}` - Error if request fails
+  """
+  @spec query_sharding_state(Client.t(), String.t(), opts()) ::
+          {:ok, ShardingState.t() | nil} | {:error, Error.t()}
+  def query_sharding_state(client, collection, opts \\ []) do
+    shard = Keyword.get(opts, :shard)
+
+    params = [{"collection", collection}]
+    params = if shard, do: [{"shard", shard} | params], else: params
+    query = URI.encode_query(params)
+
+    case Client.request(client, :get, "/v1/replication/sharding-state?#{query}", nil, []) do
+      {:ok, %{} = data} when map_size(data) == 0 -> {:ok, nil}
+      {:ok, data} -> {:ok, ShardingState.from_api(data)}
+      {:error, %Error{type: :not_found}} -> {:ok, nil}
       {:error, _} = error -> error
     end
   end

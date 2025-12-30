@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2025-12-29
+
+### Added
+
+#### Cluster API Enhancements
+- **Shard Name Filtering** (`WeaviateEx.API.Cluster`):
+  - `nodes/2` now supports `:shard` option to filter nodes by specific shard name
+  - Combined filtering: `Cluster.nodes(client, collection: "Article", shard: "shard-0")`
+
+- **Delete All Replications** (`WeaviateEx.API.Cluster`):
+  - `delete_all_replications/1` - Batch delete all completed, failed, and cancelled replication records
+
+- **Query Sharding State** (`WeaviateEx.API.Cluster`):
+  - `query_sharding_state/3` - Query sharding state to see which shards exist and their replica nodes
+  - `:shard` option for filtering by specific shard
+  - Returns `ShardingState` struct with collection name and list of `ShardReplicas`
+
+- **ShardingState Module** (`WeaviateEx.Cluster.ShardingState`):
+  - `ShardingState` struct for collection sharding information
+  - `ShardReplicas` submodule for shard-to-node replica mappings
+  - `from_api/1` - Parse sharding state from API response
+
+#### Shard Struct Enhancements
+- **New Shard Fields** (`WeaviateEx.Cluster.Shard`):
+  - `node` field - Which node hosts this shard
+  - `loaded` field - Boolean indicating if shard is loaded into memory (for lazy loading scenarios)
+
+- **LAZY_LOADING Status** (`WeaviateEx.Cluster.Shard`):
+  - Added `:lazy_loading` to shard status enum
+  - `parse_status/1` and `status_to_api/1` support for `"LAZY_LOADING"` status
+
+### Stats
+- 2474 tests passing
+- Full Python client parity for cluster management features
+- Zero warnings, errors, dialyzer issues, or credo violations
+
 ## [0.7.2] - 2025-12-29
 
 ### Added

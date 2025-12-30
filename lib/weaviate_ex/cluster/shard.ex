@@ -23,7 +23,7 @@ defmodule WeaviateEx.Cluster.Shard do
       }
   """
 
-  @type status :: :ready | :readonly | :indexing | :loading
+  @type status :: :ready | :readonly | :indexing | :loading | :lazy_loading
 
   @type t :: %__MODULE__{
           name: String.t(),
@@ -32,7 +32,9 @@ defmodule WeaviateEx.Cluster.Shard do
           object_count: non_neg_integer(),
           vector_queue_size: non_neg_integer(),
           vector_indexing_status: String.t() | nil,
-          compressed: boolean()
+          compressed: boolean(),
+          node: String.t() | nil,
+          loaded: boolean() | nil
         }
 
   defstruct [
@@ -40,6 +42,8 @@ defmodule WeaviateEx.Cluster.Shard do
     :collection,
     :status,
     :vector_indexing_status,
+    :node,
+    :loaded,
     object_count: 0,
     vector_queue_size: 0,
     compressed: false
@@ -62,7 +66,9 @@ defmodule WeaviateEx.Cluster.Shard do
       object_count: Map.get(map, "objectCount", 0),
       vector_queue_size: Map.get(map, "vectorQueueSize", 0),
       vector_indexing_status: Map.get(map, "vectorIndexingStatus"),
-      compressed: Map.get(map, "compressed", false)
+      compressed: Map.get(map, "compressed", false),
+      node: Map.get(map, "node"),
+      loaded: Map.get(map, "loaded")
     }
   end
 
@@ -82,6 +88,7 @@ defmodule WeaviateEx.Cluster.Shard do
   def parse_status("READONLY"), do: :readonly
   def parse_status("INDEXING"), do: :indexing
   def parse_status("LOADING"), do: :loading
+  def parse_status("LAZY_LOADING"), do: :lazy_loading
   def parse_status(_), do: :ready
 
   @doc """
@@ -97,6 +104,7 @@ defmodule WeaviateEx.Cluster.Shard do
   def status_to_api(:readonly), do: "READONLY"
   def status_to_api(:indexing), do: "INDEXING"
   def status_to_api(:loading), do: "LOADING"
+  def status_to_api(:lazy_loading), do: "LAZY_LOADING"
 
   @doc """
   Check if shard is ready for queries.
