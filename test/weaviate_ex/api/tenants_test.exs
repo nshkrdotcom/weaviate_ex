@@ -338,4 +338,199 @@ defmodule WeaviateEx.API.TenantsTest do
       assert Enum.all?(inactive, &(&1["activityStatus"] == "COLD"))
     end
   end
+
+  describe "update_many/4" do
+    test "updates multiple tenants with atom keys", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, path, body, _opts ->
+        assert path == "/v1/schema/Article/tenants"
+        assert is_list(body)
+        assert length(body) == 2
+        assert Enum.at(body, 0)["name"] == "tenant1"
+        assert Enum.at(body, 0)["activityStatus"] == "HOT"
+        assert Enum.at(body, 1)["name"] == "tenant2"
+        assert Enum.at(body, 1)["activityStatus"] == "COLD"
+        {:ok, body}
+      end)
+
+      updates = [
+        %{name: "tenant1", status: :hot},
+        %{name: "tenant2", status: :cold}
+      ]
+
+      assert :ok = Tenants.update_many(client, "Article", updates)
+    end
+
+    test "updates multiple tenants with string keys", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, _path, body, _opts ->
+        assert length(body) == 2
+        assert Enum.at(body, 0)["activityStatus"] == "HOT"
+        {:ok, body}
+      end)
+
+      updates = [
+        %{"name" => "tenant1", "status" => :hot},
+        %{"name" => "tenant2", "status" => :hot}
+      ]
+
+      assert :ok = Tenants.update_many(client, "Article", updates)
+    end
+
+    test "updates with activity_status key", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, _path, body, _opts ->
+        assert Enum.at(body, 0)["activityStatus"] == "FROZEN"
+        {:ok, body}
+      end)
+
+      updates = [%{name: "tenant1", activity_status: :frozen}]
+
+      assert :ok = Tenants.update_many(client, "Article", updates)
+    end
+
+    test "batches updates when exceeding batch size", %{client: client} do
+      # Create 150 updates to test batching (default batch size is 100)
+      updates =
+        for i <- 1..150 do
+          %{name: "tenant#{i}", status: :hot}
+        end
+
+      # Expect two batch calls
+      Mox.expect(Mock, :request, 2, fn _client, :put, _path, body, _opts ->
+        assert is_list(body)
+        {:ok, body}
+      end)
+
+      assert :ok = Tenants.update_many(client, "Article", updates)
+    end
+
+    test "respects custom batch_size option", %{client: client} do
+      updates =
+        for i <- 1..30 do
+          %{name: "tenant#{i}", status: :hot}
+        end
+
+      # With batch_size: 10, expect 3 batch calls
+      Mox.expect(Mock, :request, 3, fn _client, :put, _path, body, _opts ->
+        assert length(body) <= 10
+        {:ok, body}
+      end)
+
+      assert :ok = Tenants.update_many(client, "Article", updates, batch_size: 10)
+    end
+
+    test "handles partial failures", %{client: client} do
+      updates = [
+        %{name: "tenant1", status: :hot},
+        %{name: "tenant2", status: :hot}
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :put, _path, _body, _opts ->
+        {:error, %WeaviateEx.Error{type: :server_error, message: "Server error"}}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :server_error}} =
+               Tenants.update_many(client, "Article", updates)
+    end
+
+    test "defaults status to :hot when not specified", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, _path, body, _opts ->
+        assert Enum.at(body, 0)["activityStatus"] == "HOT"
+        {:ok, body}
+      end)
+
+      updates = [%{name: "tenant1"}]
+
+      assert :ok = Tenants.update_many(client, "Article", updates)
+    end
+  end
+
+  describe "ensure_active/3" do
+    test "returns ok for already active tenant", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, path, _body, _opts ->
+        assert path == "/v1/schema/Article/tenants/TenantA"
+        {:ok, %{"name" => "TenantA", "activityStatus" => "HOT"}}
+      end)
+
+      assert :ok = Tenants.ensure_active(client, "Article", "TenantA")
+    end
+
+    test "activates inactive tenant", %{client: client} do
+      # First call: get returns COLD tenant
+      Mox.expect(Mock, :request, fn _client, :get, _path, _body, _opts ->
+        {:ok, %{"name" => "TenantA", "activityStatus" => "COLD"}}
+      end)
+
+      # Second call: update to HOT
+      Mox.expect(Mock, :request, fn _client, :put, path, body, _opts ->
+        assert path == "/v1/schema/Article/tenants"
+        assert hd(body)["activityStatus"] == "HOT"
+        {:ok, [%{"name" => "TenantA", "activityStatus" => "HOT"}]}
+      end)
+
+      assert :ok = Tenants.ensure_active(client, "Article", "TenantA")
+    end
+
+    test "creates and activates missing tenant", %{client: client} do
+      # First call: get returns not found
+      Mox.expect(Mock, :request, fn _client, :get, _path, _body, _opts ->
+        {:error, %WeaviateEx.Error{type: :not_found}}
+      end)
+
+      # Second call: create with HOT status
+      Mox.expect(Mock, :request, fn _client, :post, path, body, _opts ->
+        assert path == "/v1/schema/Article/tenants"
+        assert hd(body)["activityStatus"] == "HOT"
+        {:ok, [%{"name" => "TenantA", "activityStatus" => "HOT"}]}
+      end)
+
+      assert :ok = Tenants.ensure_active(client, "Article", "TenantA")
+    end
+
+    test "activates frozen tenant", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, _path, _body, _opts ->
+        {:ok, %{"name" => "TenantA", "activityStatus" => "FROZEN"}}
+      end)
+
+      Mox.expect(Mock, :request, fn _client, :put, _path, body, _opts ->
+        assert hd(body)["activityStatus"] == "HOT"
+        {:ok, [%{"name" => "TenantA", "activityStatus" => "HOT"}]}
+      end)
+
+      assert :ok = Tenants.ensure_active(client, "Article", "TenantA")
+    end
+
+    test "returns error when get fails with non-not-found error", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, _path, _body, _opts ->
+        {:error, %WeaviateEx.Error{type: :server_error, message: "Server error"}}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :server_error}} =
+               Tenants.ensure_active(client, "Article", "TenantA")
+    end
+
+    test "returns error when update fails", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, _path, _body, _opts ->
+        {:ok, %{"name" => "TenantA", "activityStatus" => "COLD"}}
+      end)
+
+      Mox.expect(Mock, :request, fn _client, :put, _path, _body, _opts ->
+        {:error, %WeaviateEx.Error{type: :server_error, message: "Server error"}}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :server_error}} =
+               Tenants.ensure_active(client, "Article", "TenantA")
+    end
+
+    test "returns error when create fails", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :get, _path, _body, _opts ->
+        {:error, %WeaviateEx.Error{type: :not_found}}
+      end)
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, _body, _opts ->
+        {:error, %WeaviateEx.Error{type: :server_error, message: "Server error"}}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :server_error}} =
+               Tenants.ensure_active(client, "Article", "TenantA")
+    end
+  end
 end

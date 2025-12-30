@@ -5,7 +5,7 @@ defmodule WeaviateEx.Query.GRPCFallbackTest do
 
   alias WeaviateEx.Protocol.Mock
   alias WeaviateEx.Query
-  alias WeaviateEx.Query.{Rerank, Sort}
+  alias WeaviateEx.Query.Sort
 
   setup :verify_on_exit!
 
@@ -19,32 +19,6 @@ defmodule WeaviateEx.Query.GRPCFallbackTest do
   end
 
   describe "gRPC fallback" do
-    test "falls back to GraphQL when rerank is set" do
-      client = grpc_client()
-      rerank = Rerank.new("content")
-
-      query =
-        Query.get("Article")
-        |> Query.fields(["title"])
-        |> Query.near_text("ai")
-        |> Query.rerank(rerank)
-
-      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
-        assert body["query"] =~ "rerank"
-
-        {:ok,
-         %{
-           "data" => %{
-             "Get" => %{
-               "Article" => []
-             }
-           }
-         }}
-      end)
-
-      assert {:ok, []} = Query.execute(query, client)
-    end
-
     test "falls back to GraphQL when sort is set" do
       client = grpc_client()
 

@@ -116,6 +116,34 @@ mix dialyzer
 mix format && mix credo --strict && mix test
 ```
 
+## Pre-commit Hooks
+
+We use pre-commit hooks for consistent code quality. To set up:
+
+```bash
+# Install pre-commit (Python package)
+pip install pre-commit
+
+# Or with Homebrew
+brew install pre-commit
+
+# Install hooks in your local repo
+pre-commit install
+
+# Run on all files (optional, to verify setup)
+pre-commit run --all-files
+
+# Run manually with slow hooks (including Dialyzer)
+pre-commit run --all-files --hook-stage manual
+```
+
+The hooks automatically run before each commit:
+- `mix format --check-formatted`
+- `mix compile --warnings-as-errors`
+- `mix credo --strict`
+
+Dialyzer runs only in manual mode due to its speed.
+
 ## Creating a Pull Request
 
 1. The `master` branch is the main development branch

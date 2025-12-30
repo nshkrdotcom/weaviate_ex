@@ -109,7 +109,7 @@ defmodule WeaviateEx.Client.LifecycleTest do
   end
 end
 
-defmodule WeaviateEx.Error.ClosedClientErrorTest do
+defmodule WeaviateEx.Client.LifecycleTest.ClosedClientErrorTest do
   use ExUnit.Case, async: true
 
   alias WeaviateEx.Error.ClosedClientError

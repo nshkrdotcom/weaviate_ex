@@ -372,6 +372,92 @@ defmodule WeaviateEx.QueryTest do
     end
   end
 
+  describe "rerank/2" do
+    alias WeaviateEx.Query.Rerank
+
+    test "adds rerank to query", %{client: _client} do
+      rerank = Rerank.new("content")
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("machine learning")
+        |> Query.rerank(rerank)
+
+      assert query.rerank == rerank
+      assert query.rerank.prop == "content"
+    end
+
+    test "rerank with custom query", %{client: _client} do
+      rerank = Rerank.new("content", query: "What is machine learning?")
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("AI")
+        |> Query.rerank(rerank)
+
+      assert query.rerank.prop == "content"
+      assert query.rerank.query == "What is machine learning?"
+    end
+
+    test "preserves other query params with rerank", %{client: _client} do
+      rerank = Rerank.new("content")
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("machine learning", certainty: 0.7)
+        |> Query.fields(["title", "content"])
+        |> Query.limit(10)
+        |> Query.rerank(rerank)
+
+      assert query.rerank == rerank
+      assert query.near_text.concepts == ["machine learning"]
+      assert query.near_text.certainty == 0.7
+      assert query.fields == ["title", "content"]
+      assert query.limit == 10
+    end
+
+    test "builds GraphQL query with rerank", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "rerank"
+        assert body_str =~ "content"
+        assert body_str =~ "score"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      rerank = Rerank.new("content")
+
+      query =
+        Query.get("Article")
+        |> Query.near_text("machine learning")
+        |> Query.fields(["title"])
+        |> Query.rerank(rerank)
+
+      # Force HTTP mode by not using client
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds GraphQL query with rerank and custom query", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "rerank"
+        assert body_str =~ "content"
+        assert body_str =~ "deep learning"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      rerank = Rerank.new("content", query: "deep learning")
+
+      query =
+        Query.get("Article")
+        |> Query.hybrid("AI", alpha: 0.5)
+        |> Query.fields(["title"])
+        |> Query.rerank(rerank)
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+  end
+
   describe "integration tests" do
     @tag :integration
     test "executes real GraphQL query" do

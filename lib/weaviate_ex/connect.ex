@@ -37,23 +37,35 @@ defmodule WeaviateEx.Connect do
           :headers => [{String.t(), String.t()}],
           :embedded => boolean(),
           :version => String.t() | nil,
-          optional(:binary_path) => String.t() | nil
+          optional(:binary_path) => String.t() | nil,
+          optional(:skip_init_checks) => boolean()
         }
 
   @doc """
   Create connection config for Weaviate Cloud.
+
+  Automatically adds the `X-Weaviate-Cluster-URL` header required by
+  Weaviate Cloud Services for embedding service integration.
 
   ## Options
 
     - `:cluster_url` - Weaviate Cloud cluster URL (required)
     - `:api_key` - API key for authentication
     - `:headers` - Additional HTTP headers
+    - `:skip_init_checks` - Skip version and gRPC health checks (default: false)
 
   ## Examples
 
       Connect.to_weaviate_cloud(
         cluster_url: "my-cluster.weaviate.network",
         api_key: "my-api-key"
+      )
+
+      # Skip version checks (not recommended)
+      Connect.to_weaviate_cloud(
+        cluster_url: "my-cluster.weaviate.network",
+        api_key: "my-api-key",
+        skip_init_checks: true
       )
   """
   @spec to_weaviate_cloud(keyword()) :: connection_config()
@@ -69,15 +81,21 @@ defmodule WeaviateEx.Connect do
       |> extract_hostname()
       |> derive_wcs_grpc_host()
 
+    # Build headers with X-Weaviate-Cluster-URL for WCS
+    additional_headers = Keyword.get(opts, :headers, [])
+    wcs_header = {"X-Weaviate-Cluster-URL", cluster_url}
+    all_headers = [wcs_header | additional_headers]
+
     %{
       base_url: cluster_url,
       grpc_host: grpc_host,
       grpc_port: 443,
       grpc_secure: true,
       api_key: Keyword.get(opts, :api_key),
-      headers: Keyword.get(opts, :headers, []),
+      headers: all_headers,
       embedded: false,
-      version: nil
+      version: nil,
+      skip_init_checks: Keyword.get(opts, :skip_init_checks, false)
     }
   end
 

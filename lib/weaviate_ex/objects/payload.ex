@@ -7,6 +7,8 @@ defmodule WeaviateEx.Objects.Payload do
   `WeaviateEx.API.Data` module.
   """
 
+  alias WeaviateEx.Types.{Blob, GeoCoordinate, PhoneNumber, Serializable}
+
   @type data :: map()
   @type opts :: keyword()
 
@@ -103,12 +105,15 @@ defmodule WeaviateEx.Objects.Payload do
 
   ## Property Value Serialization
 
-  Special types are automatically serialized to Weaviate-compatible formats:
+  Special types are automatically serialized to Weaviate-compatible formats
+  via the `WeaviateEx.Types.Serializable` protocol:
 
     * `DateTime` - RFC3339 format (ISO8601 with timezone)
     * `NaiveDateTime` - RFC3339 format (without timezone)
+    * `Date` - ISO8601 date at midnight UTC
     * `GeoCoordinate` - `%{"latitude" => lat, "longitude" => lon}`
     * `PhoneNumber` - `%{"input" => number, "defaultCountry" => country}`
+    * `Blob` - Base64-encoded string
 
   Nested objects and arrays are recursively serialized.
   """
@@ -303,28 +308,29 @@ defmodule WeaviateEx.Objects.Payload do
 
   defp serialize_values(other), do: other
 
-  # DateTime -> RFC3339 format
+  # Structs implementing Serializable protocol
   defp serialize_value(%DateTime{} = dt) do
-    DateTime.to_iso8601(dt)
+    Serializable.serialize(dt)
   end
 
-  # NaiveDateTime -> RFC3339 format (without timezone)
   defp serialize_value(%NaiveDateTime{} = dt) do
-    NaiveDateTime.to_iso8601(dt)
+    Serializable.serialize(dt)
   end
 
-  # GeoCoordinate struct -> map
-  defp serialize_value(%WeaviateEx.Types.GeoCoordinate{latitude: lat, longitude: lon}) do
-    %{"latitude" => lat, "longitude" => lon}
+  defp serialize_value(%Date{} = d) do
+    Serializable.serialize(d)
   end
 
-  # PhoneNumber struct -> map
-  defp serialize_value(%WeaviateEx.Types.PhoneNumber{number: num, default_country: nil}) do
-    %{"input" => num}
+  defp serialize_value(%GeoCoordinate{} = geo) do
+    Serializable.serialize(geo)
   end
 
-  defp serialize_value(%WeaviateEx.Types.PhoneNumber{number: num, default_country: country}) do
-    %{"input" => num, "defaultCountry" => country}
+  defp serialize_value(%PhoneNumber{} = phone) do
+    Serializable.serialize(phone)
+  end
+
+  defp serialize_value(%Blob{} = blob) do
+    Serializable.serialize(blob)
   end
 
   # Arrays - recursively serialize

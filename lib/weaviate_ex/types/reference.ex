@@ -26,7 +26,7 @@ defmodule WeaviateEx.Types.Reference do
 
   defstruct [:beacon, :target_collection, target_vectors: []]
 
-  alias WeaviateEx.Types.UUID
+  alias WeaviateEx.Types.{Beacon, UUID}
 
   @doc """
   Creates a reference to an object.
@@ -75,14 +75,24 @@ defmodule WeaviateEx.Types.Reference do
   @doc """
   Creates a reference from a beacon URL string.
 
+  Automatically extracts and populates the target collection from the beacon.
+
   ## Examples
 
       Reference.from_beacon("weaviate://localhost/Author/uuid-123")
-      # => %Reference{beacon: "weaviate://localhost/Author/uuid-123"}
+      # => %Reference{beacon: "weaviate://localhost/Author/uuid-123", target_collection: "Author"}
+
+      Reference.from_beacon("weaviate://localhost/uuid-123")
+      # => %Reference{beacon: "weaviate://localhost/uuid-123", target_collection: nil}
   """
   @spec from_beacon(String.t()) :: t()
   def from_beacon(beacon) when is_binary(beacon) do
-    %__MODULE__{beacon: beacon}
+    parsed = Beacon.parse(beacon)
+
+    %__MODULE__{
+      beacon: beacon,
+      target_collection: parsed.collection
+    }
   end
 
   @doc """
@@ -112,14 +122,23 @@ defmodule WeaviateEx.Types.Reference do
   @doc """
   Creates a Reference from a map (e.g., from API response).
 
+  Automatically extracts the target collection from the beacon.
+
   ## Examples
 
       Reference.from_map(%{"beacon" => "weaviate://localhost/Author/uuid-123"})
+      # => %Reference{beacon: "...", target_collection: "Author", target_vectors: []}
+
+      Reference.from_map(%{"beacon" => "weaviate://localhost/uuid-123"})
+      # => %Reference{beacon: "...", target_collection: nil, target_vectors: []}
   """
   @spec from_map(map()) :: t()
   def from_map(%{"beacon" => beacon} = map) do
+    parsed = Beacon.parse(beacon)
+
     %__MODULE__{
       beacon: beacon,
+      target_collection: parsed.collection,
       target_vectors: Map.get(map, "targetVectors", [])
     }
   end

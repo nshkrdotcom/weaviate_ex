@@ -36,14 +36,50 @@ defmodule WeaviateEx.ConnectTest do
       assert config.base_url == "https://my-cluster.weaviate.network"
     end
 
-    test "accepts additional headers" do
+    test "accepts additional headers and prepends X-Weaviate-Cluster-URL" do
       config =
         Connect.to_weaviate_cloud(
           cluster_url: "my-cluster.weaviate.network",
           headers: [{"X-Custom", "value"}]
         )
 
-      assert config.headers == [{"X-Custom", "value"}]
+      assert {"X-Weaviate-Cluster-URL", "https://my-cluster.weaviate.network"} in config.headers
+      assert {"X-Custom", "value"} in config.headers
+    end
+
+    test "automatically adds X-Weaviate-Cluster-URL header" do
+      config = Connect.to_weaviate_cloud(cluster_url: "my-cluster.weaviate.network")
+
+      assert {"X-Weaviate-Cluster-URL", "https://my-cluster.weaviate.network"} in config.headers
+    end
+
+    test "supports skip_init_checks option" do
+      config =
+        Connect.to_weaviate_cloud(
+          cluster_url: "my-cluster.weaviate.network",
+          skip_init_checks: true
+        )
+
+      assert config.skip_init_checks == true
+    end
+
+    test "skip_init_checks defaults to false" do
+      config = Connect.to_weaviate_cloud(cluster_url: "my-cluster.weaviate.network")
+
+      assert config.skip_init_checks == false
+    end
+
+    test "handles URL with protocol prefix correctly for X-Weaviate-Cluster-URL" do
+      config = Connect.to_weaviate_cloud(cluster_url: "https://my-cluster.weaviate.network")
+
+      assert {"X-Weaviate-Cluster-URL", "https://my-cluster.weaviate.network"} in config.headers
+    end
+
+    test "handles .weaviate.cloud domains correctly" do
+      config = Connect.to_weaviate_cloud(cluster_url: "my-cluster.aws.weaviate.cloud")
+
+      assert config.grpc_host == "grpc-my-cluster.aws.weaviate.cloud"
+      assert {"X-Weaviate-Cluster-URL", "https://my-cluster.aws.weaviate.cloud"} in config.headers
     end
   end
 

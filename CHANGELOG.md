@@ -5,7 +5,218 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.4] - 2025-12-30
+
+### Added
+- CI testing against Weaviate versions 1.31.x through 1.35.x (9 total versions)
+- Code coverage reporting via Codecov with excoveralls
+- Coverage badge in README
+- Supported Weaviate versions table in README
+
+#### Multi-Target Reference Improvements
+- `WeaviateEx.Types.Beacon` module for parsing and building beacon URLs
+  - `Beacon.parse/1` - Extract collection and UUID from beacon URLs
+  - `Beacon.build/2` - Build beacon URLs from UUID and optional collection
+  - `Beacon.to_map/2` - Create beacon maps for API requests
+  - `Beacon.extract_uuid/1`, `Beacon.extract_collection/1` - Extract components
+  - `Beacon.valid?/1` - Validate beacon URL format
+- `References.add/5`, `delete/5` now accept `ReferenceToMulti` struct directly
+- `References.replace/5` now accepts list of `ReferenceToMulti` structs
+- `Reference.from_beacon/1` and `Reference.from_map/1` now extract target collection from beacon
+- Improved multi-target reference support in all reference operations
+
+#### gRPC Reranking
+- gRPC-based reranking for search queries via `Query.rerank/2`
+- `Rerank.to_grpc/1` for converting rerank config to gRPC Rerank message
+- Rerank score parsing in gRPC result metadata (`rerankScore`)
+- Full support with near_text, near_vector, near_object, hybrid, and bm25 queries
+- Works with all reranker modules: Cohere, Transformers, VoyageAI, JinaAI, NVIDIA, ContextualAI
+
+#### Aggregate Variants (Near Object, Hybrid, Near Image)
+- `Aggregate.with_near_object/4` for similarity-based aggregation by reference object UUID
+  - Supports `:distance` and `:certainty` threshold parameters
+  - Full property metrics support (numeric, text, boolean)
+- `Aggregate.with_hybrid/4` for hybrid (keyword + vector) search aggregation
+  - `:alpha` parameter to control keyword/vector weighting (0.0-1.0, default 0.5)
+  - `:fusion_type` option (`:ranked`, `:relative_score`)
+  - Full property metrics support
+- `Aggregate.with_near_image/4` for image similarity aggregation
+  - Supports `:distance`, `:certainty`, and `:target_vectors` parameters
+  - For multi-modal collections with image vectorizers
+- `WeaviateEx.Aggregate.Metrics` helper module for cleaner metric specifications
+  - `Metrics.count/0` - Meta count metric
+  - `Metrics.text/2` - Text property metrics (top_occurrences, count)
+  - `Metrics.number/2` - Numeric property metrics (sum, mean, median, mode, min, max)
+  - `Metrics.integer/2` - Integer property metrics (same as number)
+  - `Metrics.boolean/2` - Boolean property metrics (percentage, totals)
+  - `Metrics.date/2` - Date property metrics (min, max, median, mode)
+
+#### Fluent Tenant-Scoped API
+- `WeaviateEx.TenantCollection` for fluent tenant-scoped operations
+- `Collections.with_tenant/3` returns tenant-scoped collection reference
+- `TenantCollection.insert/3`, `insert_many/3`, `get/3`, `update/4`, `delete/3`
+- `TenantCollection.query/1` returns tenant-scoped query builder
+- `TenantCollection.batch/2` starts tenant-scoped batch context
+- `Query.with_tenant/2` for explicit tenant scoping (alias for `Query.tenant/2`)
+
+#### Multi-Modal Search Convenience Methods
+- `Query.with_near_image/3` for image similarity search with automatic input handling
+- `Query.with_near_audio/3` for audio similarity search
+- `Query.with_near_video/3` for video similarity search
+- `Query.with_near_thermal/3` for thermal image search
+- `Query.with_near_depth/3` for depth map search
+- `Query.with_near_imu/3` for IMU data search
+- `Query.with_near_media/4` for generic multi-modal search with type parameter
+- `WeaviateEx.Types.MediaInput` for flexible media input handling (file paths, base64, raw binary)
+- `WeaviateEx.Types.MediaType` for media type validation
+
+#### Object TTL Enhancements
+- `ObjectTTL.from_duration/1` - Human-readable TTL configuration (e.g., `from_duration(hours: 24)`)
+- `Collections.update_ttl/3` - Convenience function for updating TTL on existing collections
+- Extended README documentation with comprehensive Object TTL examples
+
+#### WCS Compatibility (Weaviate Cloud Service)
+- Automatic `X-Weaviate-Cluster-URL` header for WCS connections
+  - Required for Weaviate embedding service integration
+  - Auto-added by `Connect.to_weaviate_cloud/1`
+- Proper gRPC host parsing for `.weaviate.network` clusters
+  - Uses `{ident}.grpc.{domain}` pattern (e.g., `my-cluster.grpc.weaviate.network`)
+  - Other WCS domains use `grpc-{host}` pattern
+- `WeaviateEx.Error.VersionError` exception for clear version mismatch errors
+  - Includes workaround instructions for `skip_init_checks: true`
+- Server version compatibility check on connect (requires 1.27.0+)
+- gRPC availability check on connect
+- `skip_init_checks` option in `Connect.to_weaviate_cloud/1` to bypass validation
+- Extended README documentation with WCS connection examples
+
+#### Developer Tooling
+- Benchmark suite with Benchee (`mix weaviate.bench`)
+- Batch and query performance benchmarks in `bench/`
+- Pre-commit hooks configuration (`.pre-commit-config.yaml`)
+- Profiling guide (`guides/profiling.md`)
+- `Mix.Tasks.Weaviate.Bench` task for running benchmarks
+
+#### gRPC Generative Search (RAG)
+- **gRPC Generative Module** (`WeaviateEx.GRPC.Generative`):
+  - `build/1` - Build GenerativeSearch message from simple config
+  - `build_with_provider/1` - Build with provider-specific configuration
+  - `parse_generative_result/1` - Parse grouped results from gRPC reply
+  - `extract_single_results/1` - Extract per-object generations from results
+  - Support for all major providers: OpenAI, Anthropic, Cohere, Mistral, Ollama, Google, AWS, Databricks, FriendliAI, NVIDIA, XAI, ContextualAI, Anyscale
+  - Provider-specific parameters: model, temperature, max_tokens, top_p, top_k, etc.
+  - OpenAI reasoning model support (verbosity, reasoning_effort for o1/o3)
+
+- **gRPC Search with Generative** (`WeaviateEx.GRPC.Services.Search`):
+  - New `generative` option for all search request builders
+  - Single prompt generation via `single_prompt` config
+  - Grouped task generation via `grouped_task` and `grouped_properties`
+  - Works with near_text, near_vector, hybrid, bm25 searches
+  - ~2-3x lower latency compared to GraphQL generative
+
+- **GenerativeResult Enhancements** (`WeaviateEx.Query.GenerativeResult`):
+  - `from_grpc_response/1` - Parse gRPC SearchReply into typed result
+  - Extended struct with `:metadata` field for usage/debug info
+  - Proper parsing of grouped and per-object generative results
+  - Vector parsing from gRPC binary format
+
+#### HTTP Transport-Level Retry
+- **HTTP Retry Module** (`WeaviateEx.Protocol.HTTP.Retry`):
+  - `with_retry/2` - Execute function with automatic retry on transient errors
+  - `retryable_status_code?/1` - Check if HTTP status code is retryable
+  - `retryable_status_codes/0` - Get list of retryable status codes
+  - `default_retry_opts/0` - Get default retry options
+  - Retryable status codes: 408, 429, 500, 502, 503, 504
+  - Exponential backoff with jitter (±10%)
+  - Configurable: `max_retries` (default: 3), `base_delay_ms` (default: 100), `max_delay_ms` (default: 5000)
+
+#### Per-Operation Timeout Support
+- **HTTP Timeout Module** (`WeaviateEx.Protocol.HTTP.Timeout`):
+  - `for_operation/2` - Get timeout for specific operation type
+  - `batch_multiplier/0` - Get batch timeout multiplier (10×)
+  - `operation_category/1` - Categorize operation for timeout selection
+  - Operation types: `:query`, `:insert`, `:batch`, `:init`
+  - Batch operations automatically use extended timeout (insert × 10)
+
+#### HTTP Client Enhancements
+- HTTP client now retries on transient HTTP status codes (503, 429, etc.)
+- Automatic batch timeout detection for `/batch` endpoints
+- Support for `operation` option to specify operation type
+- Support for `retry` config in client options
+- Merged retry options from client config and per-request options
+
+#### Batch Safety Features
+- **Batch Config Module** (`WeaviateEx.Batch.Config`):
+  - Centralized configuration for batch safety options
+  - `new/1` - Create config with custom options
+  - `auto_retry_enabled?/1` - Check if auto-retry is enabled
+  - `merge/2` - Merge two configurations
+  - `to_keyword/1` - Convert config to keyword list
+  - Defaults: `max_stored_results: 100_000`, `auto_retry: true`, `max_retries: 3`, `retry_delay_ms: 1000`
+
+- **Retry Queue Module** (`WeaviateEx.Batch.RetryQueue`):
+  - GenServer for automatic re-queuing of failed batch objects
+  - `enqueue_failed/2` - Add failed objects to retry queue
+  - `drain/1` - Get all queued objects for manual processing
+  - `get_retry_count/2` - Get retry count for specific UUID
+  - `clear/1` - Clear queue and reset retry counts
+  - `calculate_backoff/2` - Exponential backoff calculation
+  - `retryable_error?/1` - Check if error is retryable
+  - Supports permanent failure callback for objects exceeding max_retries
+  - Jitter (±20%) for backoff to prevent thundering herd
+
+- **Dynamic Batch Auto-Retry** (`WeaviateEx.Batch.Dynamic`):
+  - New options: `:auto_retry`, `:max_retries`, `:retry_delay_ms`, `:on_permanent_failure`
+  - Automatically re-queues failed objects with retryable errors
+  - Integrates with `RetryQueue` for retry tracking
+  - Retryable errors: rate limits, UNAVAILABLE, RESOURCE_EXHAUSTED, ABORTED, DEADLINE_EXCEEDED
+
+#### Journey Tests (Phoenix/Plug Integration)
+- **Journey Test Scenarios** (`WeaviateEx.Journey.Scenarios`):
+  - `simple/1` - Create collection, insert 100 objects, query, and cleanup
+  - `batch_insert_and_search/1` - Batch insert 1000 objects and perform vector search
+  - `concurrent_operations/1` - Handle 10 concurrent operations without errors
+- **Phoenix Integration Tests** (`test/journey/phoenix_test.exs`):
+  - Client initialized at startup survives multiple requests
+  - Concurrent requests share client safely
+  - Client properly cleaned up on shutdown
+  - Full journey scenarios executed through Phoenix endpoints
+- **Plug Integration Tests** (`test/journey/plug_test.exs`):
+  - Client accessible via Application env
+  - Journey scenarios work through Plug router
+  - Concurrent Plug requests share client safely
+- **Test Configuration**:
+  - Journey tests excluded by default (run with `--include journey`)
+  - Added `:journey` tag to ExUnit exclusions
+
+#### Property Value Serialization
+- **Serializable Protocol** (`WeaviateEx.Types.Serializable`):
+  - Protocol for serializing Elixir types to Weaviate-compatible values
+  - Automatic serialization when creating/updating objects
+  - Implementations for: `DateTime`, `NaiveDateTime`, `Date`, `GeoCoordinate`, `PhoneNumber`, `Blob`
+  - Extensible - implement protocol for custom types
+
+- **Date Type Serialization**:
+  - `Date` structs serialize to ISO8601 at midnight UTC (e.g., `~D[2024-01-01]` → `"2024-01-01T00:00:00Z"`)
+
+- **Blob Struct** (`WeaviateEx.Types.Blob`):
+  - New struct for wrapping binary data: `Blob.new(binary_data)`
+  - `Blob.from_file/1` / `Blob.from_file!/1` - Create from file
+  - `Blob.to_base64/1` - Convert to base64 string
+  - `Blob.from_base64/1` - Create from base64 string
+  - Automatic base64 encoding when used in object properties
+
+- **Deserialize Module** (`WeaviateEx.Types.Deserialize`):
+  - `deserialize/2` - Parse Weaviate response values with type hints
+  - `deserialize!/2` - Same but raises on error
+  - `deserialize_properties/2` - Deserialize map with schema hints
+  - `auto_deserialize/1` - Auto-detect types based on value structure
+  - Supported types: `:date`, `:geo_coordinates`, `:phone_number`, `:blob`, `:auto`
+
+### Changed
+- Default local test Weaviate version updated to 1.35.0
+- Unit tests now generate coverage reports uploaded to Codecov
+- `WeaviateEx.Objects.Payload` now uses `Serializable` protocol internally for type serialization
+- Payload documentation updated to reflect all supported serialization types
 
 ## [0.7.3] - 2025-12-29
 

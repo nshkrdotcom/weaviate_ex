@@ -413,5 +413,80 @@ defmodule WeaviateEx.Objects.PayloadTest do
 
       assert result["properties"]["optional"] == nil
     end
+
+    test "serializes Date to ISO8601 at midnight UTC" do
+      d = ~D[2024-06-15]
+      data = %{properties: %{"published_date" => d}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      assert result["properties"]["published_date"] == "2024-06-15T00:00:00Z"
+    end
+
+    test "serializes Blob to base64" do
+      alias WeaviateEx.Types.Blob
+
+      blob = Blob.new("Hello, World!")
+      data = %{properties: %{"image_data" => blob}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      assert result["properties"]["image_data"] == "SGVsbG8sIFdvcmxkIQ=="
+    end
+
+    test "serializes Blob with binary data" do
+      alias WeaviateEx.Types.Blob
+
+      blob = Blob.new(<<0, 1, 2, 3, 255>>)
+      data = %{properties: %{"binary_data" => blob}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      # Verify it's valid base64
+      {:ok, decoded} = Base.decode64(result["properties"]["binary_data"])
+      assert decoded == <<0, 1, 2, 3, 255>>
+    end
+
+    test "serializes deeply nested structures with mixed types" do
+      alias WeaviateEx.Types.Blob
+
+      {:ok, geo} = GeoCoordinate.new(40.7128, -74.0060)
+      phone = PhoneNumber.new("555-1234", default_country: "US")
+      blob = Blob.new("test data")
+
+      data = %{
+        properties: %{
+          "metadata" => %{
+            "location" => geo,
+            "contact" => %{
+              "phone" => phone
+            },
+            "attachment" => blob,
+            "created" => ~U[2024-01-01 00:00:00Z],
+            "dates" => [~D[2024-01-01], ~D[2024-12-31]]
+          }
+        }
+      }
+
+      result = Payload.prepare_for_insert(data, "Complex", [])
+
+      metadata = result["properties"]["metadata"]
+      assert metadata["location"] == %{"latitude" => 40.7128, "longitude" => -74.0060}
+      assert metadata["contact"]["phone"] == %{"input" => "555-1234", "defaultCountry" => "US"}
+      assert metadata["attachment"] == Base.encode64("test data")
+      assert metadata["created"] == "2024-01-01T00:00:00Z"
+      assert metadata["dates"] == ["2024-01-01T00:00:00Z", "2024-12-31T00:00:00Z"]
+    end
+
+    test "handles Blob with nil data" do
+      alias WeaviateEx.Types.Blob
+
+      blob = %Blob{data: nil}
+      data = %{properties: %{"image" => blob}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      assert result["properties"]["image"] == nil
+    end
   end
 end

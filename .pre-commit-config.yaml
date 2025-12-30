@@ -1,0 +1,54 @@
+# Pre-commit hooks for WeaviateEx
+# Install: pip install pre-commit && pre-commit install
+#
+# Run on all files: pre-commit run --all-files
+# Run with manual hooks: pre-commit run --all-files --hook-stage manual
+
+repos:
+  # Standard hooks for file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.snap$'
+      - id: end-of-file-fixer
+        exclude: '\.snap$'
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Elixir hooks (local - requires Elixir installed)
+  - repo: local
+    hooks:
+      - id: mix-format
+        name: mix format
+        entry: mix format --check-formatted
+        language: system
+        files: '\.(ex|exs)$'
+        pass_filenames: false
+
+      - id: mix-compile
+        name: mix compile (warnings as errors)
+        entry: mix compile --warnings-as-errors
+        language: system
+        files: '\.(ex|exs)$'
+        pass_filenames: false
+
+      - id: mix-credo
+        name: mix credo
+        entry: mix credo --strict
+        language: system
+        files: '\.(ex|exs)$'
+        pass_filenames: false
+
+      # Dialyzer is slow - run manually with: pre-commit run --hook-stage manual mix-dialyzer
+      - id: mix-dialyzer
+        name: mix dialyzer
+        entry: mix dialyzer
+        language: system
+        files: '\.(ex|exs)$'
+        pass_filenames: false
+        stages: [manual]

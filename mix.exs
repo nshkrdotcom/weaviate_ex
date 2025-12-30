@@ -1,7 +1,7 @@
 defmodule WeaviateEx.MixProject do
   use Mix.Project
 
-  @version "0.7.3"
+  @version "0.7.4"
   @source_url "https://github.com/nshkrdotcom/weaviate_ex"
 
   def project do
@@ -17,7 +17,15 @@ defmodule WeaviateEx.MixProject do
       dialyzer: dialyzer(),
       name: "WeaviateEx",
       source_url: @source_url,
-      elixirc_paths: elixirc_paths(Mix.env())
+      elixirc_paths: elixirc_paths(Mix.env()),
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        "coveralls.github": :test
+      ]
     ]
   end
 
@@ -57,9 +65,20 @@ defmodule WeaviateEx.MixProject do
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: :test},
       {:mox, "~> 1.1", only: :test},
       {:bypass, "~> 2.1", only: :test},
-      {:supertester, "~> 0.4.0", only: :test}
+      {:supertester, "~> 0.4.0", only: :test},
+
+      # Benchmarking
+      {:benchee, "~> 1.3", only: :dev},
+      {:benchee_html, "~> 1.0", only: :dev},
+
+      # Journey test dependencies (Phoenix/Plug web framework integration)
+      {:phoenix, "~> 1.7", only: :test},
+      {:phoenix_html, "~> 4.0", only: :test},
+      {:bandit, "~> 1.0", only: :test},
+      {:plug, "~> 1.15", only: :test}
     ]
   end
 
@@ -113,7 +132,8 @@ defmodule WeaviateEx.MixProject do
         "guides/generative_search.md",
         "guides/multi_tenancy.md",
         "guides/embedded_mode.md",
-        "guides/vectorizers.md"
+        "guides/vectorizers.md",
+        "guides/profiling.md"
       ],
       groups_for_extras: [
         Introduction: ["README.md", "INSTALL.md"],
@@ -126,7 +146,8 @@ defmodule WeaviateEx.MixProject do
           "guides/generative_search.md",
           "guides/multi_tenancy.md",
           "guides/embedded_mode.md",
-          "guides/vectorizers.md"
+          "guides/vectorizers.md",
+          "guides/profiling.md"
         ],
         "Release Notes": ["CHANGELOG.md"]
       ],

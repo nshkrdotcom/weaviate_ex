@@ -101,6 +101,23 @@ defmodule WeaviateEx.Query.Rerank do
   end
 
   @doc """
+  Convert rerank configuration to gRPC Rerank message.
+
+  ## Examples
+
+      rerank = Rerank.new("content", query: "deep learning")
+      Rerank.to_grpc(rerank)
+      # => %Weaviate.V1.Rerank{property: "content", query: "deep learning"}
+  """
+  @spec to_grpc(t()) :: struct()
+  def to_grpc(%__MODULE__{prop: prop, query: query}) do
+    %Weaviate.V1.Rerank{
+      property: prop,
+      query: query
+    }
+  end
+
+  @doc """
   Validate rerank configuration.
 
   ## Examples

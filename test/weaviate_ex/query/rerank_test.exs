@@ -93,4 +93,31 @@ defmodule WeaviateEx.Query.RerankTest do
       assert Rerank.valid?(rerank) == false
     end
   end
+
+  describe "to_grpc/1" do
+    test "converts to gRPC Rerank message without query" do
+      rerank = Rerank.new("content")
+      result = Rerank.to_grpc(rerank)
+
+      assert %Weaviate.V1.Rerank{} = result
+      assert result.property == "content"
+      assert result.query == nil
+    end
+
+    test "converts to gRPC Rerank message with query" do
+      rerank = Rerank.new("content", query: "deep learning")
+      result = Rerank.to_grpc(rerank)
+
+      assert %Weaviate.V1.Rerank{} = result
+      assert result.property == "content"
+      assert result.query == "deep learning"
+    end
+
+    test "preserves special characters in query" do
+      rerank = Rerank.new("content", query: "what is \"AI\"?")
+      result = Rerank.to_grpc(rerank)
+
+      assert result.query == "what is \"AI\"?"
+    end
+  end
 end

@@ -3,7 +3,7 @@ defmodule WeaviateEx.GRPC.Services.Search do
   gRPC Search service for vector queries.
 
   This module provides high-level functions for performing vector searches
-  against Weaviate using gRPC.
+  against Weaviate using gRPC, including generative search (RAG) support.
 
   ## Usage
 
@@ -13,14 +13,25 @@ defmodule WeaviateEx.GRPC.Services.Search do
         limit: 10,
         return_properties: ["title", "content"]
       )
+
+  ## Generative Search
+
+      {:ok, results} = Search.near_text(channel, "Article", "machine learning",
+        generative: %{
+          single_prompt: "Summarize this article: {content}",
+          provider: :openai,
+          model: "gpt-4"
+        }
+      )
   """
 
   alias WeaviateEx.Error
   alias WeaviateEx.GRPC.Channel
+  alias WeaviateEx.GRPC.Generative
   alias WeaviateEx.GRPC.Retry
   alias WeaviateEx.Query.GroupBy, as: QueryGroupBy
   alias WeaviateEx.Query.Metadata, as: QueryMetadata
-  alias WeaviateEx.Query.{NearImage, NearMedia, QueryReference, TargetVectors}
+  alias WeaviateEx.Query.{NearImage, NearMedia, QueryReference, Rerank, TargetVectors}
 
   # Import generated protobuf modules
   alias Weaviate.V1.{
@@ -65,7 +76,8 @@ defmodule WeaviateEx.GRPC.Services.Search do
           fusion_type: atom(),
           after: String.t(),
           sort: list(),
-          autocut: non_neg_integer()
+          autocut: non_neg_integer(),
+          generative: Generative.config()
         ]
 
   @doc """
@@ -369,9 +381,24 @@ defmodule WeaviateEx.GRPC.Services.Search do
       metadata: build_metadata_request(opts),
       group_by: build_group_by(Keyword.get(opts, :group_by)),
       filters: build_filters(Keyword.get(opts, :filters)),
+      generative: build_generative(Keyword.get(opts, :generative)),
+      rerank: build_rerank(Keyword.get(opts, :rerank)),
       uses_127_api: true
     }
   end
+
+  defp build_generative(nil), do: nil
+
+  defp build_generative(config) when is_map(config) do
+    if Map.has_key?(config, :provider) do
+      Generative.build_with_provider(config)
+    else
+      Generative.build(config)
+    end
+  end
+
+  defp build_rerank(nil), do: nil
+  defp build_rerank(%Rerank{} = rerank), do: Rerank.to_grpc(rerank)
 
   defp build_near_vector(vector, opts) when is_list(vector) do
     # Convert float list to bytes for efficiency

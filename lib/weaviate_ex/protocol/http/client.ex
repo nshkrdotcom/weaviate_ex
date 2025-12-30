@@ -2,8 +2,30 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
   @moduledoc """
   HTTP protocol implementation using Finch.
 
-  Includes transport-level retry for transient errors (connection refused, timeout, etc.)
-  and per-operation timeouts based on HTTP method.
+  Includes transport-level and HTTP status code retry for transient errors
+  and per-operation timeouts based on HTTP method and operation type.
+
+  ## Retry Behavior
+
+  Automatically retries on:
+  - Transport errors: connection refused, reset, timeout, closed, DNS failure
+  - HTTP status codes: 408, 429, 500, 502, 503, 504
+
+  ## Timeout Behavior
+
+  Uses per-operation timeouts:
+  - Query operations (GET, GraphQL): 30s default
+  - Insert operations (POST, PUT, PATCH, DELETE): 90s default
+  - Batch operations: 900s (insert × 10)
+
+  ## Options
+
+  Requests accept the following options:
+  - `:timeout` - Override the automatic timeout (milliseconds)
+  - `:operation` - Operation type (:query, :insert, :batch, etc.)
+  - `:max_retries` - Maximum retry attempts (default: 3)
+  - `:base_delay_ms` - Base delay for backoff (default: 100)
+  - `:max_delay_ms` - Maximum delay cap (default: 5000)
   """
 
   @behaviour WeaviateEx.Protocol
@@ -13,6 +35,7 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
   alias WeaviateEx.Config.Timeout
   alias WeaviateEx.Error
   alias WeaviateEx.Protocol.HTTP.Retry
+  alias WeaviateEx.Protocol.HTTP.Timeout, as: HTTPTimeout
 
   @default_pool_timeout 5_000
 
@@ -37,20 +60,33 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
         pool_timeout: pool_timeout(config)
       ]
 
-      # Execute request with retry wrapper for transport errors
-      execute_with_retry(finch_request, finch_opts, config.finch_name, opts)
+      # Execute request with retry wrapper
+      execute_with_retry(finch_request, finch_opts, config.finch_name, config, opts)
     end
   end
 
-  # Execute request with automatic retry on transport errors
-  defp execute_with_retry(finch_request, finch_opts, finch_name, opts) do
-    retry_opts = Keyword.take(opts, [:max_retries, :base_delay_ms])
+  # Execute request with automatic retry on transport and HTTP status errors
+  defp execute_with_retry(finch_request, finch_opts, finch_name, config, opts) do
+    # Get retry options from opts or config
+    retry_opts = build_retry_opts(config, opts)
 
     Retry.with_retry(
       fn -> Finch.request(finch_request, finch_name, finch_opts) end,
       retry_opts
     )
     |> handle_response()
+  end
+
+  # Build retry options from config and opts
+  defp build_retry_opts(config, opts) do
+    # Get retry config from client config if available
+    config_retry_opts = Map.get(config, :retry, [])
+
+    # Merge with explicit opts (opts take precedence)
+    Keyword.merge(
+      config_retry_opts,
+      Keyword.take(opts, [:max_retries, :base_delay_ms, :max_delay_ms])
+    )
   end
 
   # Handle Finch response
@@ -85,18 +121,39 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
     # Check if explicit timeout in opts
     case Keyword.get(opts, :timeout) do
       nil ->
-        # Use Timeout module for per-operation timeouts
+        # Get timeout config
         timeout_config = Map.get(config, :timeout_config) || Timeout.new()
 
-        # Determine if this is a GraphQL query (POST to /v1/graphql)
-        if method == :post and String.contains?(path, "graphql") do
-          timeout_config.query
-        else
-          Timeout.for_method(timeout_config, method)
+        # Check for explicit operation type
+        case Keyword.get(opts, :operation) do
+          nil ->
+            # Infer operation from method and path
+            infer_timeout(timeout_config, method, path)
+
+          operation ->
+            # Use explicit operation type
+            HTTPTimeout.for_operation(timeout_config, operation)
         end
 
       explicit_timeout ->
         explicit_timeout
+    end
+  end
+
+  # Infer timeout from HTTP method and path
+  defp infer_timeout(timeout_config, method, path) do
+    cond do
+      # GraphQL queries use query timeout
+      method == :post and String.contains?(path, "graphql") ->
+        timeout_config.query
+
+      # Batch endpoints get extended timeout
+      String.contains?(path, "/batch") ->
+        HTTPTimeout.for_operation(timeout_config, :batch)
+
+      # Use method-based timeout
+      true ->
+        Timeout.for_method(timeout_config, method)
     end
   end
 

@@ -4,6 +4,7 @@ defmodule WeaviateEx.API.ReferencesTest do
   import WeaviateEx.Test.Mocks
 
   alias WeaviateEx.API.References
+  alias WeaviateEx.Data.ReferenceToMulti
   alias WeaviateEx.Protocol.Mock
 
   setup :verify_on_exit!
@@ -33,6 +34,39 @@ defmodule WeaviateEx.API.ReferencesTest do
                  target_collection: "Category",
                  uuids: "cat-uuid"
                })
+    end
+
+    test "adds multi-target reference using ReferenceToMulti struct", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, path, body, _opts ->
+        assert path == "/v1/objects/Article/source-uuid/references/relatedTo"
+        assert body == %{"beacon" => "weaviate://localhost/Category/cat-uuid"}
+        {:ok, %{}}
+      end)
+
+      ref = ReferenceToMulti.new("Category", "cat-uuid")
+
+      assert {:ok, _} =
+               References.add(client, "Article", "source-uuid", "relatedTo", ref)
+    end
+
+    test "adds multi-target reference with multiple UUIDs using ReferenceToMulti", %{
+      client: client
+    } do
+      Mox.expect(Mock, :request, fn _client, :post, path, body, _opts ->
+        assert path == "/v1/objects/Article/source-uuid/references/relatedTo"
+        # When multiple UUIDs, should return first beacon for add operation
+        assert body == [
+                 %{"beacon" => "weaviate://localhost/Category/uuid1"},
+                 %{"beacon" => "weaviate://localhost/Category/uuid2"}
+               ]
+
+        {:ok, %{}}
+      end)
+
+      ref = ReferenceToMulti.new("Category", ["uuid1", "uuid2"])
+
+      assert {:ok, _} =
+               References.add(client, "Article", "source-uuid", "relatedTo", ref)
     end
 
     test "returns error on server error", %{client: client} do
@@ -78,6 +112,19 @@ defmodule WeaviateEx.API.ReferencesTest do
                  target_collection: "Category",
                  uuids: "cat-uuid"
                })
+    end
+
+    test "deletes multi-target reference using ReferenceToMulti struct", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :delete, path, body, _opts ->
+        assert path == "/v1/objects/Article/source-uuid/references/relatedTo"
+        assert body == %{"beacon" => "weaviate://localhost/Category/cat-uuid"}
+        {:ok, %{}}
+      end)
+
+      ref = ReferenceToMulti.new("Category", "cat-uuid")
+
+      assert {:ok, _} =
+               References.delete(client, "Article", "source-uuid", "relatedTo", ref)
     end
 
     test "returns error when reference not found", %{client: client} do
@@ -156,6 +203,33 @@ defmodule WeaviateEx.API.ReferencesTest do
                  "relatedTo",
                  [
                    %{target_collection: "Category", uuids: ["cat-uuid-1", "cat-uuid-2"]}
+                 ]
+               )
+    end
+
+    test "replaces references using ReferenceToMulti structs", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :put, path, body, _opts ->
+        assert path == "/v1/objects/Article/source-uuid/references/relatedTo"
+        assert is_list(body)
+        # Two ReferenceToMulti each with 1 UUID
+        assert length(body) == 2
+
+        # Verify beacons include different collections
+        assert Enum.any?(body, &String.contains?(&1["beacon"], "/Person/"))
+        assert Enum.any?(body, &String.contains?(&1["beacon"], "/Organization/"))
+
+        {:ok, %{}}
+      end)
+
+      assert {:ok, _} =
+               References.replace(
+                 client,
+                 "Article",
+                 "source-uuid",
+                 "relatedTo",
+                 [
+                   ReferenceToMulti.new("Person", "person-uuid"),
+                   ReferenceToMulti.new("Organization", "org-uuid")
                  ]
                )
     end

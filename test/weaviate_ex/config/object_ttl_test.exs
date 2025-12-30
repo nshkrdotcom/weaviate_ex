@@ -3,6 +3,57 @@ defmodule WeaviateEx.Config.ObjectTTLTest do
 
   alias WeaviateEx.Config.ObjectTTL
 
+  describe "from_duration/1" do
+    test "converts days to seconds" do
+      config = ObjectTTL.from_duration(days: 7)
+
+      assert config.enabled == true
+      assert config.delete_on == "_creationTimeUnix"
+      assert config.default_ttl == 7 * 86_400
+    end
+
+    test "converts hours to seconds" do
+      config = ObjectTTL.from_duration(hours: 24)
+
+      assert config.enabled == true
+      assert config.delete_on == "_creationTimeUnix"
+      assert config.default_ttl == 24 * 3_600
+    end
+
+    test "converts minutes to seconds" do
+      config = ObjectTTL.from_duration(minutes: 30)
+
+      assert config.enabled == true
+      assert config.default_ttl == 30 * 60
+    end
+
+    test "converts seconds directly" do
+      config = ObjectTTL.from_duration(seconds: 3600)
+
+      assert config.enabled == true
+      assert config.default_ttl == 3600
+    end
+
+    test "combines multiple duration units" do
+      config = ObjectTTL.from_duration(days: 1, hours: 12, minutes: 30, seconds: 15)
+
+      expected = 1 * 86_400 + 12 * 3_600 + 30 * 60 + 15
+      assert config.default_ttl == expected
+    end
+
+    test "raises on zero duration" do
+      assert_raise ArgumentError, ~r/Duration must be positive/, fn ->
+        ObjectTTL.from_duration([])
+      end
+    end
+
+    test "raises on negative duration" do
+      assert_raise ArgumentError, ~r/Duration must be positive/, fn ->
+        ObjectTTL.from_duration(hours: -1)
+      end
+    end
+  end
+
   describe "delete_by_update_time/2" do
     test "creates config with update time deletion" do
       config = ObjectTTL.delete_by_update_time(3600)

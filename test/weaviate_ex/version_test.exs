@@ -132,4 +132,75 @@ defmodule WeaviateEx.VersionTest do
       assert Version.format_version({2, 0, 15}) == "2.0.15"
     end
   end
+
+  describe "check_compatibility/1" do
+    test "returns ok for supported version" do
+      meta = %{"version" => "1.28.0"}
+      assert Version.check_compatibility(meta) == :ok
+    end
+
+    test "returns ok for minimum version" do
+      meta = %{"version" => "1.27.0"}
+      assert Version.check_compatibility(meta) == :ok
+    end
+
+    test "returns error for unsupported version" do
+      meta = %{"version" => "1.20.0"}
+
+      assert {:error, message} = Version.check_compatibility(meta)
+      assert message =~ "1.20.0"
+      assert message =~ "1.27.0"
+      assert message =~ "below minimum"
+    end
+
+    test "returns error for missing version" do
+      meta = %{"hostname" => "weaviate"}
+
+      assert {:error, message} = Version.check_compatibility(meta)
+      assert message =~ "Unable to determine"
+    end
+
+    test "returns error for invalid version format" do
+      meta = %{"version" => "not-a-version"}
+
+      assert {:error, message} = Version.check_compatibility(meta)
+      assert message =~ "Invalid version format"
+    end
+  end
+
+  describe "supports_grpc?/1" do
+    test "returns true for versions >= 1.23.0" do
+      assert Version.supports_grpc?({1, 28, 0}) == true
+      assert Version.supports_grpc?({1, 23, 0}) == true
+      assert Version.supports_grpc?({2, 0, 0}) == true
+    end
+
+    test "returns false for versions < 1.23.0" do
+      assert Version.supports_grpc?({1, 22, 99}) == false
+      assert Version.supports_grpc?({1, 20, 0}) == false
+    end
+  end
+
+  describe "grpc_minimum_version/0" do
+    test "returns the gRPC minimum version tuple" do
+      assert Version.grpc_minimum_version() == {1, 23, 0}
+    end
+  end
+
+  describe "get_grpc_max_message_size/1" do
+    test "extracts integer message size from meta" do
+      meta = %{"grpcMaxMessageSize" => 104_858_000}
+      assert Version.get_grpc_max_message_size(meta) == {:ok, 104_858_000}
+    end
+
+    test "extracts string message size from meta" do
+      meta = %{"grpcMaxMessageSize" => "104858000"}
+      assert Version.get_grpc_max_message_size(meta) == {:ok, 104_858_000}
+    end
+
+    test "returns :default for missing message size" do
+      meta = %{"version" => "1.28.0"}
+      assert Version.get_grpc_max_message_size(meta) == :default
+    end
+  end
 end

@@ -187,3 +187,75 @@ defmodule WeaviateEx.ErrorTest do
     end
   end
 end
+
+defmodule WeaviateEx.Error.VersionErrorTest do
+  use ExUnit.Case, async: true
+
+  alias WeaviateEx.Error.VersionError
+
+  describe "exception/1" do
+    test "creates VersionError with server and min versions" do
+      error = VersionError.exception(server_version: "1.20.0", min_version: "1.27.0")
+
+      assert error.server_version == "1.20.0"
+      assert error.min_version == "1.27.0"
+      assert error.message =~ "1.20.0"
+      assert error.message =~ "1.27.0"
+      assert error.message =~ "not supported"
+    end
+
+    test "defaults to unknown server version" do
+      error = VersionError.exception([])
+
+      assert error.server_version == "unknown"
+    end
+
+    test "defaults to 1.27.0 min version" do
+      error = VersionError.exception([])
+
+      assert error.min_version == "1.27.0"
+    end
+
+    test "message includes skip_init_checks workaround" do
+      error = VersionError.exception(server_version: "1.20.0")
+
+      assert error.message =~ "skip_init_checks: true"
+    end
+
+    test "is raisable as exception" do
+      assert_raise VersionError, ~r/1\.20\.0/, fn ->
+        raise VersionError, server_version: "1.20.0"
+      end
+    end
+  end
+end
+
+defmodule WeaviateEx.Error.ClosedClientErrorTest do
+  use ExUnit.Case, async: true
+
+  alias WeaviateEx.Error.ClosedClientError
+
+  describe "exception/1" do
+    test "creates error without closed_at" do
+      error = ClosedClientError.exception([])
+
+      assert error.message =~ "Client was closed"
+      assert error.message =~ "Create a new client"
+      assert error.closed_at == nil
+    end
+
+    test "creates error with closed_at timestamp" do
+      now = DateTime.utc_now()
+      error = ClosedClientError.exception(closed_at: now)
+
+      assert error.message =~ DateTime.to_string(now)
+      assert error.closed_at == now
+    end
+
+    test "is raisable as exception" do
+      assert_raise ClosedClientError, ~r/Client was closed/, fn ->
+        raise ClosedClientError, []
+      end
+    end
+  end
+end

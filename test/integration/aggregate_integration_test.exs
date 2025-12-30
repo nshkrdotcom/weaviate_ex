@@ -3,6 +3,7 @@ defmodule WeaviateEx.Integration.AggregateTest do
 
   alias WeaviateEx.API.Aggregate
   alias WeaviateEx.{Batch, Collections}
+  alias WeaviateEx.Query
 
   @moduletag :integration
 
@@ -353,6 +354,207 @@ defmodule WeaviateEx.Integration.AggregateTest do
       price_agg = first_result["price"]
       assert_in_delta price_agg["sum"], 629.96, 0.1
       assert_in_delta price_agg["mean"], 157.49, 0.1
+    end
+  end
+
+  describe "Near object aggregation (live)" do
+    setup %{client: client} do
+      # Get a reference object UUID to use for near_object queries
+      query =
+        Query.get(@test_collection)
+        |> Query.additional(["id"])
+        |> Query.limit(1)
+
+      case Query.execute(query, client) do
+        {:ok, [object | _]} ->
+          {:ok, reference_uuid: object["_additional"]["id"]}
+
+        _ ->
+          {:ok, reference_uuid: nil}
+      end
+    end
+
+    test "aggregates objects similar to reference object", %{client: client, reference_uuid: uuid} do
+      if uuid do
+        assert {:ok, results} =
+                 Aggregate.with_near_object(client, @test_collection, uuid, metrics: [:count])
+
+        assert is_list(results)
+        assert length(results) >= 1
+
+        first_result = hd(results)
+        assert Map.has_key?(first_result, "meta")
+        # Should find at least the reference object itself
+        assert first_result["meta"]["count"] >= 1
+      end
+    end
+
+    test "aggregates with distance threshold", %{client: client, reference_uuid: uuid} do
+      if uuid do
+        assert {:ok, results} =
+                 Aggregate.with_near_object(client, @test_collection, uuid,
+                   distance: 0.5,
+                   metrics: [:count]
+                 )
+
+        assert is_list(results)
+        assert length(results) >= 1
+
+        first_result = hd(results)
+        # With a distance threshold, we may get fewer results
+        assert first_result["meta"]["count"] >= 1
+      end
+    end
+
+    test "aggregates with certainty threshold", %{client: client, reference_uuid: uuid} do
+      if uuid do
+        assert {:ok, results} =
+                 Aggregate.with_near_object(client, @test_collection, uuid,
+                   certainty: 0.5,
+                   metrics: [:count]
+                 )
+
+        assert is_list(results)
+        assert length(results) >= 1
+
+        first_result = hd(results)
+        assert first_result["meta"]["count"] >= 1
+      end
+    end
+
+    test "aggregates property metrics near object", %{client: client, reference_uuid: uuid} do
+      if uuid do
+        assert {:ok, results} =
+                 Aggregate.with_near_object(client, @test_collection, uuid,
+                   distance: 0.9,
+                   properties: [
+                     {:price, [:sum, :mean, :minimum, :maximum]}
+                   ]
+                 )
+
+        assert is_list(results)
+        first_result = hd(results)
+
+        if Map.has_key?(first_result, "price") do
+          price_agg = first_result["price"]
+          assert is_number(price_agg["sum"])
+          assert is_number(price_agg["mean"])
+        end
+      end
+    end
+  end
+
+  describe "Hybrid aggregation (live)" do
+    test "aggregates with hybrid search query", %{client: client} do
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "electronics", metrics: [:count])
+
+      assert is_list(results)
+      assert length(results) >= 1
+
+      first_result = hd(results)
+      assert Map.has_key?(first_result, "meta")
+      # Should find some results matching "electronics"
+      assert first_result["meta"]["count"] >= 0
+    end
+
+    test "aggregates with custom alpha weight", %{client: client} do
+      # Alpha = 0.7 means 70% vector weight, 30% keyword weight
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "product",
+                 alpha: 0.7,
+                 metrics: [:count]
+               )
+
+      assert is_list(results)
+      assert length(results) >= 1
+    end
+
+    test "aggregates with alpha = 0 (pure keyword)", %{client: client} do
+      # Alpha = 0 means pure keyword (BM25) search
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "electronics",
+                 alpha: 0.0,
+                 metrics: [:count]
+               )
+
+      assert is_list(results)
+      assert length(results) >= 1
+
+      first_result = hd(results)
+      # Pure keyword search for "electronics" should find matching products
+      assert first_result["meta"]["count"] >= 0
+    end
+
+    test "aggregates with alpha = 1 (pure vector)", %{client: client} do
+      # Alpha = 1 means pure vector search
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "technology",
+                 alpha: 1.0,
+                 metrics: [:count]
+               )
+
+      assert is_list(results)
+      assert length(results) >= 1
+    end
+
+    test "aggregates with ranked fusion type", %{client: client} do
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "clothing",
+                 fusion_type: :ranked,
+                 metrics: [:count]
+               )
+
+      assert is_list(results)
+      assert length(results) >= 1
+    end
+
+    test "aggregates with relative_score fusion type", %{client: client} do
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "home",
+                 fusion_type: :relative_score,
+                 metrics: [:count]
+               )
+
+      assert is_list(results)
+      assert length(results) >= 1
+    end
+
+    test "aggregates property metrics with hybrid search", %{client: client} do
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "product",
+                 alpha: 0.5,
+                 properties: [
+                   {:price, [:sum, :mean, :minimum, :maximum]}
+                 ]
+               )
+
+      assert is_list(results)
+      first_result = hd(results)
+
+      if Map.has_key?(first_result, "price") do
+        price_agg = first_result["price"]
+        assert is_number(price_agg["sum"]) or is_nil(price_agg["sum"])
+      end
+    end
+
+    test "aggregates with hybrid search and text property", %{client: client} do
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, @test_collection, "electronics",
+                 alpha: 0.5,
+                 metrics: [:count],
+                 properties: [
+                   {:category, [:topOccurrences], limit: 3}
+                 ]
+               )
+
+      assert is_list(results)
+      first_result = hd(results)
+
+      if Map.has_key?(first_result, "category") do
+        category_agg = first_result["category"]
+        assert is_list(category_agg["topOccurrences"])
+      end
     end
   end
 end

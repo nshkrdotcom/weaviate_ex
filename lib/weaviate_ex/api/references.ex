@@ -9,17 +9,27 @@ defmodule WeaviateEx.API.References do
       # Add a single reference
       References.add(client, "Article", source_uuid, "hasAuthor", author_uuid)
 
-      # Add a multi-target reference
+      # Add a multi-target reference using map
       References.add(client, "Article", source_uuid, "relatedTo", %{
         target_collection: "Category",
         uuids: category_uuid
       })
+
+      # Add a multi-target reference using ReferenceToMulti struct
+      ref = ReferenceToMulti.new("Category", category_uuid)
+      References.add(client, "Article", source_uuid, "relatedTo", ref)
 
       # Delete a reference
       References.delete(client, "Article", source_uuid, "hasAuthor", author_uuid)
 
       # Replace all references on a property
       References.replace(client, "Article", source_uuid, "hasAuthors", [uuid1, uuid2, uuid3])
+
+      # Replace with multi-target references
+      References.replace(client, "Article", source_uuid, "relatedTo", [
+        ReferenceToMulti.new("Person", person_uuid),
+        ReferenceToMulti.new("Organization", org_uuid)
+      ])
 
       # Batch add references
       References.add_many(client, "Article", [
@@ -29,10 +39,11 @@ defmodule WeaviateEx.API.References do
   """
 
   alias WeaviateEx.Client
+  alias WeaviateEx.Data.ReferenceToMulti
   alias WeaviateEx.Error
 
   @type uuid :: String.t()
-  @type reference_input :: uuid() | reference_to_multi()
+  @type reference_input :: uuid() | reference_to_multi() | ReferenceToMulti.t()
   @type reference_to_multi :: %{
           target_collection: String.t(),
           uuids: uuid() | [uuid()]
@@ -172,6 +183,14 @@ defmodule WeaviateEx.API.References do
 
   defp build_beacon(uuid) when is_binary(uuid) do
     %{"beacon" => "weaviate://localhost/#{uuid}"}
+  end
+
+  defp build_beacon(%ReferenceToMulti{} = ref) do
+    ReferenceToMulti.to_beacons(ref)
+    |> case do
+      [single] -> single
+      beacons -> beacons
+    end
   end
 
   defp build_beacon(%{target_collection: collection, uuids: uuid}) when is_binary(uuid) do

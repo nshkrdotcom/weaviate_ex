@@ -44,18 +44,89 @@ defmodule WeaviateEx.Collections do
       # Enable multi-tenancy and confirm the collection exists
       {:ok, %{"enabled" => true}} = WeaviateEx.Collections.set_multi_tenancy("Article", true)
       {:ok, true} = WeaviateEx.Collections.exists?("Article")
+
+  ## Tenant-Scoped Operations
+
+  For multi-tenant collections, use `with_tenant/3` to get a tenant-scoped
+  collection reference:
+
+      tenant_col = WeaviateEx.Collections.with_tenant(client, "Articles", "tenant_A")
+
+      # All operations automatically scoped to tenant_A
+      {:ok, _} = WeaviateEx.TenantCollection.insert(tenant_col, %{title: "Hello"})
+      {:ok, results} = tenant_col
+        |> WeaviateEx.TenantCollection.query()
+        |> WeaviateEx.Query.bm25("search")
+        |> WeaviateEx.Query.execute(client)
   """
 
   import WeaviateEx, only: [request: 4]
 
+  alias WeaviateEx.Client
   alias WeaviateEx.Config.AutoTenant
   alias WeaviateEx.Config.ObjectTTL
   alias WeaviateEx.Schema.MultiTenancyConfig
+  alias WeaviateEx.TenantCollection
 
   @type collection_name :: String.t()
   @type collection_config :: map()
   @type property :: map()
   @type opts :: Keyword.t()
+
+  # ===========================================================================
+  # Tenant-Scoped Collection
+  # ===========================================================================
+
+  @doc """
+  Returns a tenant-scoped collection reference.
+
+  This provides a Python-like `with_tenant` pattern for cleaner multi-tenant
+  code. All operations on the returned `TenantCollection` are automatically
+  scoped to the specified tenant.
+
+  ## Parameters
+
+    - `client` - WeaviateEx.Client instance
+    - `collection` - Collection name
+    - `tenant` - Tenant name
+
+  ## Examples
+
+      # Get tenant-scoped collection
+      tenant_col = Collections.with_tenant(client, "Articles", "tenant_A")
+
+      # All operations automatically scoped to tenant_A
+      {:ok, _} = TenantCollection.insert(tenant_col, %{
+        title: "My Article",
+        content: "Article content"
+      })
+
+      # Query within tenant
+      {:ok, results} = tenant_col
+        |> TenantCollection.query()
+        |> Query.bm25("search term")
+        |> Query.execute(client)
+
+      # Batch insert within tenant
+      {:ok, _} = TenantCollection.insert_many(tenant_col, [
+        %{title: "Article 1"},
+        %{title: "Article 2"}
+      ])
+
+  ## Returns
+
+  A `WeaviateEx.TenantCollection` struct that can be used with all
+  `TenantCollection` functions.
+  """
+  @spec with_tenant(Client.t(), String.t(), String.t()) :: TenantCollection.t()
+  def with_tenant(%Client{} = client, collection, tenant)
+      when is_binary(collection) and is_binary(tenant) do
+    TenantCollection.new(client, collection, tenant)
+  end
+
+  # ===========================================================================
+  # Schema Operations
+  # ===========================================================================
 
   @doc """
   Lists all collections in the schema.
@@ -549,5 +620,41 @@ defmodule WeaviateEx.Collections do
     value
     |> to_string()
     |> URI.encode_www_form()
+  end
+
+  @doc """
+  Updates the Object TTL configuration for an existing collection.
+
+  This is a convenience wrapper around `update/3` that specifically
+  updates the TTL configuration.
+
+  ## Parameters
+
+    - `name` - The name of the collection
+    - `ttl` - An `ObjectTTL` struct with the new TTL configuration
+    - `opts` - Additional options
+
+  ## Examples
+
+      # Enable 24-hour TTL
+      alias WeaviateEx.Config.ObjectTTL
+
+      {:ok, _} = WeaviateEx.Collections.update_ttl("Events",
+        ObjectTTL.from_duration(hours: 24)
+      )
+
+      # Change to 7-day TTL
+      {:ok, _} = WeaviateEx.Collections.update_ttl("Events",
+        ObjectTTL.from_duration(days: 7)
+      )
+
+      # Disable TTL
+      {:ok, _} = WeaviateEx.Collections.update_ttl("Events",
+        ObjectTTL.disable()
+      )
+  """
+  @spec update_ttl(collection_name(), ObjectTTL.t(), Keyword.t()) :: WeaviateEx.api_response()
+  def update_ttl(name, %ObjectTTL{} = ttl, opts \\ []) do
+    update(name, %{object_ttl: ttl}, opts)
   end
 end

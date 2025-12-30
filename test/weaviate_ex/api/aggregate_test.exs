@@ -282,6 +282,432 @@ defmodule WeaviateEx.API.AggregateTest do
     end
   end
 
+  describe "with_near_object/4" do
+    test "aggregates objects similar to a reference object", %{client: client} do
+      object_id = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "Aggregate"
+        assert body["query"] =~ "nearObject"
+        assert body["query"] =~ object_id
+        assert body["query"] =~ "meta"
+        assert body["query"] =~ "count"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 35}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_object(client, "Article", object_id, metrics: [:count])
+
+      assert hd(results)["meta"]["count"] == 35
+    end
+
+    test "includes distance parameter", %{client: client} do
+      object_id = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "nearObject"
+        assert body["query"] =~ "distance: 0.3"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 20}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_object(client, "Article", object_id,
+                 distance: 0.3,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 20
+    end
+
+    test "includes certainty parameter", %{client: client} do
+      object_id = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "nearObject"
+        assert body["query"] =~ "certainty: 0.7"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 15}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_object(client, "Article", object_id,
+                 certainty: 0.7,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 15
+    end
+
+    test "calculates property metrics", %{client: client} do
+      object_id = "550e8400-e29b-41d4-a716-446655440000"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "nearObject"
+        assert body["query"] =~ "views"
+        assert body["query"] =~ "mean"
+        assert body["query"] =~ "sum"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "views" => %{
+                     "mean" => 1500.5,
+                     "sum" => 45_015
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_object(client, "Article", object_id,
+                 distance: 0.5,
+                 properties: [{:views, [:mean, :sum]}]
+               )
+
+      result = hd(results)
+      assert result["views"]["mean"] == 1500.5
+      assert result["views"]["sum"] == 45_015
+    end
+  end
+
+  describe "with_near_image/4" do
+    test "aggregates objects similar to an image", %{client: client} do
+      image_data = "base64encodedimagedata"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "Aggregate"
+        assert body["query"] =~ "nearImage"
+        assert body["query"] =~ image_data
+        assert body["query"] =~ "meta"
+        assert body["query"] =~ "count"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Product" => [
+                 %{
+                   "meta" => %{"count" => 12}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_image(client, "Product", image_data, metrics: [:count])
+
+      assert hd(results)["meta"]["count"] == 12
+    end
+
+    test "includes certainty parameter", %{client: client} do
+      image_data = "base64encodedimagedata"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "nearImage"
+        assert body["query"] =~ "certainty: 0.8"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Product" => [
+                 %{
+                   "meta" => %{"count" => 8}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_image(client, "Product", image_data,
+                 certainty: 0.8,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 8
+    end
+
+    test "includes distance parameter", %{client: client} do
+      image_data = "base64encodedimagedata"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "nearImage"
+        assert body["query"] =~ "distance: 0.25"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Product" => [
+                 %{
+                   "meta" => %{"count" => 5}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_image(client, "Product", image_data,
+                 distance: 0.25,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 5
+    end
+
+    test "includes target_vectors parameter", %{client: client} do
+      image_data = "base64encodedimagedata"
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "nearImage"
+        assert body["query"] =~ "targetVectors"
+        assert body["query"] =~ "image_vector"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Product" => [
+                 %{
+                   "meta" => %{"count" => 10}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_near_image(client, "Product", image_data,
+                 target_vectors: ["image_vector"],
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 10
+    end
+  end
+
+  describe "with_hybrid/4" do
+    test "aggregates with hybrid search", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "Aggregate"
+        assert body["query"] =~ "hybrid"
+        assert body["query"] =~ "machine learning"
+        assert body["query"] =~ "meta"
+        assert body["query"] =~ "count"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 50}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, "Article", "machine learning", metrics: [:count])
+
+      assert hd(results)["meta"]["count"] == 50
+    end
+
+    test "uses default alpha of 0.5", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "hybrid"
+        assert body["query"] =~ "alpha: 0.5"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 30}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, "Article", "search term", metrics: [:count])
+
+      assert hd(results)["meta"]["count"] == 30
+    end
+
+    test "accepts custom alpha", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "hybrid"
+        assert body["query"] =~ "alpha: 0.7"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 40}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, "Article", "search term",
+                 alpha: 0.7,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 40
+    end
+
+    test "accepts fusion_type :ranked", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "hybrid"
+        assert body["query"] =~ "fusionType: rankedFusion"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 25}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, "Article", "search term",
+                 fusion_type: :ranked,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 25
+    end
+
+    test "accepts fusion_type :relative_score", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "hybrid"
+        assert body["query"] =~ "fusionType: relativeScoreFusion"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "meta" => %{"count" => 28}
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, "Article", "search term",
+                 fusion_type: :relative_score,
+                 metrics: [:count]
+               )
+
+      assert hd(results)["meta"]["count"] == 28
+    end
+
+    test "calculates property metrics correctly", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "hybrid"
+        assert body["query"] =~ "views"
+        assert body["query"] =~ "sum"
+        assert body["query"] =~ "mean"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Aggregate" => %{
+               "Article" => [
+                 %{
+                   "views" => %{
+                     "sum" => 125_000,
+                     "mean" => 2500.0
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, results} =
+               Aggregate.with_hybrid(client, "Article", "popular topics",
+                 alpha: 0.6,
+                 properties: [{:views, [:sum, :mean]}]
+               )
+
+      result = hd(results)
+      assert result["views"]["sum"] == 125_000
+      assert result["views"]["mean"] == 2500.0
+    end
+  end
+
   describe "with_where/4" do
     test "aggregates with filter conditions", %{client: client} do
       Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->

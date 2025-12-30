@@ -461,6 +461,113 @@ defmodule WeaviateEx.API.Tenants do
   @spec batch_size() :: pos_integer()
   def batch_size, do: @batch_size
 
+  @doc """
+  Updates multiple tenants' status in a single batch.
+
+  Batches updates into groups of #{@batch_size} (Weaviate limit).
+  This is an alias for `batch_update/3` with additional options support.
+
+  ## Examples
+
+      # Activate multiple tenants
+      Tenants.update_many(client, "Articles", [
+        %{name: "tenant1", status: :hot},
+        %{name: "tenant2", status: :hot}
+      ])
+
+      # Deactivate tenants
+      Tenants.update_many(client, "Articles", [
+        %{name: "tenant1", status: :cold}
+      ])
+
+      # With custom batch size
+      Tenants.update_many(client, "Articles", updates, batch_size: 50)
+
+  ## Returns
+    * `:ok` - All updates succeeded
+    * `{:error, Error.t()}` - Error from first failed batch
+  """
+  @spec update_many(Client.t(), collection_name(), [map()], keyword()) ::
+          :ok | {:error, Error.t()}
+  def update_many(client, collection_name, updates, opts \\ []) do
+    batch_size = Keyword.get(opts, :batch_size, @batch_size)
+
+    updates
+    |> normalize_update_format()
+    |> Enum.chunk_every(batch_size)
+    |> Enum.reduce_while(:ok, fn batch, :ok ->
+      case do_update_many_batch(client, collection_name, batch) do
+        :ok -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp normalize_update_format(updates) do
+    Enum.map(updates, fn update ->
+      name = Map.get(update, :name) || Map.get(update, "name")
+
+      status =
+        Map.get(update, :status) ||
+          Map.get(update, "status") ||
+          Map.get(update, :activity_status) ||
+          Map.get(update, "activity_status") ||
+          Map.get(update, "activityStatus") ||
+          :hot
+
+      %{name: name, status: status}
+    end)
+  end
+
+  defp do_update_many_batch(client, collection_name, batch) do
+    body =
+      Enum.map(batch, fn %{name: name, status: status} ->
+        %{"name" => name, "activityStatus" => activity_to_string(status)}
+      end)
+
+    case Client.request(client, :put, "/v1/schema/#{collection_name}/tenants", body, []) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Ensures a tenant exists and is active (HOT).
+
+  Creates the tenant if it doesn't exist (when auto-creation is not enabled).
+  Activates the tenant if it's not HOT.
+
+  ## Examples
+
+      :ok = Tenants.ensure_active(client, "Articles", "tenant1")
+
+  ## Returns
+    * `:ok` - Tenant is now active
+    * `{:error, Error.t()}` - Error if operation fails
+  """
+  @spec ensure_active(Client.t(), collection_name(), tenant_name()) :: :ok | {:error, Error.t()}
+  def ensure_active(client, collection_name, tenant_name) do
+    case get(client, collection_name, tenant_name) do
+      {:ok, %{"activityStatus" => "HOT"}} ->
+        :ok
+
+      {:ok, %{"activityStatus" => _other}} ->
+        case update(client, collection_name, tenant_name, activity_status: :hot) do
+          {:ok, _} -> :ok
+          {:error, _} = error -> error
+        end
+
+      {:error, %Error{type: :not_found}} ->
+        case create(client, collection_name, tenant_name, activity_status: :hot) do
+          {:ok, _} -> :ok
+          {:error, _} = error -> error
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
   ## Private Helpers
 
   defp activity_to_string(:active), do: "ACTIVE"

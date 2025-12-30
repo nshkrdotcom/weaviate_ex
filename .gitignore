@@ -4,6 +4,10 @@
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 
+# Excoveralls coverage output
+excoveralls.json
+cover.html
+
 # The directory Mix downloads your dependencies sources to.
 /deps/
 
@@ -24,3 +28,12 @@ weaviate_ex-*.tar
 elixir-weaviate/
 .env
 weaviate-python-client/
+logs/
+
+# Benchmark output
+/bench/output/
+
+# Profiling output
+fprof.analysis
+*.trace
+

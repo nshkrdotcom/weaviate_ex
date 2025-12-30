@@ -9,7 +9,8 @@
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-2612%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
-[![Version](https://img.shields.io/badge/version-0.7.3-blue.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Coverage](https://codecov.io/gh/nshkrdotcom/weaviate_ex/branch/master/graph/badge.svg)](https://codecov.io/gh/nshkrdotcom/weaviate_ex)
+[![Version](https://img.shields.io/badge/version-0.7.4-blue.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -38,6 +39,7 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - **Multimodal Search** - near_image (images), near_media (audio, video, thermal, depth, IMU)
 - **Hybrid Search** - Combined keyword + vector with configurable alpha
 - **BM25 Keyword Search** - Full-text search with AND/OR operators
+- **Reranking** - gRPC-based result reranking with Cohere, Transformers, VoyageAI, and more
 - **Multi-Vector Support** - ColBERT-style embeddings with Muvera encoding
 - **Named Vectors** - Multiple vectors per object with targeting strategies
 
@@ -92,11 +94,11 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 We ship Docker Compose profiles from the Python client under `ci/`. Use our Mix tasks to bring everything up:
 
 ```bash
-# Start Weaviate containers (default version: 1.28.14)
+# Start Weaviate containers (default version: 1.35.0)
 mix weaviate.start
 
 # Or specify a version
-mix weaviate.start --version 1.30.5
+mix weaviate.start --version 1.35.0
 
 # Inspect running services and health status
 mix weaviate.status
@@ -110,7 +112,7 @@ When you're done:
 mix weaviate.stop
 ```
 
-> Prefer direct scripts? Use `./ci/start_weaviate.sh 1.28.14` and `./ci/stop_weaviate.sh`.
+> Prefer direct scripts? Use `./ci/start_weaviate.sh 1.35.0` and `./ci/stop_weaviate.sh`.
 
 ### 2. Add to Your Project
 
@@ -119,7 +121,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.7.3"}
+    {:weaviate_ex, "~> 0.7.4"}
   ]
 end
 ```
@@ -526,7 +528,56 @@ Collections define the structure of your data:
 {:ok, _} = WeaviateEx.Collections.delete("Article")
 ```
 
-Schema helpers for range filters, TTL, and auto-tenant configuration:
+### Object TTL (Time-To-Live)
+
+Automatically expire and delete objects after a specified duration:
+
+```elixir
+alias WeaviateEx.Config.ObjectTTL
+
+# Create collection with 24-hour TTL using human-readable duration
+{:ok, _} = WeaviateEx.Collections.create("Events", %{
+  properties: [%{name: "title", dataType: ["text"]}],
+  object_ttl: ObjectTTL.from_duration(hours: 24)
+})
+
+# Or specify exact seconds with creation time deletion
+{:ok, _} = WeaviateEx.Collections.create("Sessions", %{
+  properties: [%{name: "user_id", dataType: ["text"]}],
+  object_ttl: ObjectTTL.delete_by_creation_time(3600)  # 1 hour
+})
+
+# Delete objects based on last update time
+{:ok, _} = WeaviateEx.Collections.create("Cache", %{
+  properties: [%{name: "data", dataType: ["text"]}],
+  object_ttl: ObjectTTL.delete_by_update_time(86_400, true)  # 24h, filter expired
+})
+
+# Delete objects based on a custom date property
+{:ok, _} = WeaviateEx.Collections.create("Subscriptions", %{
+  properties: [
+    %{name: "plan", dataType: ["text"]},
+    %{name: "expires_at", dataType: ["date"]}
+  ],
+  object_ttl: ObjectTTL.delete_by_date_property("expires_at")
+})
+
+# Update TTL on existing collection
+{:ok, _} = WeaviateEx.Collections.update_ttl("Events",
+  ObjectTTL.from_duration(days: 7)
+)
+
+# Disable TTL
+{:ok, _} = WeaviateEx.Collections.update_ttl("Events",
+  ObjectTTL.disable()
+)
+```
+
+**Note:** Objects are deleted asynchronously in the background. The `filter_expired_objects`
+option (second parameter in `delete_by_*` functions) controls whether expired but not yet
+deleted objects are excluded from search results.
+
+Schema helpers for range filters and auto-tenant configuration:
 
 ```elixir
 alias WeaviateEx.Config.{AutoTenant, ObjectTTL}
@@ -731,6 +782,57 @@ Create objects with references in a single operation:
 
 References are automatically converted to Weaviate beacon format.
 
+#### Reference Operations API (v0.7.3+)
+
+For managing references after object creation, use the References API with full multi-target support:
+
+```elixir
+alias WeaviateEx.API.References
+alias WeaviateEx.Data.ReferenceToMulti
+alias WeaviateEx.Types.Beacon
+
+# Add a single reference
+{:ok, _} = References.add(client, "Article", article_uuid, "hasAuthor", author_uuid)
+
+# Add a multi-target reference using ReferenceToMulti
+ref = ReferenceToMulti.new("Person", person_uuid)
+{:ok, _} = References.add(client, "Article", article_uuid, "hasAuthor", ref)
+
+# Add multiple references at once
+ref = ReferenceToMulti.new("Person", [person1_uuid, person2_uuid])
+{:ok, _} = References.add(client, "Article", article_uuid, "hasAuthors", ref)
+
+# Replace all references on a property
+{:ok, _} = References.replace(client, "Article", article_uuid, "hasAuthors",
+  [author1_uuid, author2_uuid, author3_uuid]
+)
+
+# Replace with multi-target references pointing to different collections
+{:ok, _} = References.replace(client, "Article", article_uuid, "relatedTo", [
+  ReferenceToMulti.new("Person", person_uuid),
+  ReferenceToMulti.new("Organization", org_uuid)
+])
+
+# Delete a reference
+{:ok, _} = References.delete(client, "Article", article_uuid, "hasAuthor", author_uuid)
+
+# Batch add references
+refs = [
+  %{from_uuid: "article-1", from_property: "hasAuthor", to_uuid: "author-1"},
+  %{from_uuid: "article-2", from_property: "hasAuthor", to_uuid: "author-2",
+    target_collection: "Person"}  # For multi-target properties
+]
+{:ok, _} = References.add_many(client, "Article", refs)
+
+# Parse beacon URLs
+parsed = Beacon.parse("weaviate://localhost/Person/uuid-123")
+# => %{collection: "Person", uuid: "uuid-123"}
+
+# Build beacon URLs
+beacon = Beacon.build("uuid-123", "Person")
+# => "weaviate://localhost/Person/uuid-123"
+```
+
 ### Objects API
 
 Full CRUD operations with explicit UUID control:
@@ -781,6 +883,75 @@ Full CRUD operations with explicit UUID control:
 
 Payload validation happens client-side: `properties` is required for inserts/updates, and
 property names `id` and `vector` are reserved (raises `ArgumentError`).
+
+### Complex Data Types
+
+WeaviateEx automatically serializes complex Elixir types when creating or updating objects:
+
+```elixir
+alias WeaviateEx.Types.{GeoCoordinate, PhoneNumber, Blob}
+
+# DateTime - serialized to RFC3339/ISO8601
+%{created_at: ~U[2024-01-01 00:00:00Z]}
+# -> {"created_at": "2024-01-01T00:00:00Z"}
+
+# Date - serialized as midnight UTC
+%{published_date: ~D[2024-06-15]}
+# -> {"published_date": "2024-06-15T00:00:00Z"}
+
+# GeoCoordinate - serialized to lat/lon map
+{:ok, geo} = GeoCoordinate.new(40.71, -74.00)
+%{location: geo}
+# -> {"location": {"latitude": 40.71, "longitude": -74.00}}
+
+# PhoneNumber - serialized with input and country
+phone = PhoneNumber.new("555-1234", default_country: "US")
+%{contact: phone}
+# -> {"contact": {"input": "555-1234", "defaultCountry": "US"}}
+
+# Blob (binary data) - base64 encoded
+blob = Blob.new(<<binary_image_data>>)
+%{image: blob}
+# -> {"image": "<base64 encoded string>"}
+
+# Nested objects with complex types
+{:ok, geo} = GeoCoordinate.new(40.7128, -74.0060)
+{:ok, article} = WeaviateEx.Objects.create("Place", %{
+  properties: %{
+    name: "Central Park",
+    location: geo,
+    created_at: ~U[2024-01-01 00:00:00Z],
+    metadata: %{
+      last_visited: ~D[2024-12-25]
+    }
+  }
+})
+```
+
+#### Deserializing Responses
+
+Convert Weaviate response data back to rich Elixir types:
+
+```elixir
+alias WeaviateEx.Types.Deserialize
+
+# Parse individual values
+{:ok, dt} = Deserialize.deserialize("2024-01-01T00:00:00Z", :date)
+# => {:ok, ~U[2024-01-01 00:00:00Z]}
+
+{:ok, geo} = Deserialize.deserialize(
+  %{"latitude" => 52.37, "longitude" => 4.90},
+  :geo_coordinates
+)
+# => {:ok, %GeoCoordinate{latitude: 52.37, longitude: 4.90}}
+
+# Deserialize properties with schema hints
+schema = %{"created_at" => :date, "location" => :geo_coordinates}
+{:ok, props} = Deserialize.deserialize_properties(raw_props, schema)
+
+# Auto-detect types based on value structure
+{:ok, props} = Deserialize.auto_deserialize(response["properties"])
+```
 
 ### Batch Operations
 
@@ -1016,6 +1187,99 @@ IO.puts("Imported #{map_size(results.successful_uuids)} objects")
 results = Background.stop(batcher, flush: true)
 ```
 
+### Batch Safety Features (v0.7.4+)
+
+WeaviateEx implements production-grade batch safety for reliable large-scale operations:
+
+#### Memory Management
+
+```elixir
+# MAX_STORED_RESULTS limit (100,000) prevents memory exhaustion
+# Automatic eviction of oldest entries when limit exceeded
+alias WeaviateEx.Batch.ErrorTracking.Results
+
+# Check the limit
+Results.max_stored_results()
+#=> 100_000
+
+# Results automatically evict oldest entries when limit is exceeded
+# This prevents unbounded memory growth during large batch operations
+```
+
+#### Auto-Retry for Failed Objects
+
+```elixir
+alias WeaviateEx.Batch.Dynamic
+
+# Dynamic batcher with auto-retry enabled (default)
+{:ok, batcher} = Dynamic.start(
+  client: client,
+  auto_retry: true,           # Enable automatic retry (default: true)
+  max_retries: 5,             # Maximum retry attempts (default: 3)
+  retry_delay_ms: 2000,       # Base delay for backoff (default: 1000ms)
+  on_permanent_failure: fn objects ->
+    Logger.error("Permanent failures: #{length(objects)}")
+    # Handle objects that exceeded max_retries
+  end
+)
+
+# Add objects - failed objects are automatically re-queued
+Dynamic.add_object(batcher, "Article", %{title: "Test"})
+
+# Retryable errors include:
+# - Rate limit errors (429, "rate limit exceeded", etc.)
+# - Transient gRPC errors (UNAVAILABLE, RESOURCE_EXHAUSTED, ABORTED, DEADLINE_EXCEEDED)
+```
+
+#### RetryQueue for Manual Control
+
+```elixir
+alias WeaviateEx.Batch.RetryQueue
+
+# Start a retry queue for manual control
+{:ok, retry_queue} = RetryQueue.start_link(
+  client: client,
+  max_retries: 3,
+  base_delay_ms: 1000,
+  on_permanent_failure: fn objects ->
+    Logger.error("Failed after max retries: #{length(objects)}")
+  end
+)
+
+# Enqueue failed objects for retry
+:ok = RetryQueue.enqueue_failed(retry_queue, failed_objects)
+
+# Check retry count for a specific object
+count = RetryQueue.get_retry_count(retry_queue, "uuid-123")
+
+# Drain all queued objects for manual processing
+{:ok, objects} = RetryQueue.drain(retry_queue)
+
+# Clear the queue
+:ok = RetryQueue.clear(retry_queue)
+```
+
+#### Configurable Batch Options
+
+```elixir
+alias WeaviateEx.Batch.Config
+
+# Create a batch configuration
+config = Config.new(
+  max_stored_results: 50_000,    # Custom limit
+  auto_retry: true,
+  max_retries: 5,
+  retry_delay_ms: 2000,
+  on_permanent_failure: fn objects ->
+    Logger.error("Failed: #{length(objects)}")
+  end
+)
+
+# Access configuration values
+Config.auto_retry_enabled?(config)  #=> true
+Config.default_max_retries()        #=> 3
+```
+
 ### Queries & Vector Search
 
 Powerful query capabilities with semantic search:
@@ -1110,10 +1374,96 @@ ids = [
 #### gRPC vs GraphQL
 
 When you pass a `WeaviateEx.Client`, `Query.execute/2` uses gRPC and now supports
-filters, group_by, target vectors, near_image/near_media, references, and vector metadata.
-If a query includes options not yet supported in gRPC (for example `rerank`, sorting,
-or cursor pagination), it automatically falls back to GraphQL.
-Generative queries (`WeaviateEx.Query.Generate` and `WeaviateEx.API.Generative`) run over GraphQL for now.
+filters, group_by, target vectors, near_image/near_media, references, vector metadata,
+reranking, and generative search (RAG). If a query includes options not yet supported in gRPC
+(for example sorting or cursor pagination), it automatically falls back to GraphQL.
+
+#### Reranking
+
+Improve search result relevance using reranker models:
+
+```elixir
+alias WeaviateEx.Query
+alias WeaviateEx.Query.Rerank
+
+# Basic reranking - re-scores results using the "content" property
+rerank = Rerank.new("content")
+
+{:ok, results} = Query.get("Article")
+|> Query.near_text("machine learning")
+|> Query.fields(["title", "content"])
+|> Query.limit(10)
+|> Query.rerank(rerank)
+|> Query.execute(client)
+
+# With custom rerank query (different from search query)
+rerank = Rerank.new("content", query: "latest AI applications in healthcare")
+
+{:ok, results} = Query.get("Article")
+|> Query.hybrid("AI trends", alpha: 0.5)
+|> Query.fields(["title", "content"])
+|> Query.rerank(rerank)
+|> Query.execute(client)
+
+# Access rerank scores in results
+for result <- results do
+  score = result["_additional"]["rerankScore"]
+  IO.puts("Rerank score: #{score}")
+end
+```
+
+**Note:** Requires a reranker module configured on the collection. See
+`WeaviateEx.API.RerankerConfig` for available rerankers: `cohere`, `transformers`,
+`voyageai`, `jinaai`, `nvidia`, `contextualai`.
+
+#### gRPC Generative Search (v0.7.4+)
+
+Generative queries now use gRPC for improved performance (~2-3x lower latency):
+
+```elixir
+alias WeaviateEx.GRPC.Services.Search
+alias WeaviateEx.Query.GenerativeResult
+
+# Build a search request with generative config
+request = Search.build_near_text_request("Article", "machine learning",
+  limit: 5,
+  return_properties: ["title", "content"],
+  generative: %{
+    single_prompt: "Summarize this article: {content}",
+    provider: :openai,
+    model: "gpt-4",
+    temperature: 0.7
+  }
+)
+
+# Execute the search
+{:ok, reply} = Search.execute(channel, request)
+
+# Parse the generative results
+result = GenerativeResult.from_grpc_response(reply)
+
+# Access per-object generations
+for gen <- result.generated_per_object do
+  IO.puts("Generated: #{gen}")
+end
+
+# Grouped generation
+request = Search.build_near_text_request("Article", "AI trends",
+  generative: %{
+    grouped_task: "Synthesize the key themes from these articles",
+    grouped_properties: ["title", "content"],
+    provider: :anthropic,
+    model: "claude-3-5-sonnet-20241022"
+  }
+)
+
+{:ok, reply} = Search.execute(channel, request)
+result = GenerativeResult.from_grpc_response(reply)
+IO.puts("Grouped summary: #{result.generated}")
+```
+
+Supported providers: `:openai`, `:anthropic`, `:cohere`, `:mistral`, `:ollama`,
+`:google`, `:aws`, `:databricks`, `:friendliai`, `:nvidia`, `:xai`, `:contextualai`, `:anyscale`.
 
 ### Multi-Vector Collections (v0.7.0+)
 
@@ -1313,6 +1663,64 @@ near_media = NearMedia.new(:depth,
 )
 ```
 
+#### Convenience Methods (v0.8.0+)
+
+For a simpler Python-like API, use the convenience methods that automatically handle
+file paths, base64 data, and raw binary input:
+
+```elixir
+alias WeaviateEx.Query
+
+# Search by image - accepts file path, base64, or binary
+{:ok, results} = Query.get("Products")
+  |> Query.with_near_image("/path/to/image.jpg")
+  |> Query.limit(10)
+  |> Query.execute(client)
+
+# Search by base64 image data
+{:ok, results} = Query.get("Products")
+  |> Query.with_near_image(base64_image_data, certainty: 0.8)
+  |> Query.execute(client)
+
+# Search by audio
+{:ok, results} = Query.get("Podcasts")
+  |> Query.with_near_audio("/path/to/clip.mp3")
+  |> Query.execute(client)
+
+# Search by video
+{:ok, results} = Query.get("Videos")
+  |> Query.with_near_video("/path/to/clip.mp4")
+  |> Query.execute(client)
+
+# Search by other media types
+{:ok, results} = Query.get("SensorData")
+  |> Query.with_near_thermal(thermal_data)
+  |> Query.execute(client)
+
+{:ok, results} = Query.get("DepthMaps")
+  |> Query.with_near_depth(depth_data, distance: 0.3)
+  |> Query.execute(client)
+
+{:ok, results} = Query.get("MotionData")
+  |> Query.with_near_imu(imu_data)
+  |> Query.execute(client)
+
+# Generic method for any media type
+{:ok, results} = Query.get("Products")
+  |> Query.with_near_media(:image, "/path/to/image.jpg", certainty: 0.8)
+  |> Query.execute(client)
+```
+
+**Convenience method options:**
+- `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+- `:distance` - Maximum distance threshold
+- `:target_vectors` - Target vectors for multi-vector collections
+
+**Supported modalities:** image, audio, video, thermal, depth, imu
+
+**Note:** Requires a multi-modal vectorizer (e.g., `multi2vec-clip` for images,
+`multi2vec-bind` for audio/video).
+
 #### Media Type Reference
 
 | Type | Description | Use Case |
@@ -1421,6 +1829,7 @@ Statistical analysis over your data:
 
 ```elixir
 alias WeaviateEx.API.Aggregate
+alias WeaviateEx.Aggregate.Metrics
 
 # Count all objects
 {:ok, result} = Aggregate.over_all(client, "Product", metrics: [:count])
@@ -1439,6 +1848,71 @@ alias WeaviateEx.API.Aggregate
 {:ok, grouped} = Aggregate.group_by(client, "Product", "category",
   metrics: [:count],
   properties: [{:price, [:mean, :maximum, :minimum]}]
+)
+```
+
+#### Near Object Aggregation
+
+Aggregate objects similar to a reference object:
+
+```elixir
+# Aggregate objects near a reference UUID
+{:ok, result} = Aggregate.with_near_object(client, "Articles", reference_uuid,
+  distance: 0.5,
+  metrics: [:count],
+  properties: [
+    {:views, [:mean, :sum]},
+    {:category, [:topOccurrences], limit: 5}
+  ]
+)
+
+IO.inspect(result)  # %{"meta" => %{"count" => 42}, "views" => %{"mean" => 1250.5, "sum" => 52521}}
+```
+
+#### Hybrid Aggregation
+
+Aggregate with combined keyword and vector search:
+
+```elixir
+# Hybrid search aggregation (balanced keyword + vector)
+{:ok, result} = Aggregate.with_hybrid(client, "Products", "electronics",
+  alpha: 0.5,  # 50% vector, 50% keyword (default)
+  metrics: [:count],
+  properties: [
+    {:price, [:sum, :mean, :minimum, :maximum]}
+  ]
+)
+
+# Pure keyword search aggregation (alpha = 0)
+{:ok, result} = Aggregate.with_hybrid(client, "Products", "laptop",
+  alpha: 0.0,
+  fusion_type: :ranked,
+  metrics: [:count]
+)
+
+# Vector-weighted search aggregation (alpha = 0.8)
+{:ok, result} = Aggregate.with_hybrid(client, "Products", "portable computer",
+  alpha: 0.8,
+  fusion_type: :relative_score,
+  properties: [{:category, [:topOccurrences], limit: 3}]
+)
+```
+
+#### Using the Metrics Helper
+
+Build metrics specifications with the helper module:
+
+```elixir
+alias WeaviateEx.Aggregate.Metrics
+
+# Number metrics with all options
+{:ok, result} = Aggregate.over_all(client, "Products",
+  metrics: [Metrics.count()],
+  properties: [
+    Metrics.number("price", sum: true, mean: true, minimum: true, maximum: true),
+    Metrics.text("category", top_occurrences: 5),
+    Metrics.boolean("inStock")
+  ]
 )
 ```
 
@@ -1939,6 +2413,48 @@ Collections.create(client, config)
 {:ok, objects} = Data.insert(client, "TenantArticle", data, tenant: "CompanyA")
 ```
 
+#### Fluent with_tenant API (v0.7.4+)
+
+Get a tenant-scoped collection reference for cleaner multi-tenant code:
+
+```elixir
+alias WeaviateEx.{Collections, TenantCollection, Query}
+
+# Get tenant-scoped collection (matches Python client pattern)
+tenant_col = Collections.with_tenant(client, "Articles", "tenant_A")
+
+# All operations automatically scoped to tenant_A
+{:ok, _} = TenantCollection.insert(tenant_col, %{
+  title: "My Article",
+  content: "Article content"
+})
+
+# Query within tenant
+{:ok, results} = tenant_col
+  |> TenantCollection.query()
+  |> Query.bm25("search term")
+  |> Query.execute(client)
+
+# Batch insert within tenant
+{:ok, _} = TenantCollection.insert_many(tenant_col, [
+  %{title: "Article 1"},
+  %{title: "Article 2"}
+])
+
+# Get, update, delete operations
+{:ok, obj} = TenantCollection.get(tenant_col, uuid)
+{:ok, _} = TenantCollection.update(tenant_col, uuid, %{title: "Updated"})
+{:ok, _} = TenantCollection.delete(tenant_col, uuid)
+```
+
+#### Traditional API (still supported)
+
+```elixir
+# Pass tenant as option to each operation
+{:ok, _} = Objects.create("Articles", object, tenant: "tenant_A")
+{:ok, _} = Query.get("Articles") |> Query.tenant("tenant_A") |> Query.execute(client)
+```
+
 ### RBAC (Role-Based Access Control)
 
 WeaviateEx provides full RBAC support for managing roles, permissions, users, and groups.
@@ -2163,6 +2679,23 @@ Each example:
 - ✅ Cleans up after itself (deletes test data)
 - ✅ Provides clear success/error messages
 
+## Supported Weaviate Versions
+
+| Weaviate Version | Status | Notes |
+|------------------|--------|-------|
+| 1.35.x | Fully Supported | Latest |
+| 1.34.x | Fully Supported | gRPC streaming |
+| 1.33.x | Fully Supported | |
+| 1.32.x | Fully Supported | |
+| 1.31.x | Fully Supported | |
+| 1.30.x | Fully Supported | |
+| 1.29.x | Fully Supported | |
+| 1.28.x | Fully Supported | |
+| 1.27.x | Fully Supported | Minimum |
+| < 1.27 | Not Tested | |
+
+Testing is performed against all supported versions in CI.
+
 ## Testing
 
 WeaviateEx has **comprehensive test coverage** with two testing modes:
@@ -2208,8 +2741,12 @@ mix test test/weaviate_ex/api/collections_test.exs
 # Run specific test by line number
 mix test test/weaviate_ex/objects_test.exs:95
 
-# Run with coverage report
+# Run with coverage report (basic)
 mix test --cover
+
+# Run with coverage report (detailed HTML via excoveralls)
+mix coveralls.html
+open cover/excoveralls.html
 
 # Run only integration tests
 mix test --only integration
@@ -2241,17 +2778,22 @@ test/
 │   ├── objects_test.exs      # Objects API tests
 │   ├── batch_test.exs        # Batch operations tests
 │   └── query_test.exs        # Query builder tests
-└── integration/              # Integration tests (live Weaviate)
-    ├── collections_integration_test.exs  # Collection CRUD
-    ├── objects_integration_test.exs      # Object CRUD
-    ├── batch_integration_test.exs        # Batch operations
-    ├── query_integration_test.exs        # Query execution
-    ├── health_integration_test.exs       # Health checks
-    ├── search_integration_test.exs       # BM25, near_vector, pagination
-    ├── filter_integration_test.exs       # Filter operators, AND/OR
-    ├── aggregate_integration_test.exs    # Aggregations, group by
-    ├── auth_integration_test.exs         # RBAC, API key auth (port 8092)
-    └── backup_integration_test.exs       # Backup/restore (port 8093)
+├── integration/              # Integration tests (live Weaviate)
+│   ├── collections_integration_test.exs  # Collection CRUD
+│   ├── objects_integration_test.exs      # Object CRUD
+│   ├── batch_integration_test.exs        # Batch operations
+│   ├── query_integration_test.exs        # Query execution
+│   ├── health_integration_test.exs       # Health checks
+│   ├── search_integration_test.exs       # BM25, near_vector, pagination
+│   ├── filter_integration_test.exs       # Filter operators, AND/OR
+│   ├── aggregate_integration_test.exs    # Aggregations, group by
+│   ├── auth_integration_test.exs         # RBAC, API key auth (port 8092)
+│   └── backup_integration_test.exs       # Backup/restore (port 8093)
+└── journey/                  # Web framework journey tests
+    ├── scenarios.ex          # Shared journey test scenarios
+    ├── scenarios_test.exs    # Direct scenario tests
+    ├── phoenix_test.exs      # Phoenix endpoint integration
+    └── plug_test.exs         # Plug router integration
 ```
 
 ### Integration Test Helper
@@ -2273,6 +2815,36 @@ defmodule MyIntegrationTest do
   end
 end
 ```
+
+### Journey Tests
+
+Journey tests validate WeaviateEx integration with Phoenix and Plug web frameworks. These tests ensure the SDK works correctly when:
+
+- Initialized at application startup and closed at shutdown
+- Used from both synchronous and asynchronous contexts (different processes)
+- Handling concurrent requests from multiple web requests
+- Managing connection lifecycle within web framework patterns
+
+```bash
+# Start Weaviate
+mix weaviate.start
+
+# Run journey tests
+WEAVIATE_INTEGRATION=true mix test --include journey
+
+# Or run all integration tests including journey
+WEAVIATE_INTEGRATION=true mix test --include integration --include journey
+
+# Stop Weaviate
+mix weaviate.stop
+```
+
+See `test/journey/` for Phoenix and Plug integration examples:
+
+- `test/journey/scenarios.ex` - Shared journey test scenarios
+- `test/journey/scenarios_test.exs` - Direct scenario tests
+- `test/journey/phoenix_test.exs` - Phoenix endpoint integration
+- `test/journey/plug_test.exs` - Plug router integration
 
 ### Test Coverage
 
@@ -2339,6 +2911,50 @@ mix weaviate.logs -f --file docker-compose.yml      # Follow logs
 ```
 
 The tasks shell out to scripts in `ci/` which manage multiple Docker Compose profiles (single node, RBAC, backup, cluster, async, etc.).
+
+## Development Tools
+
+### Benchmarks
+
+Run performance benchmarks with Benchee:
+
+```bash
+# Start Weaviate first
+mix weaviate.start
+
+# Run all benchmarks
+mix weaviate.bench
+
+# Run specific benchmark
+mix weaviate.bench batch    # Batch insert performance
+mix weaviate.bench query    # Query performance (near_vector, BM25, hybrid)
+```
+
+Results are saved to `bench/output/` as HTML files with detailed statistics and charts.
+
+### Pre-commit Hooks
+
+Install pre-commit hooks for automatic code quality checks:
+
+```bash
+# Install pre-commit (Python package)
+pip install pre-commit
+
+# Or with Homebrew
+brew install pre-commit
+
+# Install hooks
+pre-commit install
+
+# Run on all files
+pre-commit run --all-files
+```
+
+Hooks automatically run `mix format`, `mix compile --warnings-as-errors`, and `mix credo --strict` before each commit.
+
+### Profiling
+
+See [guides/profiling.md](guides/profiling.md) for profiling techniques using Elixir's built-in tools (fprof, eprof, cprof).
 
 ## Docker Management
 
@@ -2482,6 +3098,65 @@ OIDC access tokens are refreshed automatically and applied to HTTP headers and g
 
 ## Connection Management
 
+### Connecting to Weaviate Cloud (v0.7.4+)
+
+WeaviateEx provides full support for Weaviate Cloud Service (WCS) with automatic configuration:
+
+```elixir
+alias WeaviateEx.Connect
+
+# Connect to Weaviate Cloud with API key
+config = Connect.to_weaviate_cloud(
+  cluster_url: "my-cluster.weaviate.network",
+  api_key: "your-wcs-api-key"
+)
+
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: config.base_url,
+  grpc_host: config.grpc_host,
+  grpc_port: config.grpc_port,
+  api_key: config.api_key,
+  additional_headers: Map.new(config.headers)
+)
+```
+
+**Automatic WCS Features:**
+- **gRPC Host Detection**: `.weaviate.network` clusters use `{ident}.grpc.{domain}` pattern
+- **X-Weaviate-Cluster-URL Header**: Automatically added for embedding service integration
+- **TLS/Port 443**: HTTPS and gRPC-TLS enforced for cloud clusters
+
+```elixir
+# Different WCS domains are handled correctly:
+Connect.to_weaviate_cloud(cluster_url: "my-cluster.weaviate.network")
+# gRPC host: my-cluster.grpc.weaviate.network
+
+Connect.to_weaviate_cloud(cluster_url: "my-cluster.aws.weaviate.cloud")
+# gRPC host: grpc-my-cluster.aws.weaviate.cloud
+```
+
+### Server Version Requirements
+
+WeaviateEx requires Weaviate server version **1.27.0 or higher**. The client validates the server version on connection.
+
+```elixir
+# Version check happens automatically during connect
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: "http://localhost:8080"
+)
+
+# To bypass version checks (not recommended)
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: "http://localhost:8080",
+  skip_init_checks: true
+)
+```
+
+When connecting to an unsupported version, you'll receive a clear error:
+
+```
+Weaviate server version 1.20.0 is below minimum required 1.27.0
+```
+
 ### Connection Pool Configuration (v0.6.0+)
 
 Configure HTTP and gRPC connection pools for optimal performance:
@@ -2559,6 +3234,78 @@ alias WeaviateEx.Config.Proxy
     base_url: "https://your-cluster.weaviate.network",
     proxy: :env
   )
+```
+
+### HTTP Retry Configuration (v0.7.4+)
+
+WeaviateEx automatically retries failed HTTP requests with exponential backoff and jitter.
+Retries are triggered for both transport errors (network issues) and transient HTTP status codes.
+
+**Retryable errors:**
+- Transport: connection refused, reset, timeout, closed, DNS failure
+- HTTP status codes: 408, 429, 500, 502, 503, 504
+
+```elixir
+# Configure retry options when creating a client
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: "http://localhost:8080",
+  retry: [
+    max_retries: 3,        # Maximum retry attempts (default: 3)
+    base_delay_ms: 100,    # Base delay for exponential backoff (default: 100)
+    max_delay_ms: 5000     # Maximum delay cap (default: 5000)
+  ]
+)
+
+# Or override per-request
+{:ok, data} = WeaviateEx.API.Data.get(client, "Article", uuid,
+  max_retries: 5,
+  base_delay_ms: 200,
+  max_delay_ms: 10000
+)
+```
+
+**Backoff strategy:**
+- Uses exponential backoff: `delay = base_delay_ms × 2^attempt`
+- Adds ±10% random jitter to prevent thundering herd
+- Capped at `max_delay_ms`
+
+Example delays with defaults (base=100ms, max=5000ms):
+- Attempt 0: ~100ms
+- Attempt 1: ~200ms
+- Attempt 2: ~400ms
+- Attempt 3: ~800ms
+
+### Per-Operation Timeouts (v0.7.4+)
+
+WeaviateEx uses different timeouts based on operation type:
+
+| Operation Type | Default Timeout | Description |
+|----------------|-----------------|-------------|
+| Query/GET | 30 seconds | Search, read operations |
+| Insert/POST | 90 seconds | Write, update operations |
+| Batch | 900 seconds | Batch operations (insert × 10) |
+| Init | 2 seconds | Connection initialization |
+
+```elixir
+# Configure timeouts in client
+{:ok, client} = WeaviateEx.Client.connect(
+  base_url: "http://localhost:8080",
+  timeout_config: WeaviateEx.Config.Timeout.new(
+    query: 60_000,    # 60 seconds for queries
+    insert: 180_000,  # 180 seconds for inserts
+    init: 5_000       # 5 seconds for init
+  )
+)
+
+# Override per-request
+{:ok, data} = WeaviateEx.API.Data.get(client, "Article", uuid,
+  timeout: 60_000  # Explicit timeout override
+)
+
+# Specify operation type for automatic timeout selection
+{:ok, result} = WeaviateEx.API.Batch.create_objects(client, objects,
+  operation: :batch  # Uses extended batch timeout
+)
 ```
 
 ### Client Lifecycle Management (v0.6.0+)

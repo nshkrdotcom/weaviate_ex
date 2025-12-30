@@ -2,7 +2,7 @@
 
 set -eou pipefail
 
-export WEAVIATE_VERSION=${1:-1.28.14}
+export WEAVIATE_VERSION=${1:-1.35.0}
 
 source ./ci/compose.sh
 

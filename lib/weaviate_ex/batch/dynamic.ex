@@ -38,6 +38,7 @@ defmodule WeaviateEx.Batch.Dynamic do
 
   alias WeaviateEx.API.Batch, as: BatchAPI
   alias WeaviateEx.API.Cluster
+  alias WeaviateEx.Batch.{Config, RetryQueue}
   alias WeaviateEx.Batch.ErrorTracking.{ErrorObject, Results}
 
   @type batch_object :: %{
@@ -72,7 +73,10 @@ defmodule WeaviateEx.Batch.Dynamic do
           consistency_level: String.t() | nil,
           monitor_server_stats: boolean(),
           poll_interval: pos_integer(),
-          poll_timer_ref: reference() | nil
+          poll_timer_ref: reference() | nil,
+          auto_retry: boolean(),
+          retry_queue_pid: pid() | nil,
+          on_permanent_failure: ([map()] -> any()) | nil
         }
 
   # Default options
@@ -108,6 +112,10 @@ defmodule WeaviateEx.Batch.Dynamic do
     - `:consistency_level` - Consistency level for requests
     - `:monitor_server_stats` - Poll server for batch stats to adjust sizing (default: false)
     - `:poll_interval` - Interval in ms between server stat polls (default: 5000)
+    - `:auto_retry` - Automatically re-queue failed objects (default: true)
+    - `:max_retries` - Maximum retry attempts per object (default: 3)
+    - `:retry_delay_ms` - Base delay for retry backoff in ms (default: 1000)
+    - `:on_permanent_failure` - Callback for objects that exceed max_retries
 
   ## Examples
 
@@ -115,6 +123,16 @@ defmodule WeaviateEx.Batch.Dynamic do
 
       # With server stats monitoring
       {:ok, batcher} = Dynamic.start(client: client, monitor_server_stats: true)
+
+      # With auto-retry configuration
+      {:ok, batcher} = Dynamic.start(
+        client: client,
+        auto_retry: true,
+        max_retries: 5,
+        on_permanent_failure: fn objects ->
+          Logger.error("Permanent failures: \#{length(objects)}")
+        end
+      )
   """
   @spec start(keyword()) :: {:ok, pid()} | {:error, term()}
   def start(opts) do
@@ -235,6 +253,24 @@ defmodule WeaviateEx.Batch.Dynamic do
     client = Keyword.fetch!(opts, :client)
     monitor_server_stats = Keyword.get(opts, :monitor_server_stats, false)
     poll_interval = Keyword.get(opts, :poll_interval, @default_poll_interval)
+    auto_retry = Keyword.get(opts, :auto_retry, Config.default_max_retries() > 0)
+    on_permanent_failure = Keyword.get(opts, :on_permanent_failure)
+
+    # Start retry queue if auto_retry is enabled
+    retry_queue_pid =
+      if auto_retry do
+        {:ok, pid} =
+          RetryQueue.start_link(
+            client: client,
+            max_retries: Keyword.get(opts, :max_retries, Config.default_max_retries()),
+            base_delay_ms: Keyword.get(opts, :retry_delay_ms, Config.default_retry_delay_ms()),
+            on_permanent_failure: on_permanent_failure
+          )
+
+        pid
+      else
+        nil
+      end
 
     state = %{
       client: client,
@@ -252,7 +288,10 @@ defmodule WeaviateEx.Batch.Dynamic do
       consistency_level: Keyword.get(opts, :consistency_level),
       monitor_server_stats: monitor_server_stats,
       poll_interval: poll_interval,
-      poll_timer_ref: nil
+      poll_timer_ref: nil,
+      auto_retry: auto_retry,
+      retry_queue_pid: retry_queue_pid,
+      on_permanent_failure: on_permanent_failure
     }
 
     # Start polling timer if monitoring is enabled
@@ -324,6 +363,11 @@ defmodule WeaviateEx.Batch.Dynamic do
 
   @impl true
   def handle_call(:stop, _from, state) do
+    # Stop retry queue if running
+    if state.retry_queue_pid do
+      GenServer.stop(state.retry_queue_pid, :normal)
+    end
+
     case do_flush(state) do
       {:ok, new_state} ->
         {:stop, :normal, {:ok, new_state.results}, new_state}
@@ -391,15 +435,15 @@ defmodule WeaviateEx.Batch.Dynamic do
     elapsed_seconds = (System.monotonic_time(:millisecond) - start_time) / 1000
 
     case {objects_result, references_result} do
-      {{:ok, obj_results}, {:ok, ref_results}} ->
+      {{:ok, obj_results, updated_state}, {:ok, ref_results}} ->
         merged_results =
-          merge_results(state.results, obj_results, ref_results)
+          merge_results(updated_state.results, obj_results, ref_results)
           |> Results.set_elapsed(elapsed_seconds)
 
-        if state.on_flush, do: state.on_flush.(merged_results)
+        if updated_state.on_flush, do: updated_state.on_flush.(merged_results)
 
         new_state = %{
-          state
+          updated_state
           | objects_buffer: [],
             references_buffer: [],
             results: merged_results
@@ -417,7 +461,7 @@ defmodule WeaviateEx.Batch.Dynamic do
     end
   end
 
-  defp flush_objects(%{objects_buffer: []} = _state), do: {:ok, Results.new()}
+  defp flush_objects(%{objects_buffer: []} = state), do: {:ok, Results.new(), state}
 
   defp flush_objects(state) do
     objects = Enum.reverse(state.objects_buffer)
@@ -446,12 +490,22 @@ defmodule WeaviateEx.Batch.Dynamic do
         {:error, error}
 
       nil ->
-        combined =
-          Enum.reduce(all_results, Results.new(), fn {:ok, batch_result}, acc ->
-            merge_batch_results(acc, batch_result)
+        {combined, all_retryable} =
+          Enum.reduce(all_results, {Results.new(), []}, fn {:ok, batch_result, retryable},
+                                                           {acc_results, acc_retry} ->
+            {merge_batch_results(acc_results, batch_result), acc_retry ++ retryable}
           end)
 
-        {:ok, combined}
+        # Enqueue retryable failures if auto_retry is enabled
+        new_state =
+          if state.auto_retry and state.retry_queue_pid != nil and all_retryable != [] do
+            RetryQueue.enqueue_failed(state.retry_queue_pid, all_retryable)
+            state
+          else
+            state
+          end
+
+        {:ok, combined, new_state}
     end
   end
 
@@ -484,7 +538,8 @@ defmodule WeaviateEx.Batch.Dynamic do
 
     case BatchAPI.create_objects(client, formatted_objects, Keyword.put(opts, :summary, true)) do
       {:ok, %BatchAPI.Result{} = result} ->
-        {:ok, convert_api_result(result)}
+        {results, retryable} = convert_api_result(result, objects)
+        {:ok, results, retryable}
 
       {:error, error} ->
         {:error, error}
@@ -524,7 +579,7 @@ defmodule WeaviateEx.Batch.Dynamic do
     Enum.map(batches, fn batch -> send_object_batch(state.client, batch, state) end)
   end
 
-  defp convert_api_result(%BatchAPI.Result{} = result) do
+  defp convert_api_result(%BatchAPI.Result{} = result, original_objects) do
     base = Results.new()
 
     successful_results =
@@ -534,15 +589,44 @@ defmodule WeaviateEx.Batch.Dynamic do
         Results.add_success(acc, idx, obj["id"])
       end)
 
-    Enum.reduce(result.errors, successful_results, fn error, acc ->
-      error_obj = %ErrorObject{
-        message: Enum.join(error.messages, "; "),
-        object: error.raw,
-        original_uuid: error.id
-      }
+    # Build a map of uuid -> original object for retry
+    original_map = build_original_map(original_objects)
 
-      Results.add_error(acc, error_obj)
+    {results, retryable} =
+      Enum.reduce(result.errors, {successful_results, []}, fn error, {acc, retry_acc} ->
+        process_error_for_retry(error, acc, retry_acc, original_map)
+      end)
+
+    {results, retryable}
+  end
+
+  defp build_original_map(nil), do: %{}
+
+  defp build_original_map(objects) do
+    Enum.reduce(objects, %{}, fn obj, acc ->
+      uuid = obj.uuid || obj[:uuid]
+      if uuid, do: Map.put(acc, uuid, obj), else: acc
     end)
+  end
+
+  defp process_error_for_retry(error, results_acc, retry_acc, original_map) do
+    error_obj = %ErrorObject{
+      message: Enum.join(error.messages, "; "),
+      object: error.raw,
+      original_uuid: error.id
+    }
+
+    new_results = Results.add_error(results_acc, error_obj)
+    combined_msg = Enum.join(error.messages, " ")
+    is_retryable = RetryQueue.retryable_error?(%{message: combined_msg})
+
+    case {is_retryable, error.id, Map.get(original_map, error.id)} do
+      {true, id, original} when id != nil and original != nil ->
+        {new_results, [original | retry_acc]}
+
+      _ ->
+        {new_results, retry_acc}
+    end
   end
 
   defp process_reference_results(results) do

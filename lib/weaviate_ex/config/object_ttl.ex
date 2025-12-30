@@ -40,6 +40,59 @@ defmodule WeaviateEx.Config.ObjectTTL do
   ]
 
   @doc """
+  Creates a TTL config from a human-readable duration.
+
+  This is a convenience function that creates a TTL configuration
+  based on creation time with the specified duration.
+
+  ## Options
+
+    - `:days` - Number of days
+    - `:hours` - Number of hours
+    - `:minutes` - Number of minutes
+    - `:seconds` - Number of seconds
+
+  Multiple units can be combined.
+
+  ## Examples
+
+      # Objects expire 24 hours after creation
+      ObjectTTL.from_duration(hours: 24)
+
+      # Objects expire 7 days after creation
+      ObjectTTL.from_duration(days: 7)
+
+      # Objects expire 30 minutes after creation
+      ObjectTTL.from_duration(minutes: 30)
+
+      # Combined: 1 day, 12 hours after creation
+      ObjectTTL.from_duration(days: 1, hours: 12)
+  """
+  @spec from_duration(keyword()) :: t()
+  def from_duration(duration) when is_list(duration) do
+    seconds = duration_to_seconds(duration)
+
+    if seconds <= 0 do
+      raise ArgumentError, "Duration must be positive, got #{seconds} seconds"
+    end
+
+    %__MODULE__{
+      enabled: true,
+      delete_on: "_creationTimeUnix",
+      default_ttl: seconds
+    }
+  end
+
+  defp duration_to_seconds(duration) do
+    days = Keyword.get(duration, :days, 0)
+    hours = Keyword.get(duration, :hours, 0)
+    minutes = Keyword.get(duration, :minutes, 0)
+    seconds = Keyword.get(duration, :seconds, 0)
+
+    days * 86_400 + hours * 3_600 + minutes * 60 + seconds
+  end
+
+  @doc """
   Create TTL config that deletes objects based on their last update time.
 
   ## Parameters

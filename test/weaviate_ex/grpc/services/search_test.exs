@@ -1,9 +1,24 @@
 defmodule WeaviateEx.GRPC.Services.SearchTest do
   use ExUnit.Case, async: true
 
-  alias Weaviate.V1.{BM25, Hybrid, NearObject, NearTextSearch, NearVector, SearchRequest}
+  alias Weaviate.V1.{
+    BM25,
+    GenerativeSearch,
+    Hybrid,
+    NearObject,
+    NearTextSearch,
+    NearVector,
+    Rerank,
+    SearchRequest
+  }
+
   alias WeaviateEx.GRPC.Services.Search
-  alias WeaviateEx.Query.{GroupBy, NearImage, NearMedia, QueryReference, TargetVectors}
+  alias WeaviateEx.Query.GroupBy
+  alias WeaviateEx.Query.NearImage
+  alias WeaviateEx.Query.NearMedia
+  alias WeaviateEx.Query.QueryReference
+  alias WeaviateEx.Query.Rerank, as: QueryRerank
+  alias WeaviateEx.Query.TargetVectors
 
   @moduletag :grpc
 
@@ -259,6 +274,224 @@ defmodule WeaviateEx.GRPC.Services.SearchTest do
       assert ref_request.properties.non_ref_properties == ["name"]
       assert ref_request.metadata.vector == true
       assert request.metadata.vector == true
+    end
+  end
+
+  describe "generative search" do
+    test "builds search request with simple generative config" do
+      request =
+        Search.build_near_text_request("Article", "machine learning",
+          generative: %{single_prompt: "Summarize this article"}
+        )
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.single.prompt == "Summarize this article"
+    end
+
+    test "builds search request with grouped generative config" do
+      request =
+        Search.build_near_text_request("Article", "machine learning",
+          generative: %{
+            grouped_task: "Synthesize the key themes from these articles",
+            grouped_properties: ["title", "content"]
+          }
+        )
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.grouped.task == "Synthesize the key themes from these articles"
+      assert request.generative.grouped.properties.values == ["title", "content"]
+    end
+
+    test "builds search request with provider-specific generative config" do
+      request =
+        Search.build_near_text_request("Article", "machine learning",
+          generative: %{
+            single_prompt: "Summarize: {content}",
+            provider: :openai,
+            model: "gpt-4",
+            temperature: 0.7
+          }
+        )
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.single.prompt == "Summarize: {content}"
+      assert length(request.generative.single.queries) == 1
+
+      [provider] = request.generative.single.queries
+      assert {:openai, openai_config} = provider.kind
+      assert openai_config.model == "gpt-4"
+      assert openai_config.temperature == 0.7
+    end
+
+    test "builds near_vector request with generative" do
+      request =
+        Search.build_near_vector_request("Article", [0.1, 0.2],
+          generative: %{
+            single_prompt: "Summarize this",
+            provider: :anthropic,
+            model: "claude-3-5-sonnet-20241022"
+          }
+        )
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.single.prompt == "Summarize this"
+    end
+
+    test "builds hybrid request with generative" do
+      request =
+        Search.build_hybrid_request("Article", "AI trends",
+          alpha: 0.5,
+          generative: %{
+            grouped_task: "What are the main AI trends?",
+            provider: :openai
+          }
+        )
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.grouped.task == "What are the main AI trends?"
+    end
+
+    test "builds bm25 request with generative" do
+      request =
+        Search.build_bm25_request("Article", "machine learning",
+          properties: ["title", "content"],
+          generative: %{single_prompt: "Extract keywords"}
+        )
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.single.prompt == "Extract keywords"
+    end
+
+    test "builds request without generative when not provided" do
+      request = Search.build_near_text_request("Article", "machine learning")
+
+      assert request.generative == nil
+    end
+
+    test "supports generative field in SearchRequest protobuf" do
+      generative = %GenerativeSearch{
+        single: %GenerativeSearch.Single{
+          prompt: "Test prompt",
+          debug: false,
+          queries: []
+        }
+      }
+
+      request = %SearchRequest{
+        collection: "Test",
+        generative: generative
+      }
+
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.single.prompt == "Test prompt"
+    end
+  end
+
+  describe "rerank search" do
+    test "supports rerank field in SearchRequest protobuf" do
+      rerank = %Rerank{
+        property: "content",
+        query: "deep learning"
+      }
+
+      request = %SearchRequest{
+        collection: "Test",
+        rerank: rerank
+      }
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "content"
+      assert request.rerank.query == "deep learning"
+    end
+
+    test "builds search request with rerank" do
+      rerank = QueryRerank.new("content")
+
+      request =
+        Search.build_near_text_request("Article", "machine learning", rerank: rerank)
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "content"
+      assert request.rerank.query == nil
+    end
+
+    test "builds search request with rerank and custom query" do
+      rerank = QueryRerank.new("content", query: "What is machine learning?")
+
+      request =
+        Search.build_near_text_request("Article", "AI", rerank: rerank)
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "content"
+      assert request.rerank.query == "What is machine learning?"
+    end
+
+    test "builds near_vector request with rerank" do
+      rerank = QueryRerank.new("description")
+
+      request =
+        Search.build_near_vector_request("Product", [0.1, 0.2], rerank: rerank)
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "description"
+    end
+
+    test "builds hybrid request with rerank" do
+      rerank = QueryRerank.new("content", query: "AI applications")
+
+      request =
+        Search.build_hybrid_request("Article", "machine learning",
+          alpha: 0.7,
+          rerank: rerank
+        )
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "content"
+      assert request.rerank.query == "AI applications"
+    end
+
+    test "builds bm25 request with rerank" do
+      rerank = QueryRerank.new("title")
+
+      request =
+        Search.build_bm25_request("Article", "AI",
+          properties: ["title", "content"],
+          rerank: rerank
+        )
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "title"
+    end
+
+    test "builds near_object request with rerank" do
+      rerank = QueryRerank.new("content")
+
+      request =
+        Search.build_near_object_request("Article", "uuid-123", rerank: rerank)
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "content"
+    end
+
+    test "builds request without rerank when not provided" do
+      request = Search.build_near_text_request("Article", "machine learning")
+
+      assert request.rerank == nil
+    end
+
+    test "builds request with both rerank and generative" do
+      rerank = QueryRerank.new("content")
+
+      request =
+        Search.build_near_text_request("Article", "AI",
+          rerank: rerank,
+          generative: %{single_prompt: "Summarize this"}
+        )
+
+      assert %Rerank{} = request.rerank
+      assert request.rerank.property == "content"
+      assert %GenerativeSearch{} = request.generative
+      assert request.generative.single.prompt == "Summarize this"
     end
   end
 end

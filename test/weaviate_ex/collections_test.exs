@@ -137,6 +137,50 @@ defmodule WeaviateEx.CollectionsTest do
     end
   end
 
+  describe "update_ttl/3" do
+    test "updates TTL configuration", %{client: _client} do
+      alias WeaviateEx.Config.ObjectTTL
+
+      ttl = ObjectTTL.from_duration(hours: 24)
+      updated_collection = Fixtures.collection_fixture("Article")
+
+      expected_payload = %{
+        "class" => "Article",
+        "objectTTLConfig" => %{
+          "enabled" => true,
+          "deleteOn" => "_creationTimeUnix",
+          "defaultTtl" => 86_400
+        }
+      }
+
+      Mox.expect(Mock, :request, fn _client, :put, "/v1/schema/Article", payload, _opts ->
+        assert payload == expected_payload
+        {:ok, updated_collection}
+      end)
+
+      assert {:ok, _} = WeaviateEx.Collections.update_ttl("Article", ttl)
+    end
+
+    test "can disable TTL", %{client: _client} do
+      alias WeaviateEx.Config.ObjectTTL
+
+      ttl = ObjectTTL.disable()
+      updated_collection = Fixtures.collection_fixture("Article")
+
+      expected_payload = %{
+        "class" => "Article",
+        "objectTTLConfig" => %{"enabled" => false}
+      }
+
+      Mox.expect(Mock, :request, fn _client, :put, "/v1/schema/Article", payload, _opts ->
+        assert payload == expected_payload
+        {:ok, updated_collection}
+      end)
+
+      assert {:ok, _} = WeaviateEx.Collections.update_ttl("Article", ttl)
+    end
+  end
+
   describe "integration tests" do
     @tag :integration
     test "full CRUD workflow" do

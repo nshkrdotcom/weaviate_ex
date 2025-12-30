@@ -53,6 +53,8 @@ defmodule WeaviateEx.Query do
   alias WeaviateEx.Query.QueryReference
   alias WeaviateEx.Query.Rerank
   alias WeaviateEx.Query.Sort
+  alias WeaviateEx.Types.MediaInput
+  alias WeaviateEx.Types.MediaType
 
   defstruct collection: nil,
             fields: [],
@@ -351,6 +353,281 @@ defmodule WeaviateEx.Query do
     %{query | near_media: NearMedia.new(type, opts)}
   end
 
+  # ===========================================================================
+  # Convenience methods for multi-modal search
+  # These methods accept media data directly (file path, base64, or raw binary)
+  # ===========================================================================
+
+  @doc """
+  Searches by image similarity.
+
+  Accepts file paths, base64-encoded data, or raw binary data.
+  Automatically detects the input type and handles encoding.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `image` - Image data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      # Search by image file path
+      Query.get("Products")
+      |> Query.with_near_image("/path/to/image.jpg")
+      |> Query.limit(10)
+      |> Query.execute(client)
+
+      # Search by base64 image
+      Query.get("Products")
+      |> Query.with_near_image(base64_image_data)
+      |> Query.execute(client)
+
+      # With options
+      Query.get("Products")
+      |> Query.with_near_image(image, certainty: 0.8, target_vectors: ["image_vector"])
+      |> Query.execute(client)
+
+  Note: Requires a multi-modal vectorizer (e.g., `multi2vec-clip`).
+  """
+  @spec with_near_image(t(), String.t() | binary(), keyword()) :: t()
+  def with_near_image(query, image, opts \\ [])
+
+  def with_near_image(%__MODULE__{} = query, image, opts) do
+    with_near_media_internal(query, :image, image, opts)
+  end
+
+  @doc """
+  Searches by audio similarity.
+
+  Accepts file paths, base64-encoded data, or raw binary data.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `audio` - Audio data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      Query.get("Podcasts")
+      |> Query.with_near_audio("/path/to/clip.mp3")
+      |> Query.limit(10)
+      |> Query.execute(client)
+
+  Note: Requires a multi-modal vectorizer that supports audio (e.g., `multi2vec-bind`).
+  """
+  @spec with_near_audio(t(), String.t() | binary(), keyword()) :: t()
+  def with_near_audio(query, audio, opts \\ [])
+
+  def with_near_audio(%__MODULE__{} = query, audio, opts) do
+    with_near_media_internal(query, :audio, audio, opts)
+  end
+
+  @doc """
+  Searches by video similarity.
+
+  Accepts file paths, base64-encoded data, or raw binary data.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `video` - Video data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      Query.get("Videos")
+      |> Query.with_near_video("/path/to/clip.mp4")
+      |> Query.limit(10)
+      |> Query.execute(client)
+
+  Note: Requires a multi-modal vectorizer that supports video (e.g., `multi2vec-bind`).
+  """
+  @spec with_near_video(t(), String.t() | binary(), keyword()) :: t()
+  def with_near_video(query, video, opts \\ [])
+
+  def with_near_video(%__MODULE__{} = query, video, opts) do
+    with_near_media_internal(query, :video, video, opts)
+  end
+
+  @doc """
+  Searches by thermal image similarity.
+
+  Accepts file paths, base64-encoded data, or raw binary data.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `thermal` - Thermal image data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      Query.get("ThermalImages")
+      |> Query.with_near_thermal("/path/to/thermal.png")
+      |> Query.execute(client)
+
+  Note: Requires a multi-modal vectorizer that supports thermal data.
+  """
+  @spec with_near_thermal(t(), String.t() | binary(), keyword()) :: t()
+  def with_near_thermal(query, thermal, opts \\ [])
+
+  def with_near_thermal(%__MODULE__{} = query, thermal, opts) do
+    with_near_media_internal(query, :thermal, thermal, opts)
+  end
+
+  @doc """
+  Searches by depth map similarity.
+
+  Accepts file paths, base64-encoded data, or raw binary data.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `depth` - Depth map data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      Query.get("DepthMaps")
+      |> Query.with_near_depth("/path/to/depth_map.png")
+      |> Query.execute(client)
+
+  Note: Requires a multi-modal vectorizer that supports depth data.
+  """
+  @spec with_near_depth(t(), String.t() | binary(), keyword()) :: t()
+  def with_near_depth(query, depth, opts \\ [])
+
+  def with_near_depth(%__MODULE__{} = query, depth, opts) do
+    with_near_media_internal(query, :depth, depth, opts)
+  end
+
+  @doc """
+  Searches by IMU (Inertial Measurement Unit) data similarity.
+
+  Accepts file paths, base64-encoded data, or raw binary data.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `imu` - IMU data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      Query.get("SensorData")
+      |> Query.with_near_imu(imu_data)
+      |> Query.execute(client)
+
+  Note: Requires a multi-modal vectorizer that supports IMU data.
+  """
+  @spec with_near_imu(t(), String.t() | binary(), keyword()) :: t()
+  def with_near_imu(query, imu, opts \\ [])
+
+  def with_near_imu(%__MODULE__{} = query, imu, opts) do
+    with_near_media_internal(query, :imu, imu, opts)
+  end
+
+  @doc """
+  Generic multi-modal search with automatic input handling.
+
+  Accepts file paths, base64-encoded data, or raw binary data for any
+  supported media type.
+
+  ## Arguments
+
+  - `query` - The query struct
+  - `media_type` - The media type (`:image`, `:audio`, `:video`, `:thermal`, `:depth`, `:imu`)
+  - `media` - Media data as file path, base64 string, or raw binary
+  - `opts` - Optional keyword options
+
+  ## Options
+
+  - `:certainty` - Minimum certainty threshold (0.0 to 1.0)
+  - `:distance` - Maximum distance threshold
+  - `:target_vectors` - Target vectors for multi-vector collections
+
+  ## Examples
+
+      # Image search
+      Query.get("Products")
+      |> Query.with_near_media(:image, "/path/to/image.jpg")
+      |> Query.execute(client)
+
+      # Audio search with options
+      Query.get("Podcasts")
+      |> Query.with_near_media(:audio, audio_data, certainty: 0.8)
+      |> Query.execute(client)
+  """
+  @spec with_near_media(t(), MediaType.t(), String.t() | binary(), keyword()) :: t()
+  def with_near_media(query, media_type, media, opts \\ [])
+
+  def with_near_media(%__MODULE__{} = query, media_type, media, opts) do
+    with_near_media_internal(query, media_type, media, opts)
+  end
+
+  # Internal helper for all with_near_* methods
+  defp with_near_media_internal(query, media_type, media, opts) do
+    unless MediaType.valid?(media_type) do
+      raise ArgumentError, "Invalid media type: #{inspect(media_type)}"
+    end
+
+    encoded = MediaInput.prepare!(media)
+
+    if media_type == :image do
+      # Use NearImage for image searches
+      near_image_opts =
+        opts
+        |> Keyword.put(:image, encoded)
+
+      %{query | near_image: NearImage.new(near_image_opts)}
+    else
+      # Use NearMedia for other media types
+      near_media_opts =
+        opts
+        |> Keyword.put(:media, encoded)
+
+      %{query | near_media: NearMedia.new(media_type, near_media_opts)}
+    end
+  end
+
   @doc """
   Performs hybrid search combining keyword and vector search.
 
@@ -590,6 +867,22 @@ defmodule WeaviateEx.Query do
   @spec tenant(t(), String.t()) :: t()
   def tenant(%__MODULE__{} = query, tenant_name) when is_binary(tenant_name) do
     %{query | tenant: tenant_name}
+  end
+
+  @doc """
+  Scopes the query to a specific tenant (alias for `tenant/2`).
+
+  This provides a more fluent API matching the Python client's `with_tenant`
+  pattern. Functionally identical to `tenant/2`.
+
+  ## Examples
+
+      query
+      |> WeaviateEx.Query.with_tenant("TenantA")
+  """
+  @spec with_tenant(t(), String.t()) :: t()
+  def with_tenant(%__MODULE__{} = query, tenant_name) when is_binary(tenant_name) do
+    tenant(query, tenant_name)
   end
 
   @doc """
@@ -921,7 +1214,6 @@ defmodule WeaviateEx.Query do
   defp grpc_supported?(%__MODULE__{} = query) do
     unsupported =
       [
-        not is_nil(query.rerank),
         not is_nil(query.sort),
         not is_nil(query.after),
         hybrid_has_vector?(query.hybrid)
@@ -955,6 +1247,7 @@ defmodule WeaviateEx.Query do
     |> maybe_add_grpc_opt(:filters, query.where)
     |> maybe_add_grpc_opt(:group_by, query.group_by)
     |> maybe_add_grpc_opt(:return_references, query.return_references)
+    |> maybe_add_grpc_opt(:rerank, query.rerank)
     |> add_search_opts(query)
     |> Keyword.merge(Keyword.take(opts, [:timeout]))
   end
@@ -1015,6 +1308,7 @@ defmodule WeaviateEx.Query do
       "score" -> :score
       "explainScore" -> :explain_score
       "isConsistent" -> :is_consistent
+      "rerankScore" -> :rerank_score
       other when is_atom(other) -> other
       _ -> nil
     end)
@@ -1190,6 +1484,7 @@ defmodule WeaviateEx.Query do
     |> maybe_add_last_update_time(metadata)
     |> maybe_add_explain_score(metadata)
     |> maybe_add_is_consistent(metadata)
+    |> maybe_add_rerank_score(metadata)
     |> maybe_add_vector_metadata(metadata)
     |> maybe_add_named_vectors(metadata)
   end
@@ -1247,6 +1542,12 @@ defmodule WeaviateEx.Query do
   end
 
   defp maybe_add_is_consistent(result, _metadata), do: result
+
+  defp maybe_add_rerank_score(result, %{rerank_score_present: true, rerank_score: score}) do
+    Map.put(result, "rerankScore", score)
+  end
+
+  defp maybe_add_rerank_score(result, _metadata), do: result
 
   defp maybe_add_named_vectors(result, %{vectors: vectors}) when vectors != [] do
     Map.put(result, "vectors", parse_named_vectors(vectors))

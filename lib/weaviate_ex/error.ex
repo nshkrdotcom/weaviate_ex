@@ -467,3 +467,66 @@ defmodule WeaviateEx.Error.ClosedClientError do
     %__MODULE__{message: msg, closed_at: closed_at}
   end
 end
+
+defmodule WeaviateEx.Error.VersionError do
+  @moduledoc """
+  Raised when connecting to an unsupported Weaviate server version.
+
+  WeaviateEx requires Weaviate server version 1.27.0 or higher.
+  This error provides detailed information about the version mismatch
+  and how to resolve it.
+
+  ## Example
+
+      # Connecting to an old Weaviate server will raise:
+      raise WeaviateEx.Error.VersionError,
+        server_version: "1.20.0",
+        min_version: "1.27.0"
+
+  ## Bypassing Version Checks
+
+  If you need to connect to an older server (not recommended), you can
+  bypass version checks:
+
+      {:ok, client} = WeaviateEx.Client.connect(
+        base_url: "http://localhost:8080",
+        skip_init_checks: true
+      )
+  """
+
+  @min_version "1.27.0"
+
+  defexception [:server_version, :min_version, :message]
+
+  @type t :: %__MODULE__{
+          server_version: String.t(),
+          min_version: String.t(),
+          message: String.t()
+        }
+
+  @impl true
+  def exception(opts) do
+    server_version = Keyword.get(opts, :server_version, "unknown")
+    min_version = Keyword.get(opts, :min_version, @min_version)
+
+    message = """
+    Weaviate server version #{server_version} is not supported.
+    Minimum required version: #{min_version}
+
+    Please upgrade your Weaviate server or use skip_init_checks: true
+    if you want to proceed anyway (not recommended).
+
+    Example:
+        {:ok, client} = WeaviateEx.Client.connect(
+          base_url: "http://localhost:8080",
+          skip_init_checks: true
+        )
+    """
+
+    %__MODULE__{
+      server_version: server_version,
+      min_version: min_version,
+      message: message
+    }
+  end
+end

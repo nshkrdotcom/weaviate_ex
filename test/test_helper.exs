@@ -13,8 +13,9 @@ Application.put_env(:weaviate_ex, :protocol_impl, WeaviateEx.Protocol.Mock)
 # Disable strict health checks during tests
 Application.put_env(:weaviate_ex, :strict, false)
 
-# Exclude integration tests by default
-ExUnit.configure(exclude: [:integration, :property, :performance])
+# Exclude integration, journey, property, and performance tests by default
+# Run journey tests with: WEAVIATE_INTEGRATION=true mix test --include journey
+ExUnit.configure(exclude: [:integration, :property, :performance, :journey])
 
 defmodule WeaviateEx.TestHelpers do
   @moduledoc """
