@@ -349,4 +349,104 @@ defmodule WeaviateEx.API.DataTest do
                Data.insert(client, "Article", %{properties: %{}}, consistency_level: "QUORUM")
     end
   end
+
+  describe "fetch_objects_by_ids/4" do
+    test "fetches multiple objects by IDs using GraphQL", %{client: client} do
+      ids = [
+        "550e8400-e29b-41d4-a716-446655440001",
+        "550e8400-e29b-41d4-a716-446655440002"
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "ContainsAny"
+        assert body_str =~ "id"
+        assert body_str =~ "Get"
+        assert body_str =~ "Article"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{"title" => "First", "_additional" => %{"id" => Enum.at(ids, 0)}},
+                 %{"title" => "Second", "_additional" => %{"id" => Enum.at(ids, 1)}}
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, objects} = Data.fetch_objects_by_ids(client, "Article", ids)
+      assert length(objects) == 2
+    end
+
+    test "fetches objects with specific return properties", %{client: client} do
+      ids = ["550e8400-e29b-41d4-a716-446655440001"]
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "title"
+        assert body_str =~ "content"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{"title" => "Test", "content" => "Body"}
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _objects} =
+               Data.fetch_objects_by_ids(client, "Article", ids,
+                 return_properties: ["title", "content"]
+               )
+    end
+
+    test "returns empty list when no IDs match", %{client: client} do
+      ids = ["550e8400-e29b-41d4-a716-446655440099"]
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", _body, _opts ->
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => []
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, []} = Data.fetch_objects_by_ids(client, "Article", ids)
+    end
+
+    test "handles empty ID list", %{client: client} do
+      assert {:ok, []} = Data.fetch_objects_by_ids(client, "Article", [])
+    end
+
+    test "fetches objects with tenant option", %{client: client} do
+      ids = ["550e8400-e29b-41d4-a716-446655440001"]
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "tenant"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [%{"title" => "Test"}]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _objects} =
+               Data.fetch_objects_by_ids(client, "Article", ids, tenant: "tenant-a")
+    end
+  end
 end

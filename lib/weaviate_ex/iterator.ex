@@ -25,11 +25,14 @@ defmodule WeaviateEx.Iterator do
 
   alias WeaviateEx.Client
 
+  @type reference_spec :: String.t() | {String.t(), [String.t()]}
+
   @type t :: %__MODULE__{
           client: Client.t(),
           collection: String.t(),
           batch_size: pos_integer(),
           return_properties: [String.t()],
+          return_references: [reference_spec()],
           include_vector: boolean(),
           cursor: String.t() | nil,
           filter: map() | nil,
@@ -44,6 +47,7 @@ defmodule WeaviateEx.Iterator do
     :tenant,
     batch_size: 100,
     return_properties: [],
+    return_references: [],
     include_vector: false
   ]
 
@@ -54,15 +58,24 @@ defmodule WeaviateEx.Iterator do
 
     - `:batch_size` - Number of objects per batch (default: 100)
     - `:return_properties` - Properties to return (default: all)
+    - `:return_references` - References to return with optional nested properties
     - `:include_vector` - Include vector in response (default: false)
     - `:after` - Start cursor (for resuming iteration)
     - `:filter` - Filter to apply to objects
     - `:tenant` - Tenant name for multi-tenant collections
 
+  ## Reference Format
+
+  References can be specified as:
+    - Simple: `["hasAuthor", "hasCategory"]` - returns all properties
+    - With properties: `[{"hasAuthor", ["name", "email"]}]` - returns specific properties
+
   ## Examples
 
       Iterator.new(client, "Article", batch_size: 50)
       Iterator.new(client, "Article", return_properties: ["title"])
+      Iterator.new(client, "Article", return_references: ["hasAuthor"])
+      Iterator.new(client, "Article", return_references: [{"hasAuthor", ["name"]}])
   """
   @spec new(Client.t(), String.t(), keyword()) :: t()
   def new(client, collection, opts \\ []) do
@@ -71,6 +84,7 @@ defmodule WeaviateEx.Iterator do
       collection: collection,
       batch_size: Keyword.get(opts, :batch_size, 100),
       return_properties: Keyword.get(opts, :return_properties, []),
+      return_references: Keyword.get(opts, :return_references, []),
       include_vector: Keyword.get(opts, :include_vector, false),
       cursor: Keyword.get(opts, :after),
       filter: Keyword.get(opts, :filter),
@@ -159,15 +173,20 @@ defmodule WeaviateEx.Iterator do
   def build_query(%__MODULE__{} = iterator) do
     collection = iterator.collection
     properties = build_properties_string(iterator)
+    references = build_references_string(iterator)
     additional = build_additional_string(iterator)
     args = build_args_string(iterator)
+
+    fields =
+      [properties, references, additional]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n          ")
 
     """
     {
       Get {
         #{collection}#{args} {
-          #{properties}
-          #{additional}
+          #{fields}
         }
       }
     }
@@ -191,6 +210,59 @@ defmodule WeaviateEx.Iterator do
   defp build_properties_string(%{return_properties: props}) do
     Enum.join(props, "\n          ")
   end
+
+  defp build_references_string(%{return_references: []}) do
+    ""
+  end
+
+  defp build_references_string(%{return_references: refs}) do
+    Enum.map_join(refs, "\n          ", &build_single_reference/1)
+  end
+
+  defp build_single_reference(ref_name) when is_binary(ref_name) do
+    # Simple reference - infer class name from reference name
+    # e.g., "hasAuthor" -> "Author"
+    class_name = infer_class_name(ref_name)
+
+    """
+    #{ref_name} {
+              ... on #{class_name} {
+                _additional { id }
+              }
+            }
+    """
+    |> String.trim()
+  end
+
+  defp build_single_reference({ref_name, properties})
+       when is_binary(ref_name) and is_list(properties) do
+    class_name = infer_class_name(ref_name)
+    props_str = Enum.join(properties, "\n                ")
+
+    """
+    #{ref_name} {
+              ... on #{class_name} {
+                #{props_str}
+                _additional { id }
+              }
+            }
+    """
+    |> String.trim()
+  end
+
+  # Infer class name from reference name
+  # "hasAuthor" -> "Author", "belongsToCategory" -> "Category"
+  defp infer_class_name(ref_name) do
+    ref_name
+    |> String.replace(~r/^(has|belongsTo|of)/, "")
+    |> String.trim_leading("_")
+    |> capitalize_first()
+  end
+
+  defp capitalize_first(""), do: ""
+
+  defp capitalize_first(<<first::utf8, rest::binary>>),
+    do: <<String.upcase(<<first>>)::binary, rest::binary>>
 
   defp build_additional_string(%{include_vector: include_vector}) do
     vector_str = if include_vector, do: " vector", else: ""

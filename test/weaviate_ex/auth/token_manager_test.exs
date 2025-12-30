@@ -322,6 +322,97 @@ defmodule WeaviateEx.Auth.TokenManagerTest do
     end
   end
 
+  describe "validate_auth/1" do
+    test "validates client_credentials auth type" do
+      auth = %{
+        type: :oidc_client_credentials,
+        client_id: "test-client",
+        client_secret: "test-secret",
+        scopes: []
+      }
+
+      assert :ok = TokenManager.validate_auth(auth)
+    end
+
+    test "validates password auth type" do
+      auth = %{
+        type: :oidc_password,
+        username: "user",
+        password: "pass"
+      }
+
+      assert :ok = TokenManager.validate_auth(auth)
+    end
+
+    test "returns error for unsupported grant type" do
+      auth = %{type: :unsupported_type}
+
+      assert {:error, {:unsupported_grant_type, :unsupported_type, types}} =
+               TokenManager.validate_auth(auth)
+
+      assert :oidc_client_credentials in types
+      assert :oidc_password in types
+    end
+
+    test "returns error when auth type is missing" do
+      auth = %{client_id: "test"}
+
+      assert {:error, :missing_type} = TokenManager.validate_auth(auth)
+    end
+
+    test "returns error for missing client_credentials fields" do
+      auth = %{
+        type: :oidc_client_credentials,
+        client_id: "test-client"
+        # missing client_secret
+      }
+
+      assert {:error, {:missing_fields, [:client_secret]}} =
+               TokenManager.validate_auth(auth)
+    end
+
+    test "returns error for missing password fields" do
+      auth = %{
+        type: :oidc_password,
+        username: "user"
+        # missing password
+      }
+
+      assert {:error, {:missing_fields, [:password]}} = TokenManager.validate_auth(auth)
+    end
+
+    test "returns error for nil required fields" do
+      auth = %{
+        type: :oidc_client_credentials,
+        client_id: nil,
+        client_secret: "secret"
+      }
+
+      assert {:error, {:missing_fields, [:client_id]}} = TokenManager.validate_auth(auth)
+    end
+  end
+
+  describe "start_link with invalid auth" do
+    test "fails to start with unsupported grant type" do
+      auth = %{type: :invalid_type}
+
+      Process.flag(:trap_exit, true)
+      result = TokenManager.start_link(auth: auth)
+
+      # GenServer returns {:error, {:invalid_auth, reason}} when init returns {:stop, {:invalid_auth, reason}}
+      assert {:error, {:invalid_auth, {:unsupported_grant_type, :invalid_type, _}}} = result
+    end
+
+    test "fails to start with missing required fields" do
+      auth = %{type: :oidc_client_credentials, client_id: "test"}
+
+      Process.flag(:trap_exit, true)
+      result = TokenManager.start_link(auth: auth)
+
+      assert {:error, {:invalid_auth, {:missing_fields, [:client_secret]}}} = result
+    end
+  end
+
   describe "with issuer URL" do
     test "discovers OIDC config from issuer", %{bypass: bypass} do
       Bypass.stub(bypass, "POST", "/oauth/token", fn conn ->

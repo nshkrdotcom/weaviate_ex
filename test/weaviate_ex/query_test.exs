@@ -89,6 +89,88 @@ defmodule WeaviateEx.QueryTest do
 
       assert {:ok, _result} = Query.execute(query)
     end
+
+    test "builds hybrid search with max_vector_distance", %{client: _client} do
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "hybrid"
+        assert body_str =~ "maxVectorDistance"
+        assert body_str =~ "0.5"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      query =
+        Query.get("Article")
+        |> Query.hybrid("machine learning", alpha: 0.75, max_vector_distance: 0.5)
+        |> Query.fields(["title"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds hybrid search with bm25_operator AND", %{client: _client} do
+      alias WeaviateEx.Query.BM25Operator
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "hybrid"
+        assert body_str =~ "bm25SearchOperator"
+        assert body_str =~ "And"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      query =
+        Query.get("Article")
+        |> Query.hybrid("machine learning AI", bm25_operator: BM25Operator.and_())
+        |> Query.fields(["title"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds hybrid search with bm25_operator OR with minimum match", %{client: _client} do
+      alias WeaviateEx.Query.BM25Operator
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "hybrid"
+        assert body_str =~ "bm25SearchOperator"
+        assert body_str =~ "Or"
+        assert body_str =~ "minimumShouldMatch"
+        assert body_str =~ "2"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      query =
+        Query.get("Article")
+        |> Query.hybrid("machine learning AI", bm25_operator: BM25Operator.or_(2))
+        |> Query.fields(["title"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
+
+    test "builds hybrid search with both max_vector_distance and bm25_operator", %{
+      client: _client
+    } do
+      alias WeaviateEx.Query.BM25Operator
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        body_str = Jason.encode!(body)
+        assert body_str =~ "hybrid"
+        assert body_str =~ "maxVectorDistance"
+        assert body_str =~ "bm25SearchOperator"
+        {:ok, Fixtures.graphql_response_fixture()}
+      end)
+
+      query =
+        Query.get("Article")
+        |> Query.hybrid("machine learning",
+          alpha: 0.7,
+          max_vector_distance: 0.3,
+          bm25_operator: BM25Operator.and_()
+        )
+        |> Query.fields(["title"])
+
+      assert {:ok, _result} = Query.execute(query)
+    end
   end
 
   describe "bm25/3" do

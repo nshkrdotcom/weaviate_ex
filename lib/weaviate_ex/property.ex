@@ -174,18 +174,48 @@ defmodule WeaviateEx.Property do
   @doc """
   Create a cross-reference property.
 
+  Supports both single-target and multi-target references.
+
   ## Examples
 
+      # Single target reference
       Property.reference("hasAuthor", "Author")
       Property.reference("hasCategories", "Category", description: "Article categories")
+
+      # Multi-target reference (can point to any of the listed collections)
+      Property.reference("hasContent", ["Article", "BlogPost", "Video"])
   """
-  @spec reference(String.t(), String.t(), opts()) :: t()
-  def reference(name, target_collection, opts \\ []) do
+  @spec reference(String.t(), String.t() | [String.t()], opts()) :: t()
+  def reference(name, target_collection, opts \\ [])
+
+  def reference(name, target_collections, opts) when is_list(target_collections) do
+    %{
+      "name" => name,
+      "dataType" => target_collections
+    }
+    |> maybe_put("description", Keyword.get(opts, :description))
+  end
+
+  def reference(name, target_collection, opts) when is_binary(target_collection) do
     %{
       "name" => name,
       "dataType" => [target_collection]
     }
     |> maybe_put("description", Keyword.get(opts, :description))
+  end
+
+  @doc """
+  Create a multi-target cross-reference property.
+
+  Alias for `reference/3` with a list of target collections.
+
+  ## Examples
+
+      Property.multi_reference("hasContent", ["Article", "BlogPost", "Video"])
+  """
+  @spec multi_reference(String.t(), [String.t()], opts()) :: t()
+  def multi_reference(name, target_collections, opts \\ []) when is_list(target_collections) do
+    reference(name, target_collections, opts)
   end
 
   # Private helpers

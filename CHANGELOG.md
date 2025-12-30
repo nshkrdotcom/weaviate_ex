@@ -38,9 +38,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `:lazy_loading` to shard status enum
   - `parse_status/1` and `status_to_api/1` support for `"LAZY_LOADING"` status
 
+#### Vectorizer Enhancements
+- **Text2VecOpenAI Vectorizer** (`WeaviateEx.API.Vectorizers.Text2VecOpenAI`):
+  - Full OpenAI vectorizer configuration support
+  - Options: `:model`, `:dimensions`, `:type`, `:base_url`, `:vectorize_collection_name`
+  - `to_api/1`, `from_api/1` for API serialization
+
+- **Text2VecCohere Vectorizer** (`WeaviateEx.API.Vectorizers.Text2VecCohere`):
+  - Full Cohere vectorizer configuration support
+  - Options: `:model`, `:dimensions`, `:truncate`, `:base_url`, `:vectorize_collection_name`
+  - `to_api/1`, `from_api/1` for API serialization
+
+- **New Rerankers** (`WeaviateEx.API.RerankerConfig`):
+  - `nvidia/2` - NVIDIA NIM reranker configuration
+  - `contextualai/2` - ContextualAI reranker configuration
+
+#### Query Enhancements
+- **Hybrid Search Improvements** (`WeaviateEx.Query`):
+  - `:max_vector_distance` option for filtering results by vector distance threshold
+  - `:bm25_operator` option for customizing BM25 matching behavior (AND/OR)
+  - `BM25Operator` struct for configuring operator and minimum match count
+
+#### Data Operations
+- **Fetch Objects by IDs** (`WeaviateEx.API.Data`):
+  - `fetch_objects_by_ids/4` - Efficiently fetch multiple objects by their IDs
+  - Uses GraphQL `ContainsAny` filter for optimal performance
+  - Supports `:return_properties` and `:tenant` options
+
+- **Iterator References** (`WeaviateEx.Iterator`):
+  - `:return_references` option for including cross-references in iteration
+  - Support for simple references and references with specific properties
+  - Automatic class name inference from reference names
+
+- **Insert Many Convenience** (`WeaviateEx.Collections`):
+  - `insert_many/3` - Batch insert objects with automatic formatting
+  - Supports both raw property maps and structured objects
+  - Automatic ID, vector, and tenant handling
+
+#### Multi-Tenancy Enhancements
+- **AutoTenant Configuration** (`WeaviateEx.Config.AutoTenant`):
+  - `enable/1` - Enable automatic tenant creation
+  - `:auto_delete_timeout` option for automatic cleanup of empty tenants
+  - `disable/0`, `to_map/1`, `from_map/1` for full lifecycle management
+
+#### RBAC Enhancements
+- **Role Scope Parameter** (`WeaviateEx.RBAC.Permissions`):
+  - `:scope` option in `roles/3` for permission scope control
+  - Supports `:match` (exact) and `:all` (wildcard) scopes
+
+#### Property Enhancements
+- **Multi-Target References** (`WeaviateEx.Property`):
+  - `reference/3` now accepts a list of target collections
+  - `multi_reference/3` alias for explicit multi-target references
+  - Example: `Property.reference("hasContent", ["Article", "BlogPost"])`
+
+#### Integration Enhancements
+- **Rate Limit Headers** (`WeaviateEx.Integrations`):
+  - OpenAI: `:requests_per_minute_embeddings`, `:tokens_per_minute_embeddings`
+  - Cohere: `:requests_per_minute_embeddings`
+  - Custom `:base_url` support for both providers
+
+#### Auth Enhancements
+- **OIDC Grant Type Validation** (`WeaviateEx.Auth.TokenManager`):
+  - Validation of OIDC grant types on startup
+  - Supported types: `:oidc_client_credentials`, `:oidc_password`
+  - Clear error messages for invalid or missing auth configuration
+
 ### Stats
-- 2474 tests passing
-- Full Python client parity for cluster management features
+- 2612 tests passing (138 new tests added)
+- Full Python client parity for gap closure features
 - Zero warnings, errors, dialyzer issues, or credo violations
 
 ## [0.7.2] - 2025-12-29

@@ -124,6 +124,50 @@ defmodule WeaviateEx.RBAC.PermissionsTest do
     end
   end
 
+  describe "roles/3 with scope" do
+    test "creates roles permission with match scope" do
+      permission = Permissions.roles("admin", :read, scope: :match)
+
+      assert permission.type == :roles
+      assert permission.action == :read
+      assert permission.role == "admin"
+      assert permission.scope == :match
+    end
+
+    test "creates roles permission with all scope" do
+      permission = Permissions.roles("admin", :update, scope: :all)
+
+      assert permission.scope == :all
+    end
+
+    test "defaults to nil scope when not provided" do
+      permission = Permissions.roles("admin", :read)
+
+      assert permission.scope == nil
+    end
+
+    test "creates multiple roles permissions with scope" do
+      permissions = Permissions.roles("admin", [:read, :update], scope: :match)
+
+      assert length(permissions) == 2
+      assert Enum.all?(permissions, fn p -> p.scope == :match end)
+    end
+
+    test "scope is included in API output" do
+      permission = Permissions.roles("admin", :read, scope: :match)
+      api = Permission.to_api(permission)
+
+      assert api["scope"] == "match"
+    end
+
+    test "all scope is included in API output" do
+      permission = Permissions.roles("admin", :update, scope: :all)
+      api = Permission.to_api(permission)
+
+      assert api["scope"] == "all"
+    end
+  end
+
   describe "users/2" do
     test "creates users permission" do
       permission = Permissions.users("john", :read)

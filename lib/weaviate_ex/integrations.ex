@@ -33,11 +33,15 @@ defmodule WeaviateEx.Integrations do
 
     - `:api_key` - OpenAI API key (required)
     - `:organization` - OpenAI organization ID (optional)
+    - `:requests_per_minute_embeddings` - Rate limit for embedding requests per minute (optional)
+    - `:tokens_per_minute_embeddings` - Rate limit for tokens per minute for embeddings (optional)
+    - `:base_url` - Custom base URL for the API (optional)
 
   ## Examples
 
       Integrations.openai(api_key: "sk-...")
       Integrations.openai(api_key: "sk-...", organization: "org-123")
+      Integrations.openai(api_key: "sk-...", requests_per_minute_embeddings: 3000)
   """
   @spec openai(keyword()) :: headers()
   def openai(opts) do
@@ -45,6 +49,15 @@ defmodule WeaviateEx.Integrations do
 
     [{"X-OpenAI-Api-Key", api_key}]
     |> maybe_add("X-OpenAI-Organization", Keyword.get(opts, :organization))
+    |> maybe_add("X-OpenAI-BaseURL", Keyword.get(opts, :base_url))
+    |> maybe_add_rate_limit(
+      "X-OpenAI-Ratelimit-RequestPM-Embedding",
+      Keyword.get(opts, :requests_per_minute_embeddings)
+    )
+    |> maybe_add_rate_limit(
+      "X-OpenAI-Ratelimit-TokenPM-Embedding",
+      Keyword.get(opts, :tokens_per_minute_embeddings)
+    )
   end
 
   @doc """
@@ -53,14 +66,22 @@ defmodule WeaviateEx.Integrations do
   ## Options
 
     - `:api_key` - Cohere API key (required)
+    - `:requests_per_minute_embeddings` - Rate limit for embedding requests per minute (optional)
+    - `:base_url` - Custom base URL for the API (optional)
 
   ## Examples
 
       Integrations.cohere(api_key: "cohere-key")
+      Integrations.cohere(api_key: "cohere-key", requests_per_minute_embeddings: 1000)
   """
   @spec cohere(keyword()) :: headers()
   def cohere(opts) do
     [{"X-Cohere-Api-Key", Keyword.fetch!(opts, :api_key)}]
+    |> maybe_add("X-Cohere-BaseURL", Keyword.get(opts, :base_url))
+    |> maybe_add_rate_limit(
+      "X-Cohere-Ratelimit-RequestPM-Embedding",
+      Keyword.get(opts, :requests_per_minute_embeddings)
+    )
   end
 
   @doc """
@@ -254,4 +275,10 @@ defmodule WeaviateEx.Integrations do
 
   defp maybe_add(headers, _key, nil), do: headers
   defp maybe_add(headers, key, value), do: headers ++ [{key, value}]
+
+  defp maybe_add_rate_limit(headers, _key, nil), do: headers
+
+  defp maybe_add_rate_limit(headers, key, value) when is_integer(value) do
+    headers ++ [{key, Integer.to_string(value)}]
+  end
 end

@@ -12,6 +12,8 @@ defmodule WeaviateEx.API.RerankerConfig do
     * `transformers/1` - Local transformers model
     * `voyageai/2` - Voyage AI
     * `jinaai/2` - Jina AI
+    * `nvidia/2` - NVIDIA Rerank
+    * `contextualai/2` - Contextual AI Rerank
 
   ## Custom Providers
 
@@ -138,6 +140,62 @@ defmodule WeaviateEx.API.RerankerConfig do
       |> maybe_put("baseURL", Keyword.get(opts, :base_url))
 
     %{"reranker-jinaai" => config}
+  end
+
+  @doc """
+  Create an NVIDIA reranker configuration.
+
+  ## Arguments
+
+    - `model` - NVIDIA model name (optional)
+
+  ## Options
+
+    - `:base_url` - Custom API endpoint URL
+
+  ## Examples
+
+      RerankerConfig.nvidia()
+      RerankerConfig.nvidia("nvidia-nemo-retriever-qa-mistral-4b-instruct")
+      RerankerConfig.nvidia("nvidia-rerank", base_url: "https://api.nvidia.com")
+  """
+  @spec nvidia(String.t() | nil, keyword()) :: config()
+  def nvidia(model \\ nil, opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", model)
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+
+    %{"reranker-nvidia" => config}
+  end
+
+  @doc """
+  Create a Contextual AI reranker configuration.
+
+  ## Arguments
+
+    - `model` - Contextual AI model name (optional)
+
+  ## Options
+
+    - `:base_url` - Custom API endpoint URL
+    - `:instruction` - Instruction for the reranker
+
+  ## Examples
+
+      RerankerConfig.contextualai()
+      RerankerConfig.contextualai("ctxai-rerank-v1")
+      RerankerConfig.contextualai("ctxai-rerank", base_url: "https://api.contextual.ai", instruction: "Rank by relevance")
+  """
+  @spec contextualai(String.t() | nil, keyword()) :: config()
+  def contextualai(model \\ nil, opts \\ []) do
+    config =
+      %{}
+      |> maybe_put("model", model)
+      |> maybe_put("baseURL", Keyword.get(opts, :base_url))
+      |> maybe_put("instruction", Keyword.get(opts, :instruction))
+
+    %{"reranker-contextualai" => config}
   end
 
   @doc """

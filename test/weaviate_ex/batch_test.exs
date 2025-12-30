@@ -170,6 +170,123 @@ defmodule WeaviateEx.BatchTest do
     end
   end
 
+  describe "Collections.insert_many/3" do
+    alias WeaviateEx.Collections
+
+    test "inserts objects with simple property maps", %{client: _client} do
+      objects = [
+        %{title: "Article 1", content: "Content 1"},
+        %{title: "Article 2", content: "Content 2"}
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, path, body, _opts ->
+        assert path =~ "/v1/batch/objects"
+        assert length(body["objects"]) == 2
+        # Each object should have class added
+        assert Enum.all?(body["objects"], fn obj -> obj[:class] == "Article" end)
+        # Properties should be wrapped
+        assert Enum.at(body["objects"], 0)[:properties] == %{
+                 title: "Article 1",
+                 content: "Content 1"
+               }
+
+        response =
+          Enum.map(body["objects"], fn obj ->
+            %{"id" => Uniq.UUID.uuid4(), "status" => "SUCCESS", "class" => obj[:class]}
+          end)
+
+        {:ok, response}
+      end)
+
+      assert {:ok, result} = Collections.insert_many("Article", objects)
+      assert length(result["results"]) == 2
+    end
+
+    test "inserts objects with explicit properties field", %{client: _client} do
+      objects = [
+        %{properties: %{title: "Article 1"}, uuid: "custom-uuid-1"},
+        %{properties: %{title: "Article 2"}}
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, path, body, _opts ->
+        assert path =~ "/v1/batch/objects"
+        assert length(body["objects"]) == 2
+        assert Enum.at(body["objects"], 0)[:id] == "custom-uuid-1"
+        assert Enum.at(body["objects"], 0)[:properties] == %{title: "Article 1"}
+
+        response =
+          Enum.map(body["objects"], fn obj ->
+            %{"id" => obj[:id] || Uniq.UUID.uuid4(), "status" => "SUCCESS"}
+          end)
+
+        {:ok, response}
+      end)
+
+      assert {:ok, _} = Collections.insert_many("Article", objects)
+    end
+
+    test "applies tenant option to all objects", %{client: _client} do
+      objects = [
+        %{title: "Article 1"},
+        %{title: "Article 2"}
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        # All objects should have tenant set
+        assert Enum.all?(body["objects"], fn obj -> obj[:tenant] == "tenant-a" end)
+
+        response =
+          Enum.map(body["objects"], fn _ ->
+            %{"id" => Uniq.UUID.uuid4(), "status" => "SUCCESS"}
+          end)
+
+        {:ok, response}
+      end)
+
+      assert {:ok, _} = Collections.insert_many("Article", objects, tenant: "tenant-a")
+    end
+
+    test "preserves per-object tenant when provided", %{client: _client} do
+      objects = [
+        %{title: "Article 1", tenant: "tenant-specific"},
+        %{title: "Article 2"}
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        obj1 = Enum.at(body["objects"], 0)
+        obj2 = Enum.at(body["objects"], 1)
+        # First object uses its own tenant
+        assert obj1[:tenant] == "tenant-specific"
+        # Second object uses option tenant
+        assert obj2[:tenant] == "tenant-default"
+
+        response =
+          Enum.map(body["objects"], fn _ ->
+            %{"id" => Uniq.UUID.uuid4(), "status" => "SUCCESS"}
+          end)
+
+        {:ok, response}
+      end)
+
+      assert {:ok, _} = Collections.insert_many("Article", objects, tenant: "tenant-default")
+    end
+
+    test "includes vector when provided", %{client: _client} do
+      objects = [
+        %{properties: %{title: "Article 1"}, vector: [0.1, 0.2, 0.3]}
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        obj = Enum.at(body["objects"], 0)
+        assert obj[:vector] == [0.1, 0.2, 0.3]
+
+        {:ok, [%{"id" => Uniq.UUID.uuid4(), "status" => "SUCCESS"}]}
+      end)
+
+      assert {:ok, _} = Collections.insert_many("Article", objects)
+    end
+  end
+
   describe "integration tests" do
     @tag :integration
     test "batch create and delete workflow" do

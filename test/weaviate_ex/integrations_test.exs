@@ -16,6 +16,26 @@ defmodule WeaviateEx.IntegrationsTest do
       assert {"X-OpenAI-Api-Key", "sk-test-key"} in headers
       assert {"X-OpenAI-Organization", "org-123"} in headers
     end
+
+    test "accepts rate limit options for embeddings" do
+      headers =
+        Integrations.openai(
+          api_key: "sk-test-key",
+          requests_per_minute_embeddings: 3000,
+          tokens_per_minute_embeddings: 150_000
+        )
+
+      assert {"X-OpenAI-Api-Key", "sk-test-key"} in headers
+      assert {"X-OpenAI-Ratelimit-RequestPM-Embedding", "3000"} in headers
+      assert {"X-OpenAI-Ratelimit-TokenPM-Embedding", "150000"} in headers
+    end
+
+    test "accepts base_url option" do
+      headers = Integrations.openai(api_key: "sk-test-key", base_url: "https://custom.openai.com")
+
+      assert {"X-OpenAI-Api-Key", "sk-test-key"} in headers
+      assert {"X-OpenAI-BaseURL", "https://custom.openai.com"} in headers
+    end
   end
 
   describe "cohere/1" do
@@ -23,6 +43,20 @@ defmodule WeaviateEx.IntegrationsTest do
       headers = Integrations.cohere(api_key: "cohere-key")
 
       assert headers == [{"X-Cohere-Api-Key", "cohere-key"}]
+    end
+
+    test "accepts rate limit option for embeddings" do
+      headers = Integrations.cohere(api_key: "cohere-key", requests_per_minute_embeddings: 1000)
+
+      assert {"X-Cohere-Api-Key", "cohere-key"} in headers
+      assert {"X-Cohere-Ratelimit-RequestPM-Embedding", "1000"} in headers
+    end
+
+    test "accepts base_url option" do
+      headers = Integrations.cohere(api_key: "cohere-key", base_url: "https://custom.cohere.ai")
+
+      assert {"X-Cohere-Api-Key", "cohere-key"} in headers
+      assert {"X-Cohere-BaseURL", "https://custom.cohere.ai"} in headers
     end
   end
 

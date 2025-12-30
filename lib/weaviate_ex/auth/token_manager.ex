@@ -135,37 +135,46 @@ defmodule WeaviateEx.Auth.TokenManager do
 
   # Server Callbacks
 
+  @valid_grant_types [:oidc_client_credentials, :oidc_password]
+
   @impl true
   def init(opts) do
+    auth = Keyword.fetch!(opts, :auth)
+
+    case validate_auth(auth) do
+      :ok -> init_with_valid_auth(opts, auth)
+      {:error, reason} -> {:stop, {:invalid_auth, reason}}
+    end
+  end
+
+  defp init_with_valid_auth(opts, auth) do
     state = %{
       oidc_config: Keyword.get(opts, :oidc_config),
-      auth: Keyword.fetch!(opts, :auth),
+      auth: auth,
       token: nil,
       refresh_buffer_seconds: Keyword.get(opts, :refresh_buffer_seconds, @default_refresh_buffer),
       refresh_timer: nil
     }
 
-    # Handle either oidc_config or issuer_url
-    state =
-      case Keyword.get(opts, :issuer_url) do
-        nil ->
-          state
-
-        issuer_url ->
-          case OIDC.discover(issuer_url) do
-            {:ok, config} ->
-              %{state | oidc_config: config}
-
-            {:error, reason} ->
-              Logger.error("Failed to discover OIDC config: #{inspect(reason)}")
-              state
-          end
-      end
+    state = maybe_discover_oidc(state, Keyword.get(opts, :issuer_url))
 
     # Schedule initial token fetch
     send(self(), :fetch_token)
 
     {:ok, state}
+  end
+
+  defp maybe_discover_oidc(state, nil), do: state
+
+  defp maybe_discover_oidc(state, issuer_url) do
+    case OIDC.discover(issuer_url) do
+      {:ok, config} ->
+        %{state | oidc_config: config}
+
+      {:error, reason} ->
+        Logger.error("Failed to discover OIDC config: #{inspect(reason)}")
+        state
+    end
   end
 
   @impl true
@@ -262,5 +271,42 @@ defmodule WeaviateEx.Auth.TokenManager do
   defp cancel_refresh_timer(%{refresh_timer: timer_ref} = state) do
     Process.cancel_timer(timer_ref)
     %{state | refresh_timer: nil}
+  end
+
+  # Auth validation
+
+  @doc false
+  def validate_auth(%{type: type} = auth) when type in @valid_grant_types do
+    validate_auth_fields(auth)
+  end
+
+  def validate_auth(%{type: type}) do
+    {:error, {:unsupported_grant_type, type, @valid_grant_types}}
+  end
+
+  def validate_auth(_auth) do
+    {:error, :missing_type}
+  end
+
+  defp validate_auth_fields(%{type: :oidc_client_credentials} = auth) do
+    required = [:client_id, :client_secret]
+    missing = Enum.filter(required, fn key -> !Map.has_key?(auth, key) || is_nil(auth[key]) end)
+
+    if missing == [] do
+      :ok
+    else
+      {:error, {:missing_fields, missing}}
+    end
+  end
+
+  defp validate_auth_fields(%{type: :oidc_password} = auth) do
+    required = [:username, :password]
+    missing = Enum.filter(required, fn key -> !Map.has_key?(auth, key) || is_nil(auth[key]) end)
+
+    if missing == [] do
+      :ok
+    else
+      {:error, {:missing_fields, missing}}
+    end
   end
 end

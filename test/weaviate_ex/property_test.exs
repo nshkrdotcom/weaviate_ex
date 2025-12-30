@@ -203,6 +203,41 @@ defmodule WeaviateEx.PropertyTest do
 
       assert prop["description"] == "Reference to author"
     end
+
+    test "creates multi-target reference with list of collections" do
+      prop = Property.reference("hasContent", ["Article", "BlogPost", "Video"])
+
+      assert prop["name"] == "hasContent"
+      assert prop["dataType"] == ["Article", "BlogPost", "Video"]
+    end
+
+    test "multi-target reference accepts description option" do
+      prop =
+        Property.reference("hasContent", ["Article", "BlogPost"],
+          description: "Can be article or blog post"
+        )
+
+      assert prop["dataType"] == ["Article", "BlogPost"]
+      assert prop["description"] == "Can be article or blog post"
+    end
+  end
+
+  describe "multi_reference/3" do
+    test "creates multi-target reference property" do
+      prop = Property.multi_reference("hasContent", ["Article", "BlogPost"])
+
+      assert prop["name"] == "hasContent"
+      assert prop["dataType"] == ["Article", "BlogPost"]
+    end
+
+    test "accepts description option" do
+      prop =
+        Property.multi_reference("hasContent", ["Article", "Video"],
+          description: "Content reference"
+        )
+
+      assert prop["description"] == "Content reference"
+    end
   end
 
   describe "tokenization values" do

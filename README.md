@@ -8,7 +8,8 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2362%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Tests](https://img.shields.io/badge/tests-2612%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Version](https://img.shields.io/badge/version-0.7.3-blue.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -19,7 +20,7 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 - **RBAC & User Management** - Full role-based access control, user lifecycle management, OIDC groups
 - **Hybrid Protocol Architecture** - gRPC for high-performance data operations, HTTP for schema management
 - **Type-Safe** - Protocol-based architecture with comprehensive typespecs
-- **Test-First Design** - 1000+ tests with Mox-based mocking for fast, isolated testing
+- **Test-First Design** - 2600+ tests with Mox-based mocking for fast, isolated testing
 - **Production-Ready** - gRPC persistent channels, Finch HTTP pooling, proper error handling, health checks
 - **Easy Setup** - First-class Mix tasks for managing local Weaviate stacks
 
@@ -118,7 +119,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.7.2"}
+    {:weaviate_ex, "~> 0.7.3"}
   ]
 end
 ```

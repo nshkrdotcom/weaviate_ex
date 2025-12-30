@@ -43,6 +43,7 @@ defmodule WeaviateEx.Query do
 
   alias WeaviateEx.Client
   alias WeaviateEx.GRPC.Services.Search, as: GRPCSearch
+  alias WeaviateEx.Query.BM25Operator
   alias WeaviateEx.Query.Generate
   alias WeaviateEx.Query.GroupBy
   alias WeaviateEx.Query.HybridVector
@@ -360,6 +361,8 @@ defmodule WeaviateEx.Query do
   - `:fusion_type` - Fusion algorithm: `:ranked` or `:relative_score`
   - `:properties` - Properties to search for BM25 component
   - `:target_vectors` - Target vectors for multi-vector collections
+  - `:max_vector_distance` - Maximum distance for vector similarity in hybrid search
+  - `:bm25_operator` - BM25Operator configuration for keyword matching (AND/OR)
 
   ## Examples
 
@@ -378,10 +381,19 @@ defmodule WeaviateEx.Query do
       hv = HybridVector.near_vector(embedding)
       query
       |> WeaviateEx.Query.hybrid("search", vector: hv, fusion_type: :relative_score)
+
+      # With max_vector_distance
+      query
+      |> WeaviateEx.Query.hybrid("search", max_vector_distance: 0.5)
+
+      # With BM25 operator
+      query
+      |> WeaviateEx.Query.hybrid("machine learning", bm25_operator: BM25Operator.and_())
   """
   @spec hybrid(t(), String.t(), Keyword.t()) :: t()
   def hybrid(%__MODULE__{} = query, search_query, opts \\ []) do
     vector = normalize_hybrid_vector(Keyword.get(opts, :vector))
+    bm25_op = normalize_bm25_operator(Keyword.get(opts, :bm25_operator))
 
     params =
       %{query: search_query}
@@ -391,6 +403,8 @@ defmodule WeaviateEx.Query do
       |> put_if_present(:vector, vector)
       |> put_if_present(:properties, opts[:properties])
       |> put_if_present(:target_vectors, opts[:target_vectors])
+      |> put_if_present(:maxVectorDistance, opts[:max_vector_distance])
+      |> put_if_present(:bm25SearchOperator, bm25_op)
 
     %{query | hybrid: params}
   end
@@ -398,6 +412,16 @@ defmodule WeaviateEx.Query do
   defp normalize_hybrid_vector(nil), do: nil
   defp normalize_hybrid_vector(%HybridVector{} = hv), do: hv
   defp normalize_hybrid_vector(vec) when is_list(vec), do: HybridVector.near_vector(vec)
+
+  defp normalize_bm25_operator(nil), do: nil
+
+  defp normalize_bm25_operator(%BM25Operator{type: :and}) do
+    %{operator: "And"}
+  end
+
+  defp normalize_bm25_operator(%BM25Operator{type: :or, minimum_should_match: min}) do
+    %{operator: "Or", minimumShouldMatch: min}
+  end
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
@@ -1175,6 +1199,7 @@ defmodule WeaviateEx.Query do
       |> maybe_add_hybrid(query.hybrid)
       |> maybe_add_bm25(query.bm25)
       |> maybe_add_group_by(query.group_by)
+      |> maybe_add_tenant(query.tenant)
 
     if args == [], do: "", else: "(#{Enum.join(args, ", ")})"
   end
@@ -1290,6 +1315,9 @@ defmodule WeaviateEx.Query do
   defp maybe_add_group_by(args, %GroupBy{} = group_by) do
     args ++ ["groupBy: #{GroupBy.to_graphql(group_by)}"]
   end
+
+  defp maybe_add_tenant(args, nil), do: args
+  defp maybe_add_tenant(args, tenant), do: args ++ ["tenant: \"#{tenant}\""]
 
   # Convert Elixir map/list to GraphQL object syntax (without quotes on keys)
   defp map_to_graphql(value) when is_map(value) do

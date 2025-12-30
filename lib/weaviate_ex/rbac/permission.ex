@@ -45,6 +45,7 @@ defmodule WeaviateEx.RBAC.Permission do
   @type permission_type :: Actions.permission_type()
   @type action :: Actions.action()
   @type verbosity :: :minimal | :verbose
+  @type role_scope :: :match | :all
 
   @type t :: %__MODULE__{
           type: permission_type(),
@@ -55,7 +56,8 @@ defmodule WeaviateEx.RBAC.Permission do
           role: String.t() | nil,
           user: String.t() | nil,
           group: String.t() | nil,
-          verbosity: verbosity() | nil
+          verbosity: verbosity() | nil,
+          scope: role_scope() | nil
         }
 
   defstruct [
@@ -67,7 +69,8 @@ defmodule WeaviateEx.RBAC.Permission do
     :role,
     :user,
     :group,
-    :verbosity
+    :verbosity,
+    :scope
   ]
 
   @doc """
@@ -85,12 +88,14 @@ defmodule WeaviateEx.RBAC.Permission do
       * `:user` - Filter by user ID
       * `:group` - Filter by group name
       * `:verbosity` - For nodes permission: :minimal or :verbose
+      * `:scope` - For roles permission: :match or :all
 
   ## Examples
 
       Permission.new(:collections, :read)
       Permission.new(:data, :create, collection: "Article", tenant: "tenant-a")
       Permission.new(:nodes, :read, verbosity: :verbose)
+      Permission.new(:roles, :read, role: "admin", scope: :match)
   """
   @spec new(permission_type(), action(), keyword()) :: t()
   def new(type, action, opts \\ []) do
@@ -103,7 +108,8 @@ defmodule WeaviateEx.RBAC.Permission do
       role: Keyword.get(opts, :role),
       user: Keyword.get(opts, :user),
       group: Keyword.get(opts, :group),
-      verbosity: Keyword.get(opts, :verbosity)
+      verbosity: Keyword.get(opts, :verbosity),
+      scope: Keyword.get(opts, :scope)
     }
   end
 
@@ -130,6 +136,7 @@ defmodule WeaviateEx.RBAC.Permission do
     |> maybe_put("user", permission.user)
     |> maybe_put("group", permission.group)
     |> maybe_put_verbosity(permission.verbosity)
+    |> maybe_put_scope(permission.scope)
   end
 
   defp maybe_put(map, _key, nil), do: map
@@ -139,6 +146,12 @@ defmodule WeaviateEx.RBAC.Permission do
 
   defp maybe_put_verbosity(map, verbosity) do
     Map.put(map, "verbosity", to_string(verbosity))
+  end
+
+  defp maybe_put_scope(map, nil), do: map
+
+  defp maybe_put_scope(map, scope) do
+    Map.put(map, "scope", to_string(scope))
   end
 
   @doc """
@@ -166,7 +179,8 @@ defmodule WeaviateEx.RBAC.Permission do
           role: Map.get(api_data, "role"),
           user: Map.get(api_data, "user"),
           group: Map.get(api_data, "group"),
-          verbosity: parse_verbosity(Map.get(api_data, "verbosity"))
+          verbosity: parse_verbosity(Map.get(api_data, "verbosity")),
+          scope: parse_scope(Map.get(api_data, "scope"))
         }
 
         {:ok, permission}
@@ -180,4 +194,9 @@ defmodule WeaviateEx.RBAC.Permission do
   defp parse_verbosity("minimal"), do: :minimal
   defp parse_verbosity("verbose"), do: :verbose
   defp parse_verbosity(other) when is_atom(other), do: other
+
+  defp parse_scope(nil), do: nil
+  defp parse_scope("match"), do: :match
+  defp parse_scope("all"), do: :all
+  defp parse_scope(other) when is_atom(other), do: other
 end

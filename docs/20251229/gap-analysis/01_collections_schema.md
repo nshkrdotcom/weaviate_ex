@@ -2,9 +2,11 @@
 
 ## Weaviate Python Client vs WeaviateEx Elixir Port
 
-**Analysis Date:** December 29, 2025
+**Analysis Date:** December 29, 2025 (Updated)
+**Python Client Path:** `weaviate-python-client/weaviate/collections/`
+**Elixir Port Path:** `lib/weaviate_ex/`
 **Python Client Version:** Latest (weaviate-client)
-**Elixir Port Version:** v0.6.0
+**Elixir Port Version:** v0.7.2
 
 ---
 
@@ -12,19 +14,34 @@
 
 The WeaviateEx Elixir port provides **substantial coverage** of the Weaviate Python client's Collections and Schema API, with approximately **85-90%** feature parity for core functionality. The Elixir implementation demonstrates idiomatic Elixir patterns with good type specifications and documentation.
 
+### Coverage Statistics
+
+| Area | Python Features | Elixir Features | Coverage |
+|------|-----------------|-----------------|----------|
+| Collection CRUD | 6 | 6 | 100% |
+| Data Types | 17 | 17 | 100% |
+| Property Definitions | 8 | 8 | 100% |
+| Named Vectors | 12+ vectorizers | 12+ vectorizers | ~95% |
+| Multi-tenancy | 7 states | 6 states | ~85% |
+| Quantizers | 4 types | 4 types | 100% |
+| Index Types | 3 types | 3 types | 100% |
+| Generative Configs | 15+ providers | 15+ providers | ~90% |
+| Reranker Configs | 7 providers | 6 providers | ~85% |
+
 ### Key Strengths of Elixir Port
 - Comprehensive vectorizer support (25+ vectorizers matching Python)
 - Strong inverted index configuration
 - Full multi-tenancy support with gRPC optimization
-- Named vectors support
+- Named vectors support with update builders
 - Property builder with nested object support
 - All quantization methods (PQ, BQ, SQ, RQ)
+- Elixir-specific convenience functions (delete_all with details, tenant filtering)
 
 ### Primary Gaps
-1. **Typed configuration classes** - Python uses strongly-typed dataclasses/Pydantic models
-2. **Collection configuration updates** - Limited update operations
-3. **Object TTL configuration** - Not implemented
-4. **Some advanced property options** - `index_range_filters`, per-vectorizer property configs
+1. **Object TTL configuration** - Not implemented
+2. **Some advanced property options** - `index_range_filters`, per-vectorizer property configs
+3. **Custom reranker/generative providers** - Limited support
+4. **Auto-tenant management** - Missing autoTenantCreation/autoTenantActivation
 
 ---
 
@@ -46,6 +63,12 @@ The WeaviateEx Elixir port provides **substantial coverage** of the Weaviate Pyt
 **Gaps in Update Operations:**
 - Python supports granular config updates (inverted index, replication, vectorizer configs)
 - Elixir currently passes updates as raw maps without structured validation
+
+**Elixir-Specific Additions:**
+- `delete_all/1` returns detailed results with `deleted_count`, `failed_count`, and `failures` list
+- `add_property/3` - Dedicated function for adding properties to existing collections
+- `get_shards/3` - Dedicated function for shard inspection with tenant filtering
+- `set_multi_tenancy/4` - Dedicated function for toggling multi-tenancy
 
 ### 2. Property Configuration
 
@@ -239,7 +262,26 @@ Property.object("author", [
 | Per-vector quantization | Yes | Yes | Complete |
 | Source properties | Yes | Yes | Complete |
 | Self-provided vectors | Yes | Yes | Complete |
-| Vector config update | `_NamedVectorConfigUpdate` | No | **Missing** |
+| Vector config update | `_NamedVectorConfigUpdate` | Yes | Complete |
+
+**Elixir Named Vector Update Builders:**
+```elixir
+# Update HNSW ef parameter for a named vector
+NamedVectors.update_config("title_vector",
+  vector_index: [ef: 200, dynamic_ef_max: 500]
+)
+
+# Update quantizer for a named vector
+NamedVectors.update_config("content_vector",
+  quantizer: [type: :pq, segments: 128]
+)
+
+# Build batch update configs
+NamedVectors.build_update_config([
+  NamedVectors.update_config("title_vector", vector_index: [ef: 200]),
+  NamedVectors.update_config("content_vector", vector_index: [ef: 150])
+])
+```
 
 **Python Named Vectors:**
 ```python
@@ -313,8 +355,32 @@ NamedVectors.text2vec_openai(
 | Tenant offloading | Yes | Yes | Complete |
 | gRPC tenant operations | Yes | Yes | Complete |
 | Batch tenant operations | Yes | Yes | Complete |
-| List active/inactive | Yes | Yes | Complete |
-| Tenant count | Yes | Yes | Complete |
+| List active/inactive | No | Yes | **Elixir Extra** |
+| Tenant count | No | Yes | **Elixir Extra** |
+| Activate/deactivate helpers | Implicit | Yes | **Elixir Extra** |
+| Freeze/offload helpers | Implicit | Yes | **Elixir Extra** |
+
+**Elixir Tenant Convenience Functions:**
+```elixir
+# List tenants by status
+{:ok, active_tenants} = Tenants.list_active(client, "Article")
+{:ok, inactive_tenants} = Tenants.list_inactive(client, "Article")
+
+# Count tenants
+{:ok, 5} = Tenants.count(client, "Article")
+
+# Status change helpers
+Tenants.activate(client, "Article", "TenantA")
+Tenants.deactivate(client, "Article", "TenantA")
+Tenants.freeze(client, "Article", "TenantA")
+Tenants.offload(client, "Article", "TenantA")
+
+# Batch update with automatic chunking (100 per batch)
+Tenants.batch_update(client, "Article", [
+  %{name: "tenant1", activity_status: :hot},
+  %{name: "tenant2", activity_status: :cold}
+])
+```
 
 ### 13. Generative (RAG) Configuration
 

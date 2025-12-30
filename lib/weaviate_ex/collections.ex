@@ -438,6 +438,84 @@ defmodule WeaviateEx.Collections do
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
   defp normalize_key(key), do: key
 
+  @doc """
+  Insert multiple objects into a collection in a single batch operation.
+
+  This is a convenience wrapper around batch insert that automatically
+  adds the collection name to each object.
+
+  ## Parameters
+
+    - `collection_name` - Name of the collection
+    - `objects` - List of property maps or object maps with optional `:uuid`, `:vector`
+    - `opts` - Additional options
+
+  ## Options
+
+    - `:tenant` - Tenant name for multi-tenant collections
+    - `:consistency_level` - Consistency level for the operation
+    - `:return_summary` - Return a summary with success/failure counts
+
+  ## Object Format
+
+  Each object can be:
+    - A simple properties map: `%{title: "My Article", content: "..."}`
+    - A map with `:properties`, optional `:uuid`, `:vector`: `%{properties: %{...}, uuid: "..."}`
+
+  ## Examples
+
+      # Simple properties
+      {:ok, result} = Collections.insert_many("Article", [
+        %{title: "Article 1", content: "Content 1"},
+        %{title: "Article 2", content: "Content 2"}
+      ])
+
+      # With custom UUIDs
+      {:ok, result} = Collections.insert_many("Article", [
+        %{properties: %{title: "Article 1"}, uuid: "custom-uuid-1"},
+        %{properties: %{title: "Article 2"}, uuid: "custom-uuid-2"}
+      ])
+
+      # With tenant
+      {:ok, result} = Collections.insert_many("Article", objects, tenant: "tenant-a")
+
+      # Get summary
+      {:ok, summary} = Collections.insert_many("Article", objects, return_summary: true)
+  """
+  @spec insert_many(collection_name(), list(map()), Keyword.t()) :: WeaviateEx.api_response()
+  def insert_many(collection_name, objects, opts \\ []) when is_list(objects) do
+    formatted_objects = format_batch_objects(collection_name, objects, opts)
+    WeaviateEx.Batch.create_objects(formatted_objects, opts)
+  end
+
+  defp format_batch_objects(collection_name, objects, opts) do
+    tenant = Keyword.get(opts, :tenant)
+    Enum.map(objects, &format_single_batch_object(&1, collection_name, tenant))
+  end
+
+  defp format_single_batch_object(obj, collection_name, default_tenant) do
+    %{class: collection_name}
+    |> Map.put(:properties, extract_properties(obj))
+    |> maybe_put_batch(:id, get_object_id(obj))
+    |> maybe_put_batch(:vector, get_any_key(obj, [:vector, "vector"]))
+    |> maybe_put_batch(:tenant, get_any_key(obj, [:tenant, "tenant"]) || default_tenant)
+  end
+
+  defp extract_properties(obj) do
+    get_any_key(obj, [:properties, "properties"]) || obj
+  end
+
+  defp get_object_id(obj) do
+    get_any_key(obj, [:uuid, "uuid", :id, "id"])
+  end
+
+  defp get_any_key(map, keys) do
+    Enum.find_value(keys, fn key -> Map.get(map, key) end)
+  end
+
+  defp maybe_put_batch(map, _key, nil), do: map
+  defp maybe_put_batch(map, key, value), do: Map.put(map, key, value)
+
   defp build_query_string(opts, allowed_keys) do
     params =
       opts

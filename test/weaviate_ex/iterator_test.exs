@@ -45,6 +45,20 @@ defmodule WeaviateEx.IteratorTest do
 
       assert iterator.filter == filter
     end
+
+    test "accepts return_references" do
+      refs = ["hasAuthor", "hasCategory"]
+      iterator = Iterator.new(:client, "Article", return_references: refs)
+
+      assert iterator.return_references == refs
+    end
+
+    test "accepts return_references with nested properties" do
+      refs = [{"hasAuthor", ["name", "email"]}, "hasCategory"]
+      iterator = Iterator.new(:client, "Article", return_references: refs)
+
+      assert iterator.return_references == refs
+    end
   end
 
   describe "build_query/1" do
@@ -77,6 +91,33 @@ defmodule WeaviateEx.IteratorTest do
       query = Iterator.build_query(iterator)
 
       assert query =~ "limit: 50"
+    end
+
+    test "includes simple references" do
+      iterator = Iterator.new(:client, "Article", return_references: ["hasAuthor"])
+      query = Iterator.build_query(iterator)
+
+      assert query =~ "hasAuthor"
+      assert query =~ "... on Author"
+    end
+
+    test "includes references with nested properties" do
+      refs = [{"hasAuthor", ["name", "email"]}]
+      iterator = Iterator.new(:client, "Article", return_references: refs)
+      query = Iterator.build_query(iterator)
+
+      assert query =~ "hasAuthor"
+      assert query =~ "name"
+      assert query =~ "email"
+    end
+
+    test "includes multiple references" do
+      refs = ["hasAuthor", {"hasCategory", ["name"]}]
+      iterator = Iterator.new(:client, "Article", return_references: refs)
+      query = Iterator.build_query(iterator)
+
+      assert query =~ "hasAuthor"
+      assert query =~ "hasCategory"
     end
   end
 

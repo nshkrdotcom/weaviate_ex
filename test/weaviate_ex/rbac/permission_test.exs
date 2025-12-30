@@ -52,6 +52,21 @@ defmodule WeaviateEx.RBAC.PermissionTest do
       assert permission.action == :read
       assert permission.user == "john"
     end
+
+    test "creates roles permission with scope filter" do
+      permission = Permission.new(:roles, :read, role: "admin", scope: :match)
+
+      assert permission.type == :roles
+      assert permission.action == :read
+      assert permission.role == "admin"
+      assert permission.scope == :match
+    end
+
+    test "creates roles permission with all scope" do
+      permission = Permission.new(:roles, :delete, role: "*", scope: :all)
+
+      assert permission.scope == :all
+    end
   end
 
   describe "to_api/1" do
@@ -118,6 +133,32 @@ defmodule WeaviateEx.RBAC.PermissionTest do
 
       assert api["action"] == "delete_roles"
       assert api["role"] == "custom-role"
+    end
+
+    test "encodes roles permission with match scope" do
+      permission = Permission.new(:roles, :read, role: "admin", scope: :match)
+
+      api = Permission.to_api(permission)
+
+      assert api["action"] == "read_roles"
+      assert api["role"] == "admin"
+      assert api["scope"] == "match"
+    end
+
+    test "encodes roles permission with all scope" do
+      permission = Permission.new(:roles, :delete, role: "*", scope: :all)
+
+      api = Permission.to_api(permission)
+
+      assert api["scope"] == "all"
+    end
+
+    test "omits scope when nil" do
+      permission = Permission.new(:roles, :read, role: "admin")
+
+      api = Permission.to_api(permission)
+
+      refute Map.has_key?(api, "scope")
     end
 
     test "encodes users permission with user filter" do
@@ -237,6 +278,32 @@ defmodule WeaviateEx.RBAC.PermissionTest do
 
       assert {:error, _} = Permission.from_api(api_data)
     end
+
+    test "decodes roles permission with match scope" do
+      api_data = %{
+        "action" => "read_roles",
+        "role" => "admin",
+        "scope" => "match"
+      }
+
+      {:ok, permission} = Permission.from_api(api_data)
+
+      assert permission.type == :roles
+      assert permission.role == "admin"
+      assert permission.scope == :match
+    end
+
+    test "decodes roles permission with all scope" do
+      api_data = %{
+        "action" => "delete_roles",
+        "role" => "*",
+        "scope" => "all"
+      }
+
+      {:ok, permission} = Permission.from_api(api_data)
+
+      assert permission.scope == :all
+    end
   end
 
   describe "round-trip encoding/decoding" do
@@ -272,6 +339,18 @@ defmodule WeaviateEx.RBAC.PermissionTest do
       assert decoded.type == permission.type
       assert decoded.action == permission.action
       assert decoded.verbosity == permission.verbosity
+    end
+
+    test "roles permission with scope round-trips correctly" do
+      permission = Permission.new(:roles, :read, role: "admin", scope: :match)
+
+      api = Permission.to_api(permission)
+      {:ok, decoded} = Permission.from_api(api)
+
+      assert decoded.type == permission.type
+      assert decoded.action == permission.action
+      assert decoded.role == permission.role
+      assert decoded.scope == permission.scope
     end
   end
 

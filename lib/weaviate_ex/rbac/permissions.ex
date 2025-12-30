@@ -145,21 +145,31 @@ defmodule WeaviateEx.RBAC.Permissions do
 
     * `role` - Role name or `:all` for wildcard. Defaults to `"*"`.
     * `actions` - Single action atom or list of actions
+    * `opts` - Optional filters:
+      * `:scope` - Permission scope: `:match` or `:all`
 
   ## Examples
 
       Permissions.roles("admin", :read)
       Permissions.roles(:all, [:create, :read, :delete])
+      Permissions.roles("admin", :read, scope: :match)
+      Permissions.roles("*", :manage, scope: :all)
   """
   @spec roles(actions()) :: Permission.t() | [Permission.t()]
   @spec roles(name_or_all(), actions()) :: Permission.t() | [Permission.t()]
+  @spec roles(name_or_all(), actions(), keyword()) :: Permission.t() | [Permission.t()]
   def roles(actions) when is_atom(actions) or is_list(actions) do
-    roles("*", actions)
+    roles("*", actions, [])
   end
 
-  def roles(role, actions) do
+  def roles(role, actions) when is_atom(actions) or is_list(actions) do
+    roles(role, actions, [])
+  end
+
+  def roles(role, actions, opts) do
     role_name = normalize_wildcard(role)
-    build_permissions(:roles, actions, role: role_name)
+    scope = Keyword.get(opts, :scope)
+    build_permissions(:roles, actions, role: role_name, scope: scope)
   end
 
   @doc """

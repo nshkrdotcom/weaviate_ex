@@ -57,6 +57,7 @@ defmodule WeaviateEx.API.Data do
   alias WeaviateEx.Client
   alias WeaviateEx.Error
   alias WeaviateEx.Objects.Payload
+  alias WeaviateEx.Query
 
   @type collection_name :: String.t()
   @type object_id :: String.t()
@@ -343,6 +344,72 @@ defmodule WeaviateEx.API.Data do
     path = "/v1/objects/validate" <> build_query_string(opts, [:consistency_level])
     Client.request(client, :post, path, body, opts)
   end
+
+  @doc """
+  Fetch multiple objects by their UUIDs.
+
+  Uses a GraphQL query with ContainsAny filter for efficient batch retrieval.
+
+  ## Parameters
+    * `client` - WeaviateEx client
+    * `collection_name` - Name of the collection
+    * `ids` - List of object UUIDs to fetch
+    * `opts` - Options:
+      * `:return_properties` - List of property names to return (default: all)
+      * `:tenant` - Tenant name for multi-tenant collections
+
+  ## Examples
+
+      ids = ["uuid-1", "uuid-2", "uuid-3"]
+      {:ok, objects} = Data.fetch_objects_by_ids(client, "Article", ids)
+
+      # With specific properties
+      {:ok, objects} = Data.fetch_objects_by_ids(client, "Article", ids,
+        return_properties: ["title", "content"]
+      )
+
+      # With tenant
+      {:ok, objects} = Data.fetch_objects_by_ids(client, "Article", ids,
+        tenant: "tenant-a"
+      )
+
+  ## Returns
+    * `{:ok, list()}` - List of matching objects
+    * `{:error, Error.t()}` - Error if query fails
+  """
+  @spec fetch_objects_by_ids(Client.t(), collection_name(), [object_id()], opts()) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def fetch_objects_by_ids(client, collection_name, ids, opts \\ [])
+
+  def fetch_objects_by_ids(_client, _collection_name, [], _opts) do
+    {:ok, []}
+  end
+
+  def fetch_objects_by_ids(client, collection_name, ids, opts) do
+    filter = %{
+      path: ["id"],
+      operator: "ContainsAny",
+      valueText: ids
+    }
+
+    return_properties = Keyword.get(opts, :return_properties, [])
+    tenant = Keyword.get(opts, :tenant)
+
+    query =
+      Query.get(collection_name)
+      |> Query.where(filter)
+      |> Query.additional(["id"])
+      |> maybe_add_fields(return_properties)
+      |> maybe_add_tenant(tenant)
+
+    Query.execute(query, client)
+  end
+
+  defp maybe_add_fields(query, []), do: query
+  defp maybe_add_fields(query, fields), do: Query.fields(query, fields)
+
+  defp maybe_add_tenant(query, nil), do: query
+  defp maybe_add_tenant(query, tenant), do: Query.tenant(query, tenant)
 
   ## Private Helpers
 
