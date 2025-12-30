@@ -20,7 +20,10 @@ defmodule WeaviateEx.API.Tenants do
   @type tenant_name :: String.t()
   @type tenant_names :: tenant_name() | [tenant_name()]
   @type opts :: keyword()
-  @type activity_status :: :hot | :cold | :frozen
+  @type activity_status :: :active | :inactive | :hot | :cold | :frozen | :offloaded
+
+  # Batch size for tenant updates (matches Python client behavior)
+  @batch_size 100
 
   @doc """
   List all tenants for a collection.
@@ -389,8 +392,70 @@ defmodule WeaviateEx.API.Tenants do
     end
   end
 
+  @doc """
+  Updates tenants in batches of #{@batch_size} (matching Python client behavior).
+
+  This is useful for updating large numbers of tenants efficiently without
+  overwhelming the server with a single large request.
+
+  ## Examples
+
+      tenants = [
+        %{name: "tenant1", activity_status: :hot},
+        %{name: "tenant2", activity_status: :cold}
+      ]
+      {:ok, results} = Tenants.batch_update(client, "Article", tenants)
+
+  ## Returns
+    * `{:ok, [map()]}` - All updated tenants combined
+    * `{:error, Error.t()}` - Error from first failed batch
+  """
+  @spec batch_update(Client.t(), collection_name(), [map()]) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def batch_update(client, collection_name, tenants) when is_list(tenants) do
+    tenants
+    |> Enum.chunk_every(@batch_size)
+    |> Enum.reduce_while({:ok, []}, fn batch, {:ok, acc} ->
+      case update_batch(client, collection_name, batch) do
+        {:ok, results} -> {:cont, {:ok, acc ++ results}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp update_batch(client, collection_name, batch) do
+    tenants =
+      Enum.map(batch, fn
+        %{name: name, activity_status: status} ->
+          %{"name" => name, "activityStatus" => activity_to_string(status)}
+
+        %{"name" => name, "activity_status" => status} ->
+          %{"name" => name, "activityStatus" => activity_to_string(status)}
+
+        %{"name" => name, "activityStatus" => status} ->
+          %{"name" => name, "activityStatus" => status}
+
+        %{name: name} ->
+          %{"name" => name, "activityStatus" => "HOT"}
+      end)
+
+    Client.request(client, :put, "/v1/schema/#{collection_name}/tenants", tenants, [])
+  end
+
+  @doc """
+  Returns the batch size used for batch operations.
+
+  ## Examples
+
+      100 = Tenants.batch_size()
+  """
+  @spec batch_size() :: pos_integer()
+  def batch_size, do: @batch_size
+
   ## Private Helpers
 
+  defp activity_to_string(:active), do: "ACTIVE"
+  defp activity_to_string(:inactive), do: "INACTIVE"
   defp activity_to_string(:hot), do: "HOT"
   defp activity_to_string(:cold), do: "COLD"
   defp activity_to_string(:frozen), do: "FROZEN"

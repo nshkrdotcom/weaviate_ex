@@ -319,6 +319,59 @@ defmodule WeaviateEx.API.VectorConfig do
     %{"vectorizer" => "none"}
   end
 
+  @doc """
+  Configure a custom/unlisted vectorizer module.
+
+  Use this for vectorizers not explicitly supported or for user-provided modules.
+
+  ## Options
+
+  All options are passed directly to the module configuration with automatic
+  snake_case to camelCase conversion.
+
+  ## Examples
+
+      # Custom vectorizer with arbitrary configuration
+      VectorConfig.custom("my-custom-vectorizer",
+        model: "custom-model",
+        api_endpoint: "https://custom-api.example.com",
+        dimensions: 768
+      )
+
+      # Use in collection creation
+      VectorConfig.new("Article")
+      |> VectorConfig.with_custom_vectorizer("text2vec-custom", model: "my-model")
+  """
+  @spec custom(String.t(), keyword()) :: map()
+  def custom(module_name, opts \\ []) when is_binary(module_name) do
+    config =
+      Enum.reduce(opts, %{}, fn {key, value}, acc ->
+        key_str = key |> Atom.to_string() |> Macro.camelize() |> lcfirst()
+        Map.put(acc, key_str, value)
+      end)
+
+    %{
+      "vectorizer" => module_name,
+      "moduleConfig" => %{
+        module_name => config
+      }
+    }
+  end
+
+  @doc """
+  Add a custom vectorizer to the collection configuration.
+
+  ## Examples
+
+      VectorConfig.new("Article")
+      |> VectorConfig.with_custom_vectorizer("text2vec-custom", model: "my-model")
+  """
+  @spec with_custom_vectorizer(map(), String.t(), keyword()) :: map()
+  def with_custom_vectorizer(config, module_name, opts \\ []) do
+    vectorizer_config = custom(module_name, opts)
+    Map.merge(config, vectorizer_config)
+  end
+
   ## Index Configurations
 
   @doc """

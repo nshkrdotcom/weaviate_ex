@@ -64,7 +64,18 @@ defmodule WeaviateEx.Batch.ErrorTracking do
     Aggregated results from a batch operation.
 
     Tracks both successful and failed operations.
+
+    ## Memory Safety
+
+    To prevent memory exhaustion with very large batches, a maximum of
+    100,000 successful UUIDs are stored. When the limit is exceeded,
+    oldest entries (lowest indices) are evicted using a rolling window
+    strategy. Use `max_stored_results/0` to get the current limit.
     """
+
+    # Maximum number of stored results to prevent memory exhaustion
+    # Same as Python client's MAX_STORED_RESULTS
+    @max_stored_results 100_000
 
     defstruct failed_objects: [],
               failed_references: [],
@@ -77,6 +88,14 @@ defmodule WeaviateEx.Batch.ErrorTracking do
             successful_uuids: %{non_neg_integer() => String.t()},
             elapsed_seconds: float()
           }
+
+    @doc """
+    Get the maximum number of stored results.
+
+    Results beyond this limit will have oldest entries evicted.
+    """
+    @spec max_stored_results() :: pos_integer()
+    def max_stored_results, do: @max_stored_results
 
     @doc """
     Create a new empty results struct.
@@ -100,10 +119,44 @@ defmodule WeaviateEx.Batch.ErrorTracking do
 
     @doc """
     Record a successful object insertion with its index and UUID.
+
+    When the number of stored results exceeds the maximum (100,000),
+    oldest entries (lowest indices) are evicted to prevent memory exhaustion.
     """
     @spec add_success(t(), non_neg_integer(), String.t()) :: t()
     def add_success(%__MODULE__{} = results, index, uuid) do
-      %{results | successful_uuids: Map.put(results.successful_uuids, index, uuid)}
+      new_uuids = Map.put(results.successful_uuids, index, uuid)
+
+      if map_size(new_uuids) > @max_stored_results do
+        %{results | successful_uuids: evict_oldest(new_uuids)}
+      else
+        %{results | successful_uuids: new_uuids}
+      end
+    end
+
+    @doc """
+    Check if results are within the maximum stored limit.
+    """
+    @spec results_within_limit?(t()) :: boolean()
+    def results_within_limit?(%__MODULE__{successful_uuids: uuids}) do
+      map_size(uuids) <= @max_stored_results
+    end
+
+    # Evict oldest entries (lowest indices) to bring map back to limit
+    defp evict_oldest(uuids) when map_size(uuids) <= @max_stored_results, do: uuids
+
+    defp evict_oldest(uuids) do
+      # Find how many entries to remove
+      excess = map_size(uuids) - @max_stored_results
+
+      # Get sorted keys (indices) and remove the lowest ones
+      keys_to_remove =
+        uuids
+        |> Map.keys()
+        |> Enum.sort()
+        |> Enum.take(excess)
+
+      Map.drop(uuids, keys_to_remove)
     end
 
     @doc """

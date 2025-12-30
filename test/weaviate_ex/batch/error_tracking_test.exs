@@ -114,5 +114,77 @@ defmodule WeaviateEx.Batch.ErrorTrackingTest do
 
       assert Results.number_errors(results) == 2
     end
+
+    test "set_elapsed sets elapsed time" do
+      results = Results.new() |> Results.set_elapsed(1.5)
+
+      assert results.elapsed_seconds == 1.5
+    end
+
+    test "statistics returns correct counts" do
+      obj_error = %ErrorObject{message: "Error", object: %{}}
+
+      results =
+        Results.new()
+        |> Results.add_success(0, "uuid-1")
+        |> Results.add_success(1, "uuid-2")
+        |> Results.add_error(obj_error)
+
+      stats = Results.statistics(results)
+
+      assert stats.processed == 3
+      assert stats.successful == 2
+      assert stats.failed == 1
+    end
+
+    test "errors returns all errors" do
+      obj_error = %ErrorObject{message: "Obj Error", object: %{}}
+      ref_error = %ErrorReference{message: "Ref Error", reference: %{}}
+
+      results =
+        Results.new()
+        |> Results.add_error(obj_error)
+        |> Results.add_error(ref_error)
+
+      errors = Results.errors(results)
+
+      assert length(errors) == 2
+    end
+
+    test "max_stored_results returns default value" do
+      assert Results.max_stored_results() == 100_000
+    end
+
+    test "add_success evicts oldest entries when limit exceeded" do
+      # Override max for testing (use custom results with lower limit)
+      # Build up results beyond max
+      initial_results = Results.new()
+
+      # Add max + 100 entries to trigger eviction
+      results =
+        Enum.reduce(0..100_099, initial_results, fn index, acc ->
+          Results.add_success(acc, index, "uuid-#{index}")
+        end)
+
+      # Should have exactly max_stored_results entries
+      assert map_size(results.successful_uuids) == Results.max_stored_results()
+
+      # Oldest entries (0-99) should be evicted
+      refute Map.has_key?(results.successful_uuids, 0)
+      refute Map.has_key?(results.successful_uuids, 99)
+
+      # Newest entries should exist
+      assert Map.has_key?(results.successful_uuids, 100_099)
+      assert Map.has_key?(results.successful_uuids, 100)
+    end
+
+    test "results_within_limit? returns true when under limit" do
+      results =
+        Results.new()
+        |> Results.add_success(0, "uuid-1")
+        |> Results.add_success(1, "uuid-2")
+
+      assert Results.results_within_limit?(results)
+    end
   end
 end

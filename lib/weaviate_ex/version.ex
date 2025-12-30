@@ -19,6 +19,7 @@ defmodule WeaviateEx.Version do
 
   @minimum_version {1, 27, 0}
   @minimum_version_string "1.27.0"
+  @grpc_minimum_version {1, 23, 0}
 
   @type version :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
 
@@ -177,4 +178,67 @@ defmodule WeaviateEx.Version do
   end
 
   def get_grpc_max_message_size(_), do: :default
+
+  @doc """
+  Check if a server version supports gRPC.
+
+  gRPC support was added in Weaviate 1.23.0.
+
+  ## Examples
+
+      iex> Version.supports_grpc?({1, 28, 0})
+      true
+
+      iex> Version.supports_grpc?({1, 22, 0})
+      false
+  """
+  @spec supports_grpc?(version()) :: boolean()
+  def supports_grpc?(version), do: meets_minimum?(version, @grpc_minimum_version)
+
+  @doc """
+  Get the minimum Weaviate version required for gRPC support.
+
+  ## Examples
+
+      iex> Version.grpc_minimum_version()
+      {1, 23, 0}
+  """
+  @spec grpc_minimum_version() :: version()
+  def grpc_minimum_version, do: @grpc_minimum_version
+
+  @doc """
+  Check server compatibility by fetching the meta endpoint.
+
+  This function requires a client module that implements `meta/1`.
+  Returns `:ok` if the server version is compatible, or an error tuple
+  with details about why it's incompatible.
+
+  ## Examples
+
+      # Assuming you have a client that can fetch meta
+      :ok = Version.check_compatibility(client)
+
+      # If server version is too old
+      {:error, "Weaviate server version 1.20.0 is below minimum required 1.27.0"}
+  """
+  @spec check_compatibility(map()) :: :ok | {:error, String.t()}
+  def check_compatibility(meta_response) when is_map(meta_response) do
+    case get_server_version(meta_response) do
+      {:ok, version} ->
+        case validate_server(version) do
+          :ok ->
+            :ok
+
+          {:error, {:unsupported_version, actual, minimum}} ->
+            {:error,
+             "Weaviate server version #{format_version(actual)} is below minimum required #{format_version(minimum)}"}
+        end
+
+      {:error, :no_version} ->
+        {:error, "Unable to determine Weaviate server version from meta response"}
+
+      {:error, :invalid_version} ->
+        {:error, "Invalid version format in meta response"}
+    end
+  end
 end

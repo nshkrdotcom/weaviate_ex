@@ -105,6 +105,36 @@ defmodule WeaviateEx.Auth.OIDC do
   alias WeaviateEx.Auth.OIDC.{Config, TokenResponse}
 
   @doc """
+  Parses scope string into list of scopes.
+
+  Handles both space-separated (OAuth standard) and comma-separated formats.
+
+  ## Examples
+
+      iex> OIDC.parse_scopes("openid profile email")
+      ["openid", "profile", "email"]
+
+      iex> OIDC.parse_scopes("openid,profile,email")
+      ["openid", "profile", "email"]
+
+      iex> OIDC.parse_scopes(["openid", "profile"])
+      ["openid", "profile"]
+
+      iex> OIDC.parse_scopes(nil)
+      []
+  """
+  @spec parse_scopes(String.t() | list(String.t()) | nil) :: list(String.t())
+  def parse_scopes(scopes) when is_binary(scopes) do
+    scopes
+    |> String.split(~r/[\s,]+/, trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  def parse_scopes(scopes) when is_list(scopes), do: scopes
+  def parse_scopes(_), do: []
+
+  @doc """
   Discover OIDC configuration from the issuer's well-known endpoint.
 
   ## Example

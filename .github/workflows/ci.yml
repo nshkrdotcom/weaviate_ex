@@ -3,11 +3,18 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
     branches: [master]
 
+env:
+  MIX_ENV: test
+  ELIXIR_VERSION: "1.18.4"
+  OTP_VERSION: "28"
+
 jobs:
-  test:
+  format-and-lint:
+    name: Format & Lint
     runs-on: ubuntu-latest
 
     steps:
@@ -16,8 +23,38 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18.4"
-          otp-version: "28"
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run Credo
+        run: mix credo --strict || true
+        continue-on-error: true
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
 
       - name: Restore dependencies cache
         uses: actions/cache@v4
@@ -30,14 +67,185 @@ jobs:
         uses: actions/cache@v4
         with:
           path: _build
-          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-build-
+          key: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Restore PLT cache
+        uses: actions/cache@v4
+        id: plt-cache
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-plt-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-plt-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
 
-      - name: Run tests
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Run unit tests
         run: mix test
 
-      - name: Run dialyzer
+      - name: Create PLTs directory
+        if: steps.plt-cache.outputs.cache-hit != 'true'
+        run: mkdir -p priv/plts
+
+      - name: Run Dialyzer
         run: mix dialyzer
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    services:
+      weaviate:
+        image: cr.weaviate.io/semitechnologies/weaviate:1.28.14
+        ports:
+          - 8080:8080
+          - 50051:50051
+        env:
+          QUERY_DEFAULTS_LIMIT: 25
+          AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+          PERSISTENCE_DATA_PATH: /var/lib/weaviate
+          DEFAULT_VECTORIZER_MODULE: none
+          ENABLE_MODULES: ""
+          CLUSTER_HOSTNAME: node1
+          GRPC_PORT: 50051
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8080/v1/.well-known/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 30s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Wait for Weaviate to be ready
+        run: |
+          echo "Waiting for Weaviate to be ready..."
+          timeout 120 bash -c 'until wget -q --spider http://localhost:8080/v1/.well-known/ready; do echo "Waiting..."; sleep 2; done'
+          echo "Weaviate is ready!"
+
+      - name: Check Weaviate version
+        run: curl -s http://localhost:8080/v1/meta | head -c 500
+
+      - name: Run integration tests
+        env:
+          WEAVIATE_INTEGRATION: "true"
+          WEAVIATE_HOST: localhost
+          WEAVIATE_PORT: 8080
+          WEAVIATE_GRPC_PORT: 50051
+          WEAVIATE_SCHEME: http
+        run: mix test --include integration
+
+  integration-matrix:
+    name: Integration (Weaviate ${{ matrix.weaviate-version }})
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+
+    strategy:
+      fail-fast: false
+      matrix:
+        weaviate-version:
+          - "1.27.27"
+          - "1.28.14"
+          - "1.29.11"
+          - "1.30.22"
+
+    services:
+      weaviate:
+        image: cr.weaviate.io/semitechnologies/weaviate:${{ matrix.weaviate-version }}
+        ports:
+          - 8080:8080
+          - 50051:50051
+        env:
+          QUERY_DEFAULTS_LIMIT: 25
+          AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+          PERSISTENCE_DATA_PATH: /var/lib/weaviate
+          DEFAULT_VECTORIZER_MODULE: none
+          ENABLE_MODULES: ""
+          CLUSTER_HOSTNAME: node1
+          GRPC_PORT: 50051
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8080/v1/.well-known/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 30s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Wait for Weaviate to be ready
+        run: |
+          echo "Waiting for Weaviate ${{ matrix.weaviate-version }} to be ready..."
+          timeout 120 bash -c 'until wget -q --spider http://localhost:8080/v1/.well-known/ready; do echo "Waiting..."; sleep 2; done'
+          echo "Weaviate is ready!"
+
+      - name: Check Weaviate version
+        run: curl -s http://localhost:8080/v1/meta | head -c 500
+
+      - name: Run integration tests
+        env:
+          WEAVIATE_INTEGRATION: "true"
+          WEAVIATE_HOST: localhost
+          WEAVIATE_PORT: 8080
+          WEAVIATE_GRPC_PORT: 50051
+          WEAVIATE_SCHEME: http
+        run: mix test --include integration

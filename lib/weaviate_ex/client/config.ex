@@ -12,6 +12,13 @@ defmodule WeaviateEx.Client.Config do
     * `:grpc_max_message_size` - Max gRPC message size in bytes (default: 100MB)
     * `:additional_headers` - Extra headers to include in HTTP/gRPC requests (default: %{})
       Common use cases: X-OpenAI-Api-Key, X-Cohere-Api-Key for vectorizer/generative modules
+    * `:skip_wcs_headers` - Skip auto-detection of WCS headers (default: false)
+
+  ## WCS Auto-Detection
+
+  When connecting to Weaviate Cloud Services (WCS) instances, the client automatically
+  detects the cluster URL and adds appropriate headers. This is controlled by detecting
+  known WCS domains in the base_url.
 
   ## Examples
 
@@ -32,12 +39,16 @@ defmodule WeaviateEx.Client.Config do
   # 100MB
   @default_grpc_max_message_size 104_858_000
 
+  # Known WCS domains for auto-detection
+  @wcs_domains ["weaviate.network", "wcs.api.weaviate.io", "semi.network", "weaviate.cloud"]
+
   @type t :: %__MODULE__{
           base_url: String.t(),
           grpc_host: String.t(),
           grpc_port: integer(),
           api_key: String.t() | nil,
           timeout: integer(),
+          timeout_config: WeaviateEx.Config.Timeout.t() | nil,
           grpc_max_message_size: integer(),
           additional_headers: %{optional(String.t()) => String.t()}
         }
@@ -47,6 +58,7 @@ defmodule WeaviateEx.Client.Config do
             grpc_port: @default_grpc_port,
             api_key: nil,
             timeout: @default_timeout,
+            timeout_config: nil,
             grpc_max_message_size: @default_grpc_max_message_size,
             additional_headers: %{}
 
@@ -80,6 +92,7 @@ defmodule WeaviateEx.Client.Config do
       grpc_port: grpc_port,
       api_key: Keyword.get(opts, :api_key),
       timeout: Keyword.get(opts, :timeout, @default_timeout),
+      timeout_config: Keyword.get(opts, :timeout_config),
       grpc_max_message_size:
         Keyword.get(opts, :grpc_max_message_size, @default_grpc_max_message_size),
       additional_headers: additional_headers
@@ -130,5 +143,75 @@ defmodule WeaviateEx.Client.Config do
   defp validate_additional_headers!(other) do
     raise ArgumentError,
           "additional_headers must be a map, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Detects if the host is a Weaviate Cloud Services instance.
+
+  ## Examples
+
+      iex> Config.wcs_host?("https://my-cluster.weaviate.network")
+      true
+
+      iex> Config.wcs_host?("http://localhost:8080")
+      false
+  """
+  @spec wcs_host?(String.t()) :: boolean()
+  def wcs_host?(host) when is_binary(host) do
+    uri = URI.parse(host)
+    domain = uri.host || host
+
+    Enum.any?(@wcs_domains, &String.contains?(domain, &1))
+  end
+
+  def wcs_host?(_), do: false
+
+  @doc """
+  Adds WCS-specific headers if the host is a WCS instance.
+
+  Returns the config with updated `additional_headers` including the
+  `X-Weaviate-Cluster-URL` header for WCS instances.
+
+  ## Examples
+
+      config = Config.new(base_url: "https://my-cluster.weaviate.network")
+      config = Config.maybe_add_wcs_headers(config)
+      # config.additional_headers now contains X-Weaviate-Cluster-URL
+  """
+  @spec maybe_add_wcs_headers(t()) :: t()
+  def maybe_add_wcs_headers(%__MODULE__{base_url: base_url, additional_headers: headers} = config) do
+    if wcs_host?(base_url) do
+      updated_headers = Map.put(headers, "X-Weaviate-Cluster-URL", base_url)
+      %{config | additional_headers: updated_headers}
+    else
+      config
+    end
+  end
+
+  @doc """
+  Creates a new config with automatic WCS header detection.
+
+  This is equivalent to calling `new/1` followed by `maybe_add_wcs_headers/1`.
+
+  ## Options
+
+  All options from `new/1` plus:
+    * `:skip_wcs_headers` - Skip WCS header auto-detection (default: false)
+
+  ## Examples
+
+      config = Config.new_with_wcs_detection(base_url: "https://my-cluster.weaviate.network")
+      # WCS headers are automatically added
+  """
+  @spec new_with_wcs_detection(keyword()) :: t()
+  def new_with_wcs_detection(opts \\ []) do
+    skip_wcs = Keyword.get(opts, :skip_wcs_headers, false)
+    config = new(opts)
+
+    if skip_wcs do
+      config
+    else
+      maybe_add_wcs_headers(config)
+    end
   end
 end

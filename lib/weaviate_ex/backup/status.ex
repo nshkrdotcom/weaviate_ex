@@ -53,15 +53,36 @@ defmodule WeaviateEx.Backup.Status do
   end
 
   defmodule BackupInfo do
-    @moduledoc "Backup metadata from list operation"
+    @moduledoc """
+    Backup metadata from list operation.
+
+    Includes timing information and size metrics when available:
+    - `started_at` - When the backup started
+    - `completed_at` - When the backup completed
+    - `size_bytes` - Total size of the backup in bytes
+    """
     @type t :: %__MODULE__{
             id: String.t(),
             backend: atom(),
             status: atom(),
             path: String.t(),
-            collections: [String.t()]
+            collections: [String.t()],
+            started_at: DateTime.t() | nil,
+            completed_at: DateTime.t() | nil,
+            size_bytes: non_neg_integer() | nil,
+            error: String.t() | nil
           }
-    defstruct [:id, :backend, :status, :path, collections: []]
+    defstruct [
+      :id,
+      :backend,
+      :status,
+      :path,
+      :started_at,
+      :completed_at,
+      :size_bytes,
+      :error,
+      collections: []
+    ]
   end
 
   @doc """
@@ -227,9 +248,23 @@ defmodule WeaviateEx.Backup.Status do
       backend: backend,
       status: from_api(map["status"]),
       path: map["path"],
-      collections: map["classes"] || []
+      collections: map["classes"] || [],
+      started_at: parse_datetime(map["startedAt"]),
+      completed_at: parse_datetime(map["completedAt"]),
+      size_bytes: map["sizeBytes"],
+      error: map["error"]
     }
 
     {:ok, info}
+  end
+
+  # Parse ISO8601 datetime string to DateTime
+  defp parse_datetime(nil), do: nil
+
+  defp parse_datetime(str) when is_binary(str) do
+    case DateTime.from_iso8601(str) do
+      {:ok, dt, _offset} -> dt
+      {:error, _} -> nil
+    end
   end
 end

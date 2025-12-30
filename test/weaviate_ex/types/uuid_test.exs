@@ -98,4 +98,47 @@ defmodule WeaviateEx.Types.UUIDTest do
       assert UUID.valid?(uuid)
     end
   end
+
+  describe "extract_from_beacon/1" do
+    test "extracts UUID from simple beacon URL" do
+      assert {:ok, "550e8400-e29b-41d4-a716-446655440000"} =
+               UUID.extract_from_beacon(
+                 "weaviate://localhost/550e8400-e29b-41d4-a716-446655440000"
+               )
+    end
+
+    test "extracts UUID from beacon URL with collection" do
+      assert {:ok, "550e8400-e29b-41d4-a716-446655440000"} =
+               UUID.extract_from_beacon(
+                 "weaviate://localhost/Article/550e8400-e29b-41d4-a716-446655440000"
+               )
+    end
+
+    test "normalizes UUID to lowercase" do
+      assert {:ok, "550e8400-e29b-41d4-a716-446655440000"} =
+               UUID.extract_from_beacon(
+                 "weaviate://localhost/550E8400-E29B-41D4-A716-446655440000"
+               )
+    end
+
+    test "returns error for invalid beacon URL" do
+      assert {:error, _} = UUID.extract_from_beacon("https://example.com/uuid")
+    end
+
+    test "returns error for invalid UUID in beacon" do
+      assert {:error, _} = UUID.extract_from_beacon("weaviate://localhost/not-a-valid-uuid")
+    end
+
+    test "returns error for empty path" do
+      assert {:error, _} = UUID.extract_from_beacon("weaviate://localhost/")
+    end
+
+    test "extracts UUID from deeply nested beacon URL" do
+      # Some older Weaviate versions may have multiple path segments
+      assert {:ok, "550e8400-e29b-41d4-a716-446655440000"} =
+               UUID.extract_from_beacon(
+                 "weaviate://localhost/Article/Author/550e8400-e29b-41d4-a716-446655440000"
+               )
+    end
+  end
 end

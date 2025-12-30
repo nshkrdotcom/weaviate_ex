@@ -160,4 +160,61 @@ defmodule WeaviateEx.Auth.Azure do
     # Default to v2 style
     build_token_params(:v2, client_id)
   end
+
+  @doc """
+  Validates Microsoft/Azure password flow requirements.
+
+  Microsoft password flow (ROPC - Resource Owner Password Credential) requires:
+  - Username (must be a valid email address for Microsoft auth)
+  - Password (non-empty)
+  - Client ID
+
+  ## Examples
+
+      Azure.validate_password_flow(%{username: "user@example.com", password: "pass", client_id: "id"})
+      # => :ok
+
+      Azure.validate_password_flow(%{username: "invalid", password: "pass", client_id: "id"})
+      # => {:error, "Username must be a valid email address for Microsoft auth"}
+
+      Azure.validate_password_flow(%{password: "pass"})
+      # => {:error, "Microsoft password flow requires username, password, and client_id"}
+  """
+  @spec validate_password_flow(map()) :: :ok | {:error, String.t()}
+  def validate_password_flow(%{username: username, password: password, client_id: client_id})
+      when is_binary(username) and is_binary(password) and is_binary(client_id) do
+    cond do
+      String.length(password) < 1 ->
+        {:error, "Password cannot be empty"}
+
+      not String.contains?(username, "@") ->
+        {:error, "Username must be a valid email address for Microsoft auth"}
+
+      String.length(client_id) < 1 ->
+        {:error, "Client ID cannot be empty"}
+
+      true ->
+        :ok
+    end
+  end
+
+  def validate_password_flow(_) do
+    {:error, "Microsoft password flow requires username, password, and client_id"}
+  end
+
+  @doc """
+  Check if password flow (ROPC) is configured in the auth options.
+
+  ## Examples
+
+      Azure.password_flow_configured?(%{type: :oidc_password, username: "user", password: "pass"})
+      # => true
+
+      Azure.password_flow_configured?(%{type: :api_key})
+      # => false
+  """
+  @spec password_flow_configured?(map()) :: boolean()
+  def password_flow_configured?(%{type: :oidc_password}), do: true
+  def password_flow_configured?(%{type: :password}), do: true
+  def password_flow_configured?(_), do: false
 end

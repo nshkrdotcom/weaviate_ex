@@ -13,10 +13,22 @@ defmodule WeaviateEx.Objects.Payload do
   @doc """
   Normalizes a payload by converting atom keys to strings and recursively normalizing
   nested maps or lists.
+
+  Structs are passed through unchanged (they will be serialized later by
+  `serialize_properties/1`).
   """
   @spec normalize_keys(data()) :: data()
+  def normalize_keys(data) when is_struct(data) do
+    # Pass structs through unchanged - they will be serialized by serialize_properties
+    data
+  end
+
   def normalize_keys(data) when is_map(data) do
     Map.new(data, fn
+      {key, value} when is_struct(value) ->
+        # Pass structs through unchanged
+        {normalize_key(key), value}
+
       {key, value} when is_map(value) ->
         {normalize_key(key), normalize_keys(value)}
 
@@ -88,6 +100,17 @@ defmodule WeaviateEx.Objects.Payload do
     * Multi-target: `%{"relatedTo" => %{target_collection: "Category", uuids: "cat-uuid"}}`
 
   References are converted to beacon format and merged into properties.
+
+  ## Property Value Serialization
+
+  Special types are automatically serialized to Weaviate-compatible formats:
+
+    * `DateTime` - RFC3339 format (ISO8601 with timezone)
+    * `NaiveDateTime` - RFC3339 format (without timezone)
+    * `GeoCoordinate` - `%{"latitude" => lat, "longitude" => lon}`
+    * `PhoneNumber` - `%{"input" => number, "defaultCountry" => country}`
+
+  Nested objects and arrays are recursively serialized.
   """
   @spec prepare_for_insert(data(), String.t(), opts()) :: data()
   def prepare_for_insert(data, class_name, opts \\ []) do
@@ -96,6 +119,7 @@ defmodule WeaviateEx.Objects.Payload do
     |> validate_vectors!()
     |> handle_vectors()
     |> merge_references()
+    |> serialize_properties()
     |> ensure_id(opts)
     |> ensure_class(class_name)
   end
@@ -135,6 +159,7 @@ defmodule WeaviateEx.Objects.Payload do
     |> Map.delete("id")
   end
 
+  defp normalize_nested(value) when is_struct(value), do: value
   defp normalize_nested(value) when is_map(value), do: normalize_keys(value)
   defp normalize_nested(value), do: value
 
@@ -257,4 +282,56 @@ defmodule WeaviateEx.Objects.Payload do
       %{"beacon" => "weaviate://localhost/#{collection}/#{uuid}"}
     end)
   end
+
+  # Serialize property values to Weaviate API format
+  defp serialize_properties(data) do
+    case Map.get(data, "properties") do
+      nil -> data
+      %{} = props -> Map.put(data, "properties", serialize_values(props))
+    end
+  end
+
+  # Recursively serialize a map's values
+  defp serialize_values(map) when is_map(map) and not is_struct(map) do
+    Map.new(map, fn {k, v} -> {k, serialize_value(v)} end)
+  end
+
+  defp serialize_values(other), do: other
+
+  # DateTime -> RFC3339 format
+  defp serialize_value(%DateTime{} = dt) do
+    DateTime.to_iso8601(dt)
+  end
+
+  # NaiveDateTime -> RFC3339 format (without timezone)
+  defp serialize_value(%NaiveDateTime{} = dt) do
+    NaiveDateTime.to_iso8601(dt)
+  end
+
+  # GeoCoordinate struct -> map
+  defp serialize_value(%WeaviateEx.Types.GeoCoordinate{latitude: lat, longitude: lon}) do
+    %{"latitude" => lat, "longitude" => lon}
+  end
+
+  # PhoneNumber struct -> map
+  defp serialize_value(%WeaviateEx.Types.PhoneNumber{number: num, default_country: nil}) do
+    %{"input" => num}
+  end
+
+  defp serialize_value(%WeaviateEx.Types.PhoneNumber{number: num, default_country: country}) do
+    %{"input" => num, "defaultCountry" => country}
+  end
+
+  # Arrays - recursively serialize
+  defp serialize_value(list) when is_list(list) do
+    Enum.map(list, &serialize_value/1)
+  end
+
+  # Nested maps - recursively serialize
+  defp serialize_value(map) when is_map(map) and not is_struct(map) do
+    serialize_values(map)
+  end
+
+  # Pass through primitives and other values unchanged
+  defp serialize_value(other), do: other
 end

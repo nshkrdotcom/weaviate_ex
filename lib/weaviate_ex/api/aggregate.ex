@@ -133,6 +133,76 @@ defmodule WeaviateEx.API.Aggregate do
   end
 
   @doc """
+  Aggregate with near_object similarity constraint.
+
+  Aggregates objects that are semantically similar to a given object.
+
+  ## Parameters
+    * `client` - WeaviateEx client
+    * `collection_name` - Name of the collection
+    * `object_id` - UUID of the reference object
+    * `opts` - Options (same as over_all/3 plus :certainty, :distance)
+
+  ## Examples
+
+      {:ok, results} = Aggregate.with_near_object(client, "Article",
+        "550e8400-e29b-41d4-a716-446655440000",
+        metrics: [:count],
+        distance: 0.3
+      )
+
+  ## Returns
+    * `{:ok, [map()]}` - List of aggregation results
+    * `{:error, Error.t()}` - Error if aggregation fails
+  """
+  @spec with_near_object(Client.t(), collection_name(), String.t(), opts()) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def with_near_object(client, collection_name, object_id, opts \\ []) do
+    execute_aggregate(client, collection_name, :near_object, object_id, nil, opts)
+  end
+
+  @doc """
+  Aggregate with hybrid search constraint.
+
+  Combines vector similarity and keyword (BM25) search for aggregation.
+
+  ## Parameters
+    * `client` - WeaviateEx client
+    * `collection_name` - Name of the collection
+    * `query` - Search query string
+    * `opts` - Options including:
+      - `:alpha` - Weight between vector (1.0) and keyword (0.0) search (default: 0.5)
+      - `:fusion_type` - Fusion strategy (:ranked or :relative_score)
+      - Plus standard aggregation options
+
+  ## Examples
+
+      {:ok, results} = Aggregate.with_hybrid(client, "Article",
+        "machine learning",
+        alpha: 0.7,
+        metrics: [:count]
+      )
+
+      {:ok, results} = Aggregate.with_hybrid(client, "Article",
+        "popular topics",
+        alpha: 0.5,
+        fusion_type: :ranked,
+        properties: [
+          {:views, [:mean, :sum]}
+        ]
+      )
+
+  ## Returns
+    * `{:ok, [map()]}` - List of aggregation results
+    * `{:error, Error.t()}` - Error if aggregation fails
+  """
+  @spec with_hybrid(Client.t(), collection_name(), String.t(), opts()) ::
+          {:ok, [map()]} | {:error, Error.t()}
+  def with_hybrid(client, collection_name, query, opts \\ []) do
+    execute_aggregate(client, collection_name, :hybrid, query, nil, opts)
+  end
+
+  @doc """
   Aggregate with filter conditions.
 
   ## Parameters
@@ -445,6 +515,50 @@ defmodule WeaviateEx.API.Aggregate do
     filter_str = build_filter_string(filter)
     "(\n      where: #{filter_str}\n    )"
   end
+
+  defp build_search_clause(:near_object, object_id, _filter, opts) do
+    certainty = Keyword.get(opts, :certainty)
+    distance = Keyword.get(opts, :distance)
+
+    parts = [~s(id: "#{object_id}")]
+
+    parts =
+      if certainty do
+        [~s(certainty: #{certainty}) | parts]
+      else
+        parts
+      end
+
+    parts =
+      if distance do
+        [~s(distance: #{distance}) | parts]
+      else
+        parts
+      end
+
+    "(\n      nearObject: { #{Enum.join(Enum.reverse(parts), ", ")} }\n    )"
+  end
+
+  defp build_search_clause(:hybrid, query, _filter, opts) do
+    alpha = Keyword.get(opts, :alpha, 0.5)
+    fusion_type = Keyword.get(opts, :fusion_type)
+
+    parts = [~s(query: "#{query}"), "alpha: #{alpha}"]
+
+    parts =
+      if fusion_type do
+        fusion_str = fusion_type_to_string(fusion_type)
+        [~s(fusionType: #{fusion_str}) | parts]
+      else
+        parts
+      end
+
+    "(\n      hybrid: { #{Enum.join(Enum.reverse(parts), ", ")} }\n    )"
+  end
+
+  defp fusion_type_to_string(:ranked), do: "rankedFusion"
+  defp fusion_type_to_string(:relative_score), do: "relativeScoreFusion"
+  defp fusion_type_to_string(type) when is_binary(type), do: type
 
   defp build_filter_string(%{path: path, operator: operator} = filter) do
     parts = [

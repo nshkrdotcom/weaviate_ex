@@ -2,6 +2,11 @@
 
 This guide will help you get started with WeaviateEx, the Elixir client for Weaviate vector database.
 
+## Prerequisites
+
+- Elixir 1.18+
+- Docker (for running Weaviate locally)
+
 ## Installation
 
 Add WeaviateEx to your `mix.exs` dependencies:
@@ -9,7 +14,7 @@ Add WeaviateEx to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.3.0"}
+    {:weaviate_ex, "~> 0.7.2"}
   ]
 end
 ```
@@ -18,6 +23,32 @@ Then run:
 
 ```bash
 mix deps.get
+```
+
+## Starting Weaviate Locally
+
+WeaviateEx includes Mix tasks for managing a local Weaviate instance:
+
+```bash
+# Start Weaviate containers
+mix weaviate.start
+
+# Check status and health
+mix weaviate.status
+
+# Stop containers when done
+mix weaviate.stop
+```
+
+For development, you can also start Weaviate directly with Docker:
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -p 50051:50051 \
+  -e AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true \
+  -e DEFAULT_VECTORIZER_MODULE=none \
+  cr.weaviate.io/semitechnologies/weaviate:1.28.14
 ```
 
 ## Configuration
@@ -201,6 +232,58 @@ case WeaviateEx.Collections.get("NonExistent") do
 
   {:error, error} ->
     IO.puts("Error: #{inspect(error)}")
+end
+```
+
+## Testing
+
+WeaviateEx supports two testing modes:
+
+### Unit Tests (Mocked)
+
+Run fast, isolated tests without a Weaviate instance:
+
+```bash
+mix test
+```
+
+These tests use Mox to mock HTTP and gRPC responses.
+
+### Integration Tests (Live Weaviate)
+
+Run tests against a real Weaviate instance:
+
+```bash
+# Easiest: Automatic Weaviate management
+mix weaviate.test
+
+# Or manual management
+mix weaviate.start
+mix test --include integration
+mix weaviate.stop
+```
+
+### Writing Integration Tests
+
+Use the `WeaviateEx.IntegrationCase` module for consistent test setup:
+
+```elixir
+defmodule MyApp.MyIntegrationTest do
+  use WeaviateEx.IntegrationCase
+
+  test "creates and queries data" do
+    # Create a unique test collection (auto-cleaned up)
+    {name, {:ok, _}} = create_test_collection("MyTest", properties: [
+      %{name: "title", dataType: ["text"]}
+    ])
+
+    # Test your code
+    {:ok, _} = WeaviateEx.Objects.create(name, %{
+      properties: %{title: "Test"}
+    })
+
+    # Collection is automatically deleted after test
+  end
 end
 ```
 

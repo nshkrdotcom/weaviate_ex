@@ -7,6 +7,155 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2025-12-29
+
+### Added
+
+#### Multi-Tenancy Enhancements
+- **Fluent TenantClient API** (`WeaviateEx.TenantClient`):
+  - `with_tenant/2` - Create tenant-scoped client wrapper
+  - `collection/2` - Set collection for subsequent operations
+  - `insert/3`, `get/3`, `update/4`, `replace/4`, `delete/3` - CRUD operations
+  - `query/2`, `near_vector/3`, `near_text/3`, `hybrid/3`, `bm25/3` - Search operations
+  - `batch_insert/3`, `batch_delete/3` - Batch operations
+  - `count/2`, `exists?/2` - Utility operations
+  - Automatic tenant injection into all operations
+
+- **Batch Tenant Updates** (`WeaviateEx.API.Tenants`):
+  - `batch_update/3` - Update tenants in batches of 100 (matching Python client)
+  - `batch_size/0` - Returns configured batch size
+
+- **Tenant Struct** (`WeaviateEx.Types.Tenant`):
+  - Full typed activity status support: `:active`, `:inactive`, `:hot`, `:cold`, `:frozen`, `:offloaded`
+  - `new/2`, `to_map/1`, `from_map/1` - Construction and serialization
+  - `set_status/2`, `active?/1`, `inactive?/1` - Status management
+  - `valid_status?/1`, `valid_statuses/0` - Validation helpers
+
+#### Backup/Restore Enhancements
+- **Backup List Sorting** (`WeaviateEx.API.Backup`):
+  - `sort_by_starting_time_asc` option in `list/3` for chronological ordering
+
+- **Cancel with Dynamic Location** (`WeaviateEx.API.Backup`):
+  - `:location` option in `cancel/4` for dynamic backup location configuration
+
+- **BackupInfo Metadata** (`WeaviateEx.Backup.Status.BackupInfo`):
+  - `started_at` - When the backup started (DateTime)
+  - `completed_at` - When the backup completed (DateTime)
+  - `size_bytes` - Total backup size in bytes
+  - `error` - Error message if backup failed
+
+#### Auth/Connection Improvements
+- **WCS Header Auto-Detection** (`WeaviateEx.Client.Config`):
+  - `is_wcs_host?/1` - Detect Weaviate Cloud Services instances
+  - `maybe_add_wcs_headers/1` - Add WCS-specific headers automatically
+  - `new_with_wcs_detection/1` - Create config with automatic WCS detection
+  - Detects known WCS domains: weaviate.network, wcs.api.weaviate.io, semi.network, weaviate.cloud
+
+- **Server Version Compatibility** (`WeaviateEx.Version`):
+  - `check_compatibility/1` - Validate server version from meta response
+  - `supports_grpc?/1` - Check if version supports gRPC (1.23.0+)
+  - `grpc_minimum_version/0` - Get minimum gRPC version
+
+- **OIDC Scope Parsing** (`WeaviateEx.Auth.OIDC`):
+  - `parse_scopes/1` - Parse scope strings (space or comma separated)
+
+- **Microsoft Password Flow Validation** (`WeaviateEx.Auth.Azure`):
+  - `validate_password_flow/1` - Validate ROPC flow requirements
+  - `password_flow_configured?/1` - Check if password flow is enabled
+
+#### Schema/Collections Updates
+- **Multi-Tenancy Configuration** (`WeaviateEx.Schema.MultiTenancyConfig`):
+  - `auto_tenant_creation` - Automatically create tenants on first insert
+  - `auto_tenant_activation` - Automatically activate tenants when accessed
+  - `enabled/0`, `disabled/0` - Convenience constructors
+  - `with_auto_creation/0`, `with_auto_activation/0`, `fully_automatic/0` - Preset configurations
+
+- **Custom Vectorizer Support** (`WeaviateEx.API.VectorConfig`):
+  - `custom/2` - Configure custom/unlisted vectorizer modules
+  - `with_custom_vectorizer/3` - Add custom vectorizer to collection config
+
+#### Search/Query Enhancements
+- **Aggregate near_object** (`WeaviateEx.API.Aggregate`):
+  - `with_near_object/4` - Aggregate with near_object similarity constraint
+
+- **Aggregate hybrid** (`WeaviateEx.API.Aggregate`):
+  - `with_hybrid/4` - Aggregate with hybrid search constraint
+  - `:alpha` option for vector/keyword balance
+  - `:fusion_type` option for fusion strategy (`:ranked` or `:relative_score`)
+
+#### Data Types/Objects Improvements
+- **Multi-Target References** (`WeaviateEx.Types.Reference`):
+  - `to/3` - Create reference with optional target vectors
+  - `multi_target/3` - Create multi-target reference for named vectors
+  - `from_beacon/1`, `to_map/1`, `from_map/1` - Serialization
+  - `extract_id/1`, `extract_collection/1` - Extraction utilities
+
+- **Property Validation** (`WeaviateEx.Validation.Property`):
+  - `validate/2` - Validate property value against data type
+  - `validate_object/2` - Validate entire object against schema
+  - Supports all Weaviate data types including arrays
+
+- **Multi-Dimensional Vectors** (`WeaviateEx.Types.Vector`):
+  - `validate/1` - Validate 1D or 2D vectors (ColBERT support)
+  - `shape/1` - Get vector dimensions
+  - `one_dimensional?/1`, `multi_dimensional?/1` - Type checks
+  - `dimensionality/1` - Get inner dimension
+  - `normalize/1`, `dot_product/2`, `cosine_similarity/2` - Vector operations
+
+#### HTTP Enhancements
+- **Rate Limit Header Tracking** (`WeaviateEx.Protocol.HTTP.RateLimit`):
+  - `from_headers/1` - Extract rate limit info from response headers
+  - `should_wait?/1` - Check if client should wait
+  - `remaining_percent/1` - Get remaining request percentage
+  - `near_limit?/2` - Check if close to rate limit
+  - `seconds_until_reset/1` - Get seconds until reset
+  - `summary/1` - Human-readable status
+
+#### HTTP Transport-Level Retry
+- **HTTP Retry Module** (`WeaviateEx.Protocol.HTTP.Retry`):
+  - `with_retry/2` - Execute function with automatic retry on transport errors
+  - `calculate_backoff/1` - Exponential backoff calculation (capped at 32 seconds)
+  - `retryable_transport_error?/1` - Check if error is retryable transport error
+  - Retryable errors: connection refused, connection reset, transport timeout, closed, nxdomain
+  - Configurable `max_retries` (default: 3) and `base_delay_ms` (default: 500)
+  - HTTP client now automatically retries on transient transport failures
+
+#### Per-Operation Timeouts
+- **HTTP Client Timeout Integration**:
+  - Uses `WeaviateEx.Config.Timeout` module for operation-specific timeouts
+  - GET/HEAD requests use `query` timeout (30s default)
+  - POST/PUT/PATCH/DELETE use `insert` timeout (90s default)
+  - GraphQL queries (POST to /v1/graphql) use `query` timeout
+  - Added `pool_timeout` (5s default) for connection pool
+  - Added `timeout_config` field to `WeaviateEx.Client.Config`
+
+#### Batch Memory Safety
+- **MAX_STORED_RESULTS Limit** (`WeaviateEx.Batch.ErrorTracking.Results`):
+  - Added 100,000 result limit to prevent memory exhaustion
+  - Rolling window eviction removes oldest entries when limit reached
+  - `max_stored_results/0` - Get the configured limit
+  - `results_within_limit?/1` - Check if results are within limit
+
+#### Property Value Serialization
+- **Payload Serialization** (`WeaviateEx.Objects.Payload`):
+  - `DateTime` values automatically serialized to RFC3339 format (ISO8601)
+  - `NaiveDateTime` values serialized to RFC3339 format (without timezone)
+  - `GeoCoordinate` structs serialized to `%{"latitude" => lat, "longitude" => lon}`
+  - `PhoneNumber` structs serialized to `%{"input" => number, "defaultCountry" => country}`
+  - Recursive serialization for nested objects and arrays
+  - Structs preserved through key normalization for proper serialization
+
+#### UUID Utilities
+- **Beacon URL Extraction** (`WeaviateEx.Types.UUID`):
+  - `extract_from_beacon/1` - Extract UUID from Weaviate beacon URLs
+  - Supports simple format: `weaviate://localhost/<uuid>`
+  - Supports collection-prefixed format: `weaviate://localhost/<collection>/<uuid>`
+  - Automatic UUID validation and lowercase normalization
+
+### Changed
+- Enhanced tenant activity status to include all types (active, inactive, hot, cold, frozen, offloaded)
+- Backup list now supports optional sorting parameter
+
 ## [0.7.1] - 2025-12-29
 
 ### Added

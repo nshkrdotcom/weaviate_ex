@@ -1,12 +1,19 @@
 defmodule WeaviateEx.Protocol.HTTP.Client do
   @moduledoc """
   HTTP protocol implementation using Finch.
+
+  Includes transport-level retry for transient errors (connection refused, timeout, etc.)
+  and per-operation timeouts based on HTTP method.
   """
 
   @behaviour WeaviateEx.Protocol
 
   alias WeaviateEx.Client
+  alias WeaviateEx.Config.Timeout
   alias WeaviateEx.Error
+  alias WeaviateEx.Protocol.HTTP.Retry
+
+  @default_pool_timeout 5_000
 
   @impl true
   def request(%Client{config: config} = _client, method, path, body, opts) do
@@ -22,26 +29,74 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
     # Build Finch request
     finch_request = Finch.build(method, url, headers, encoded_body)
 
-    # Get timeout from opts or config
-    timeout = Keyword.get(opts, :timeout, config.timeout)
+    # Get timeout using Timeout module for per-operation timeouts
+    timeout = get_operation_timeout(config, method, path, opts)
 
-    # Execute request
-    case Finch.request(finch_request, WeaviateEx.Finch, receive_timeout: timeout) do
-      {:ok, %Finch.Response{status: status, body: response_body}}
-      when status >= 200 and status < 300 ->
-        parse_response(response_body)
+    # Build Finch options with pool_timeout
+    finch_opts = [
+      receive_timeout: timeout,
+      pool_timeout: @default_pool_timeout
+    ]
 
-      {:ok, %Finch.Response{status: status, body: response_body}} ->
-        handle_error_response(status, response_body)
+    # Execute request with retry wrapper for transport errors
+    execute_with_retry(finch_request, finch_opts, opts)
+  end
 
-      {:error, %Mint.TransportError{reason: :econnrefused}} ->
-        {:error, Error.exception(type: :connection_error, message: "Connection refused")}
+  # Execute request with automatic retry on transport errors
+  defp execute_with_retry(finch_request, finch_opts, opts) do
+    retry_opts = Keyword.take(opts, [:max_retries, :base_delay_ms])
 
-      {:error, %Mint.TransportError{reason: :timeout}} ->
-        {:error, Error.exception(type: :timeout_error, message: "Request timeout")}
+    Retry.with_retry(
+      fn -> Finch.request(finch_request, WeaviateEx.Finch, finch_opts) end,
+      retry_opts
+    )
+    |> handle_response()
+  end
 
-      {:error, reason} ->
-        {:error, Error.exception(type: :connection_error, message: inspect(reason))}
+  # Handle Finch response
+  defp handle_response({:ok, %Finch.Response{status: status, body: response_body}})
+       when status >= 200 and status < 300 do
+    parse_response(response_body)
+  end
+
+  defp handle_response({:ok, %Finch.Response{status: status, body: response_body}}) do
+    handle_error_response(status, response_body)
+  end
+
+  defp handle_response({:error, %Mint.TransportError{reason: :econnrefused}}) do
+    {:error, Error.exception(type: :connection_error, message: "Connection refused")}
+  end
+
+  defp handle_response({:error, %Mint.TransportError{reason: :timeout}}) do
+    {:error, Error.exception(type: :timeout_error, message: "Request timeout")}
+  end
+
+  defp handle_response({:error, %WeaviateEx.Error{} = error}) do
+    # Pass through retry exhausted errors
+    {:error, error}
+  end
+
+  defp handle_response({:error, reason}) do
+    {:error, Error.exception(type: :connection_error, message: inspect(reason))}
+  end
+
+  # Get operation-specific timeout
+  defp get_operation_timeout(config, method, path, opts) do
+    # Check if explicit timeout in opts
+    case Keyword.get(opts, :timeout) do
+      nil ->
+        # Use Timeout module for per-operation timeouts
+        timeout_config = Map.get(config, :timeout_config) || Timeout.new()
+
+        # Determine if this is a GraphQL query (POST to /v1/graphql)
+        if method == :post and String.contains?(path, "graphql") do
+          timeout_config.query
+        else
+          Timeout.for_method(timeout_config, method)
+        end
+
+      explicit_timeout ->
+        explicit_timeout
     end
   end
 

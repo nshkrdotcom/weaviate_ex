@@ -251,4 +251,126 @@ defmodule WeaviateEx.Objects.PayloadTest do
       assert result["properties"]["title"] == "Article"
     end
   end
+
+  describe "property value serialization" do
+    alias WeaviateEx.Types.GeoCoordinate
+    alias WeaviateEx.Types.PhoneNumber
+
+    test "serializes DateTime to RFC3339 format" do
+      dt = ~U[2024-12-29 15:30:00.123456Z]
+      data = %{properties: %{"created_at" => dt}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      assert result["properties"]["created_at"] == "2024-12-29T15:30:00.123456Z"
+    end
+
+    test "serializes NaiveDateTime to RFC3339 format" do
+      dt = ~N[2024-12-29 15:30:00.123456]
+      data = %{properties: %{"created_at" => dt}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      # NaiveDateTime doesn't have timezone, so no Z suffix
+      assert result["properties"]["created_at"] == "2024-12-29T15:30:00.123456"
+    end
+
+    test "serializes GeoCoordinate struct to map" do
+      {:ok, geo} = GeoCoordinate.new(52.3676, 4.9041)
+      data = %{properties: %{"location" => geo}}
+
+      result = Payload.prepare_for_insert(data, "Place", [])
+
+      assert result["properties"]["location"] == %{"latitude" => 52.3676, "longitude" => 4.9041}
+    end
+
+    test "serializes PhoneNumber struct to map" do
+      phone = PhoneNumber.new("+1 650-253-0000")
+      data = %{properties: %{"phone" => phone}}
+
+      result = Payload.prepare_for_insert(data, "Contact", [])
+
+      assert result["properties"]["phone"] == %{"input" => "+1 650-253-0000"}
+    end
+
+    test "serializes PhoneNumber with default country" do
+      phone = PhoneNumber.new("650-253-0000", default_country: "US")
+      data = %{properties: %{"phone" => phone}}
+
+      result = Payload.prepare_for_insert(data, "Contact", [])
+
+      assert result["properties"]["phone"] == %{
+               "input" => "650-253-0000",
+               "defaultCountry" => "US"
+             }
+    end
+
+    test "serializes nested objects with special types" do
+      {:ok, geo} = GeoCoordinate.new(40.7128, -74.0060)
+
+      data = %{
+        properties: %{
+          "address" => %{
+            "city" => "New York",
+            "location" => geo
+          }
+        }
+      }
+
+      result = Payload.prepare_for_insert(data, "Place", [])
+
+      assert result["properties"]["address"]["city"] == "New York"
+
+      assert result["properties"]["address"]["location"] == %{
+               "latitude" => 40.7128,
+               "longitude" => -74.0060
+             }
+    end
+
+    test "serializes arrays with special types" do
+      dt1 = ~U[2024-01-01 00:00:00Z]
+      dt2 = ~U[2024-12-31 23:59:59Z]
+
+      data = %{
+        properties: %{
+          "dates" => [dt1, dt2]
+        }
+      }
+
+      result = Payload.prepare_for_insert(data, "Event", [])
+
+      assert result["properties"]["dates"] == [
+               "2024-01-01T00:00:00Z",
+               "2024-12-31T23:59:59Z"
+             ]
+    end
+
+    test "passes through primitives unchanged" do
+      data = %{
+        properties: %{
+          "title" => "Hello",
+          "count" => 42,
+          "score" => 3.14,
+          "active" => true,
+          "tags" => ["a", "b", "c"]
+        }
+      }
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      assert result["properties"]["title"] == "Hello"
+      assert result["properties"]["count"] == 42
+      assert result["properties"]["score"] == 3.14
+      assert result["properties"]["active"] == true
+      assert result["properties"]["tags"] == ["a", "b", "c"]
+    end
+
+    test "handles nil values" do
+      data = %{properties: %{"optional" => nil}}
+
+      result = Payload.prepare_for_insert(data, "Article", [])
+
+      assert result["properties"]["optional"] == nil
+    end
+  end
 end

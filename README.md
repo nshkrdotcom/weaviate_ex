@@ -88,27 +88,28 @@ A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector dat
 
 > 🧰 **Prerequisite**: Docker Desktop (macOS/Windows) or Docker Engine (Linux)
 
-We ship the full set of Docker Compose profiles from the Python client under `ci/weaviate/`. Use our Mix tasks to bring everything up:
+We ship Docker Compose profiles from the Python client under `ci/`. Use our Mix tasks to bring everything up:
 
 ```bash
-# Boot every profile (single node, modules, RBAC, async, cluster, proxy, etc.)
-mix weaviate.start --version latest
+# Start Weaviate containers (default version: 1.28.14)
+mix weaviate.start
 
-# Inspect running services and exposed ports
+# Or specify a version
+mix weaviate.start --version 1.30.5
+
+# Inspect running services and health status
 mix weaviate.status
 ```
 
-The first run downloads several images (contextionary, proxy, multiple Weaviate variants) and waits for every `/v1/.well-known/ready` endpoint to return `200`. Expect it to take a couple of minutes on a fresh machine.
+The first run downloads the Weaviate Docker image and waits for the `/v1/.well-known/ready` endpoint to return `200`.
 
 When you're done:
 
 ```bash
-mix weaviate.stop --version latest
+mix weaviate.stop
 ```
 
-Need only the async “journey tests” stack? Pass `--profile async` to `mix weaviate.start`. The tasks accept any Docker image tag, so swap `latest` for an explicit `1.30.5` (or export `WEAVIATE_VERSION` to suppress Docker’s warning banners).
-
-> Prefer the classic single-node setup? `./install.sh` still exists and brings up the minimal compose file, but the Mix tasks give you the full parity matrix the Python client uses for integration testing.
+> Prefer direct scripts? Use `./ci/start_weaviate.sh 1.28.14` and `./ci/stop_weaviate.sh`.
 
 ### 2. Add to Your Project
 
@@ -117,7 +118,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.7.1"}
+    {:weaviate_ex, "~> 0.7.2"}
   ]
 end
 ```
@@ -2107,7 +2108,7 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 - ✅ Validates actual API behavior
 - ✅ Requires Weaviate running locally
 - ✅ Run with `--include integration` flag
-- ✅ 55 integration tests
+- ✅ 10 integration test suites (collections, objects, batch, query, health, search, filter, aggregate, auth/RBAC, backup)
 
 ### Running Tests
 
@@ -2115,12 +2116,18 @@ WeaviateEx has **comprehensive test coverage** with two testing modes:
 # Run all unit tests with mocks (default - no Weaviate needed)
 mix test
 
-# Run integration tests (requires live Weaviate)
-mix weaviate.start  # Start Weaviate first
-mix test --include integration
+# EASIEST: Run integration tests with automatic Weaviate management
+mix weaviate.test              # Starts Weaviate, runs tests, stops Weaviate
+mix weaviate.test --keep       # Keep Weaviate running after tests
+mix weaviate.test -v 1.30.5    # Test against specific Weaviate version
+
+# MANUAL: Run integration tests with separate Weaviate management
+mix weaviate.start             # Start Weaviate containers
+mix test --include integration # Run integration tests
+mix weaviate.stop              # Stop Weaviate containers
 
 # Or use environment variable
-WEAVIATE_INTEGRATION=true mix test
+WEAVIATE_INTEGRATION=true mix test --include integration
 
 # Run specific test file
 mix test test/weaviate_ex/api/collections_test.exs
@@ -2133,6 +2140,11 @@ mix test --cover
 
 # Run only integration tests
 mix test --only integration
+
+# Run specific integration test suites
+mix test --only integration test/integration/search_integration_test.exs
+mix test --only rbac    # RBAC tests (requires port 8092)
+mix test --only backup  # Backup tests (requires port 8093)
 ```
 
 ### Test Structure
@@ -2141,7 +2153,9 @@ mix test --only integration
 test/
 ├── test_helper.exs           # Test setup, Mox configuration
 ├── support/
-│   └── fixtures.ex           # Test fixtures and helpers
+│   ├── factory.ex            # Test data factories
+│   ├── mocks.ex              # Mox mock definitions
+│   └── integration_case.ex   # Shared integration test module
 ├── weaviate_ex_test.exs      # Top-level API tests
 ├── weaviate_ex/
 │   ├── api/                  # API module tests (mocked)
@@ -2155,11 +2169,36 @@ test/
 │   ├── batch_test.exs        # Batch operations tests
 │   └── query_test.exs        # Query builder tests
 └── integration/              # Integration tests (live Weaviate)
-    ├── collections_integration_test.exs
-    ├── objects_integration_test.exs
-    ├── batch_integration_test.exs
-    ├── query_integration_test.exs
-    └── health_integration_test.exs
+    ├── collections_integration_test.exs  # Collection CRUD
+    ├── objects_integration_test.exs      # Object CRUD
+    ├── batch_integration_test.exs        # Batch operations
+    ├── query_integration_test.exs        # Query execution
+    ├── health_integration_test.exs       # Health checks
+    ├── search_integration_test.exs       # BM25, near_vector, pagination
+    ├── filter_integration_test.exs       # Filter operators, AND/OR
+    ├── aggregate_integration_test.exs    # Aggregations, group by
+    ├── auth_integration_test.exs         # RBAC, API key auth (port 8092)
+    └── backup_integration_test.exs       # Backup/restore (port 8093)
+```
+
+### Integration Test Helper
+
+Use `WeaviateEx.IntegrationCase` for consistent test setup:
+
+```elixir
+defmodule MyIntegrationTest do
+  use WeaviateEx.IntegrationCase  # Auto-configures HTTP client, cleanup
+
+  test "my integration test" do
+    # Unique collection names with automatic cleanup
+    {name, {:ok, _}} = create_test_collection("MyTest", properties: [...])
+
+    # Or use scoped collections
+    with_collection([prefix: "Scoped"], fn name ->
+      # Collection exists only within this block
+    end)
+  end
+end
 ```
 
 ### Test Coverage
@@ -2191,85 +2230,88 @@ Current test coverage by module:
 
 ## Mix Tasks
 
-Our developer tooling mirrors the Python client’s workflows by shelling out to the Compose scripts in `ci/weaviate/`:
+WeaviateEx provides Mix tasks for managing local Weaviate Docker containers:
+
+| Task | Description |
+|------|-------------|
+| `mix weaviate.start` | Start Weaviate Docker containers |
+| `mix weaviate.stop` | Stop Weaviate Docker containers |
+| `mix weaviate.status` | Show container status and health check |
+| `mix weaviate.test` | Start Weaviate, run integration tests, stop Weaviate |
+| `mix weaviate.logs` | Show Docker container logs |
 
 ```bash
-# Start every profile with a specific Weaviate tag (default: latest)
-mix weaviate.start --version 1.34.0
+# Start Weaviate containers (default version: 1.28.14)
+mix weaviate.start
+mix weaviate.start --version 1.30.5    # Specific version
+mix weaviate.start -v latest           # Latest version
 
-# Only bring up the async/journey-test stack
-mix weaviate.start --profile async --version latest
-
-# Stop containers (match the version you started with)
-mix weaviate.stop --version latest
-
-# Tear everything down and wipe named volumes
-mix weaviate.stop --version latest --remove-volumes
-
-# See container status for each compose file and exposed ports
+# Check container status and health
 mix weaviate.status
 
-# Tail the last 100 lines from a specific compose file
-mix weaviate.logs --file docker-compose-backup.yml --tail 100
+# Stop all Weaviate containers
+mix weaviate.stop
+mix weaviate.stop --keep-data          # Preserve data directory
 
-# Follow logs for the async profile
-mix weaviate.logs --file docker-compose-async.yml --follow
+# Run integration tests (full lifecycle management)
+mix weaviate.test                      # Start, test, stop
+mix weaviate.test --keep               # Keep Weaviate running after tests
+mix weaviate.test -v 1.30.5            # Test against specific version
+
+# View container logs
+mix weaviate.logs                      # Show last 100 lines
+mix weaviate.logs --tail 50            # Show last 50 lines
+mix weaviate.logs --file docker-compose-backup.yml  # Specific compose file
+mix weaviate.logs -f --file docker-compose.yml      # Follow logs
 ```
 
-> ℹ️ The log and status tasks execute `docker compose -f ci/weaviate/<file> …`. If you don’t want to pass `--version` every time, export `WEAVIATE_VERSION=<tag>` in your shell to avoid Docker warnings about missing variables.
-
-### Helper script
-
-Prefer a single entry point? Use the convenience wrapper in `scripts/`:
-
-```bash
-# Show help
-./scripts/weaviate-stack.sh help
-
-# Run the full start → status → logs → stop cycle
-./scripts/weaviate-stack.sh cycle
-
-# Start only the async profile with a specific tag
-./scripts/weaviate-stack.sh start --profile async --version 1.34.0
-```
-
-The script simply forwards to the Mix tasks under the hood, adding a friendly help menu and defaults (`--version latest`, logs from `docker-compose.yml`, tail 20 lines).
+The tasks shell out to scripts in `ci/` which manage multiple Docker Compose profiles (single node, RBAC, backup, cluster, async, etc.).
 
 ## Docker Management
 
 ### Using the bundled scripts
 
-All Compose profiles live under `ci/weaviate/` (ported straight from the Python client). The shell helpers there mirror our Mix tasks:
+All Compose profiles live under `ci/` (ported from the Python client). The shell scripts manage multiple configurations:
 
 ```bash
-# Start every profile (single node, modules, RBAC, cluster, async, proxy…)
-./ci/weaviate/start_weaviate.sh latest
+# Start all profiles (single node, modules, RBAC, cluster, async, proxy, backup)
+./ci/start_weaviate.sh 1.28.14
 
 # Async-only sandbox for journey tests
-./ci/weaviate/start_weaviate_jt.sh latest
+./ci/start_weaviate_jt.sh 1.28.14
 
-# Stop whatever is running
-./ci/weaviate/stop_weaviate.sh latest
+# Stop all containers
+./ci/stop_weaviate.sh
 ```
 
-Edit `ci/weaviate/compose.sh` if you add/remove compose files so the scripts (and Mix tasks) continue to iterate over the correct set.
+Edit `ci/compose.sh` to add/remove compose files from the managed set.
+
+### Available Docker Compose Profiles
+
+| File | Port(s) | Description |
+|------|---------|-------------|
+| `docker-compose.yml` | 8080, 50051 | Primary single-node instance |
+| `docker-compose-rbac.yml` | 8092 | RBAC-enabled instance |
+| `docker-compose-backup.yml` | 8093 | Backup-enabled instance |
+| `docker-compose-cluster.yml` | 8087-8089 | 3-node cluster |
+| `docker-compose-async.yml` | 8090 | Async/journey test instance |
+| `docker-compose-modules.yml` | 8091 | Module-enabled instance |
+| `docker-compose-proxy.yml` | 8094 | Proxy configuration |
 
 ### Direct Docker Compose commands
 
-You can operate on any profile manually by passing `-f ci/weaviate/<file>`:
-
 ```bash
 # Spawn just the baseline stack
-docker compose -f ci/weaviate/docker-compose.yml up -d
+docker compose -f ci/docker-compose.yml up -d
 
 # Inspect the cluster nodes
-docker compose -f ci/weaviate/docker-compose-cluster.yml ps
+docker compose -f ci/docker-compose-cluster.yml ps
 
 # Tail logs for the RBAC profile
-docker compose -f ci/weaviate/docker-compose-rbac.yml logs -f
+docker compose -f ci/docker-compose-rbac.yml logs -f
 
 # Remove everything (data included)
-docker compose -f ci/weaviate/docker-compose.yml down -v
+docker compose -f ci/docker-compose.yml down -v
 ```
 
 ### Troubleshooting tips
@@ -2279,7 +2321,7 @@ docker compose -f ci/weaviate/docker-compose.yml down -v
 docker info
 
 # See which services are up for a given profile
-docker compose -f ci/weaviate/docker-compose-backup.yml ps -a
+docker compose -f ci/docker-compose-backup.yml ps -a
 
 # Check the ready endpoint of the primary instance
 curl http://localhost:8080/v1/.well-known/ready
@@ -2672,10 +2714,22 @@ Contributions are welcome! Here's how you can help:
 2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
 3. **Write tests**: All new features should include tests
 4. **Run tests**: `mix test` (should pass)
-5. **Run Credo**: `mix credo` (should pass)
-6. **Commit changes**: `git commit -m 'Add amazing feature'`
-7. **Push to branch**: `git push origin feature/amazing-feature`
-8. **Open a Pull Request**
+5. **Run integration tests**: `mix weaviate.test` (optional but recommended)
+6. **Run Credo**: `mix credo` (should pass)
+7. **Commit changes**: `git commit -m 'Add amazing feature'`
+8. **Push to branch**: `git push origin feature/amazing-feature`
+9. **Open a Pull Request**
+
+### CI/CD Pipeline
+
+Pull requests automatically run the following GitHub Actions jobs:
+
+| Job | Description |
+|-----|-------------|
+| `format-and-lint` | Code formatting and Credo linting |
+| `unit-tests` | 2300+ unit tests with Mox mocking + Dialyzer |
+| `integration-tests` | Integration tests against Weaviate 1.28.14 |
+| `integration-matrix` | Tests against Weaviate 1.27, 1.28, 1.29, 1.30 (master/tags only) |
 
 ### Development Guidelines
 
@@ -2685,6 +2739,7 @@ Contributions are welcome! Here's how you can help:
 - Add typespecs for public functions
 - Update documentation for API changes
 - Add examples for new features
+- For API changes, add integration tests in `test/integration/`
 
 ## License
 

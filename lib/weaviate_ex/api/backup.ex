@@ -298,17 +298,26 @@ defmodule WeaviateEx.API.Backup do
   @doc """
   List all backups for a storage backend.
 
+  ## Options
+
+  - `:sort_by_starting_time_asc` - Sort backups by start time ascending (default: false)
+
   ## Examples
 
       {:ok, backups} = Backup.list(client, :filesystem)
       Enum.each(backups, fn backup ->
         IO.puts("\#{backup.id}: \#{backup.status}")
       end)
+
+      # Sort by start time ascending
+      {:ok, backups} = Backup.list(client, :s3, sort_by_starting_time_asc: true)
   """
-  @spec list(Client.t(), Storage.t()) ::
+  @spec list(Client.t(), Storage.t(), keyword()) ::
           {:ok, [Status.BackupInfo.t()]} | {:error, Error.t()}
-  def list(client, backend) do
-    path = "/v1/backups/#{Storage.to_api_path(backend)}"
+  def list(client, backend, opts \\ []) do
+    sort_asc = Keyword.get(opts, :sort_by_starting_time_asc, false)
+    query_string = if sort_asc, do: "?sortByStartingTimeAsc=true", else: ""
+    path = "/v1/backups/#{Storage.to_api_path(backend)}#{query_string}"
 
     case Client.request(client, :get, path, nil, []) do
       {:ok, response} when is_list(response) ->
@@ -331,18 +340,47 @@ defmodule WeaviateEx.API.Backup do
   @doc """
   Cancel an in-progress backup.
 
+  ## Options
+
+  - `:location` - Dynamic backup location configuration (Location struct)
+
   ## Examples
 
       :ok = Backup.cancel(client, "my-backup", :filesystem)
+
+      # Cancel with dynamic location
+      :ok = Backup.cancel(client, "my-backup", :s3,
+        location: Location.s3("my-bucket", "/backups", region: "us-west-2"))
   """
-  @spec cancel(Client.t(), String.t(), Storage.t()) ::
+  @spec cancel(Client.t(), String.t(), Storage.t(), keyword()) ::
           :ok | {:error, Error.t()}
-  def cancel(client, backup_id, backend) do
+  def cancel(client, backup_id, backend, opts \\ []) do
     path = "/v1/backups/#{Storage.to_api_path(backend)}/#{backup_id}"
 
-    case Client.request(client, :delete, path, nil, []) do
+    body = build_cancel_body(opts)
+
+    case Client.request(client, :delete, path, body, []) do
       {:ok, _} -> :ok
       {:error, error} -> {:error, error}
+    end
+  end
+
+  defp build_cancel_body(opts) do
+    case Keyword.get(opts, :location) do
+      nil ->
+        nil
+
+      %Location.Filesystem{} = loc ->
+        %{"config" => Location.to_api(loc)}
+
+      %Location.S3{} = loc ->
+        %{"config" => Location.to_api(loc)}
+
+      %Location.GCS{} = loc ->
+        %{"config" => Location.to_api(loc)}
+
+      %Location.Azure{} = loc ->
+        %{"config" => Location.to_api(loc)}
     end
   end
 

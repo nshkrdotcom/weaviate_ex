@@ -108,6 +108,38 @@ defmodule WeaviateEx.Types.UUID do
     format_uuid(modified_bytes)
   end
 
+  @doc """
+  Extract UUID from a Weaviate beacon URL.
+
+  Beacon URLs have the format:
+  - `weaviate://localhost/<uuid>`
+  - `weaviate://localhost/<collection>/<uuid>`
+
+  ## Examples
+
+      iex> UUID.extract_from_beacon("weaviate://localhost/550e8400-e29b-41d4-a716-446655440000")
+      {:ok, "550e8400-e29b-41d4-a716-446655440000"}
+
+      iex> UUID.extract_from_beacon("weaviate://localhost/Article/550e8400-e29b-41d4-a716-446655440000")
+      {:ok, "550e8400-e29b-41d4-a716-446655440000"}
+
+      iex> UUID.extract_from_beacon("https://example.com/uuid")
+      {:error, "Not a valid Weaviate beacon URL: https://example.com/uuid"}
+  """
+  @spec extract_from_beacon(String.t()) :: {:ok, String.t()} | {:error, String.t()}
+  def extract_from_beacon("weaviate://localhost/" <> rest) when byte_size(rest) > 0 do
+    uuid = rest |> String.split("/") |> List.last()
+    validate(uuid)
+  end
+
+  def extract_from_beacon("weaviate://localhost/") do
+    {:error, "Not a valid Weaviate beacon URL: weaviate://localhost/"}
+  end
+
+  def extract_from_beacon(url) when is_binary(url) do
+    {:error, "Not a valid Weaviate beacon URL: #{url}"}
+  end
+
   # Format 16 bytes as UUID string
   defp format_uuid(<<a::32, b::16, c::16, d::16, e::48>>) do
     hex = fn int, len ->
