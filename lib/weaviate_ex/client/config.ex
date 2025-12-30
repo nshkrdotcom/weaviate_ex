@@ -8,11 +8,16 @@ defmodule WeaviateEx.Client.Config do
     * `:grpc_host` - gRPC host for data operations (default: derived from base_url or "localhost")
     * `:grpc_port` - gRPC port (default: 50051)
     * `:api_key` - API key for authentication (optional)
+    * `:auth` - Authentication config (`WeaviateEx.Auth`) for API key, bearer token, or OIDC
     * `:timeout` - Default timeout in milliseconds (default: 60000)
     * `:grpc_max_message_size` - Max gRPC message size in bytes (default: 100MB)
     * `:additional_headers` - Extra headers to include in HTTP/gRPC requests (default: %{})
       Common use cases: X-OpenAI-Api-Key, X-Cohere-Api-Key for vectorizer/generative modules
     * `:skip_wcs_headers` - Skip auto-detection of WCS headers (default: false)
+    * `:connection` - Connection pool settings (`WeaviateEx.Config.Connection` or keyword list)
+    * `:proxy` - Proxy settings (`WeaviateEx.Config.Proxy`, keyword list, or `:env`)
+    * `:finch_name` - Finch instance name to use (default: `WeaviateEx.Finch`)
+    * `:token_manager` - Existing OIDC TokenManager to attach (optional)
 
   ## WCS Auto-Detection
 
@@ -28,7 +33,7 @@ defmodule WeaviateEx.Client.Config do
       # Weaviate Cloud
       Config.new(
         base_url: "https://my-cluster.weaviate.network",
-        grpc_host: "grpc-my-cluster.weaviate.network",
+        grpc_host: "my-cluster.grpc.weaviate.network",
         grpc_port: 443,
         api_key: "your-api-key"
       )
@@ -42,25 +47,41 @@ defmodule WeaviateEx.Client.Config do
   # Known WCS domains for auto-detection
   @wcs_domains ["weaviate.network", "wcs.api.weaviate.io", "semi.network", "weaviate.cloud"]
 
+  alias WeaviateEx.Config.{Connection, Proxy}
+
   @type t :: %__MODULE__{
           base_url: String.t(),
           grpc_host: String.t(),
           grpc_port: integer(),
           api_key: String.t() | nil,
+          auth: WeaviateEx.Auth.t() | nil,
+          token_manager: GenServer.server() | nil,
+          token_manager_owner: boolean(),
           timeout: integer(),
           timeout_config: WeaviateEx.Config.Timeout.t() | nil,
           grpc_max_message_size: integer(),
-          additional_headers: %{optional(String.t()) => String.t()}
+          additional_headers: %{optional(String.t()) => String.t()},
+          connection: Connection.t() | nil,
+          proxy: Proxy.t() | nil,
+          finch_name: atom(),
+          finch_owner: boolean()
         }
 
   defstruct base_url: "http://localhost:8080",
             grpc_host: "localhost",
             grpc_port: @default_grpc_port,
             api_key: nil,
+            auth: nil,
+            token_manager: nil,
+            token_manager_owner: false,
             timeout: @default_timeout,
             timeout_config: nil,
             grpc_max_message_size: @default_grpc_max_message_size,
-            additional_headers: %{}
+            additional_headers: %{},
+            connection: nil,
+            proxy: nil,
+            finch_name: WeaviateEx.Finch,
+            finch_owner: false
 
   @doc """
   Create config from keyword list.
@@ -86,16 +107,24 @@ defmodule WeaviateEx.Client.Config do
     additional_headers = Keyword.get(opts, :additional_headers, %{})
     validate_additional_headers!(additional_headers)
 
+    auth = normalize_auth(Keyword.get(opts, :auth))
+    api_key = normalize_api_key(auth, Keyword.get(opts, :api_key))
+
     %__MODULE__{
       base_url: base_url,
       grpc_host: grpc_host,
       grpc_port: grpc_port,
-      api_key: Keyword.get(opts, :api_key),
+      api_key: api_key,
+      auth: auth,
+      token_manager: Keyword.get(opts, :token_manager),
       timeout: Keyword.get(opts, :timeout, @default_timeout),
       timeout_config: Keyword.get(opts, :timeout_config),
       grpc_max_message_size:
         Keyword.get(opts, :grpc_max_message_size, @default_grpc_max_message_size),
-      additional_headers: additional_headers
+      additional_headers: additional_headers,
+      connection: normalize_connection(Keyword.get(opts, :connection)),
+      proxy: normalize_proxy(Keyword.get(opts, :proxy)),
+      finch_name: Keyword.get(opts, :finch_name, WeaviateEx.Finch)
     }
   end
 
@@ -112,7 +141,21 @@ defmodule WeaviateEx.Client.Config do
   # Derive gRPC host from base URL
   defp derive_grpc_host(base_url) do
     uri = URI.parse(base_url)
-    uri.host || "localhost"
+    host = uri.host || "localhost"
+
+    cond do
+      not wcs_host?(host) -> host
+      String.ends_with?(host, ".weaviate.network") -> derive_weaviate_network_grpc_host(host)
+      true -> "grpc-#{host}"
+    end
+  end
+
+  # Derive gRPC host for .weaviate.network domains
+  defp derive_weaviate_network_grpc_host(host) do
+    case String.split(host, ".", parts: 2) do
+      [ident, domain] -> "#{ident}.grpc.#{domain}"
+      _ -> "grpc-#{host}"
+    end
   end
 
   # Derive gRPC port - use 443 for HTTPS, 50051 for HTTP
@@ -143,6 +186,46 @@ defmodule WeaviateEx.Client.Config do
   defp validate_additional_headers!(other) do
     raise ArgumentError,
           "additional_headers must be a map, got: #{inspect(other)}"
+  end
+
+  defp normalize_auth(nil), do: nil
+
+  defp normalize_auth(%{issuer_url: _issuer_url, auth: auth}) when is_map(auth) do
+    auth
+  end
+
+  defp normalize_auth(auth) when is_map(auth), do: auth
+
+  defp normalize_auth(other) do
+    raise ArgumentError, "auth must be a WeaviateEx.Auth map, got: #{inspect(other)}"
+  end
+
+  defp normalize_api_key(%{type: :api_key, api_key: api_key}, _), do: api_key
+  defp normalize_api_key(%{type: :bearer_token, access_token: token}, _), do: token
+  defp normalize_api_key(_auth, api_key), do: api_key
+
+  defp normalize_connection(nil), do: nil
+  defp normalize_connection(%Connection{} = connection), do: connection
+  defp normalize_connection(opts) when is_list(opts), do: Connection.new(opts)
+
+  defp normalize_connection(other) do
+    raise ArgumentError,
+          "connection must be a WeaviateEx.Config.Connection or keyword list, got: #{inspect(other)}"
+  end
+
+  defp normalize_proxy(nil), do: nil
+  defp normalize_proxy(:env), do: normalize_proxy(Proxy.from_env())
+  defp normalize_proxy(:from_env), do: normalize_proxy(Proxy.from_env())
+
+  defp normalize_proxy(%Proxy{} = proxy) do
+    if Proxy.configured?(proxy), do: proxy, else: nil
+  end
+
+  defp normalize_proxy(opts) when is_list(opts), do: normalize_proxy(Proxy.new(opts))
+
+  defp normalize_proxy(other) do
+    raise ArgumentError,
+          "proxy must be a WeaviateEx.Config.Proxy, keyword list, or :env, got: #{inspect(other)}"
   end
 
   @doc """

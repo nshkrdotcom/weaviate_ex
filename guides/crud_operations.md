@@ -202,6 +202,21 @@ IO.inspect(object["vector"])
 )
 ```
 
+### Fetch by IDs
+
+Fetch a specific set of objects while preserving the input ID order:
+
+```elixir
+ids = [
+  "550e8400-e29b-41d4-a716-446655440001",
+  "550e8400-e29b-41d4-a716-446655440002"
+]
+
+{:ok, objects} = WeaviateEx.Objects.fetch_objects_by_ids("Article", ids,
+  return_properties: ["title", "content"]
+)
+```
+
 ### List Objects
 
 List objects with pagination:
@@ -380,6 +395,11 @@ end)
 ```
 
 ## Validation
+
+WeaviateEx performs basic client-side validation before sending data:
+
+- `properties` is required for insert and update operations
+- `id` and `vector` are reserved property names and raise `ArgumentError`
 
 Validate object data without creating it:
 

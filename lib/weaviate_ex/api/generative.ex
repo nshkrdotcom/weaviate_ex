@@ -372,6 +372,21 @@ defmodule WeaviateEx.API.Generative do
     maybe_add_param(params, opts, :max_new_tokens, "maxNewTokens", &to_string/1)
   end
 
+  defp build_provider_params(:databricks, opts) do
+    params = build_common_params(opts)
+    params = maybe_add_param(params, opts, :frequency_penalty, "frequencyPenalty", &to_string/1)
+    params = maybe_add_param(params, opts, :presence_penalty, "presencePenalty", &to_string/1)
+    params = maybe_add_param(params, opts, :log_probs, "logProbs", &to_string/1)
+    params = maybe_add_param(params, opts, :top_log_probs, "topLogProbs", &to_string/1)
+    params = maybe_add_param(params, opts, :n, "n", &to_string/1)
+    maybe_add_param(params, opts, :stop, "stop", &format_list/1)
+  end
+
+  defp build_provider_params(:friendliai, opts) do
+    params = build_common_params(opts)
+    maybe_add_param(params, opts, :n, "n", &to_string/1)
+  end
+
   defp build_provider_params(:xai, opts) do
     # XAI supports topP in addition to common params
     build_common_params(opts)
@@ -397,6 +412,11 @@ defmodule WeaviateEx.API.Generative do
   end
 
   defp quote_string(value), do: ~s("#{value}")
+
+  defp format_list(values) when is_list(values) do
+    formatted = Enum.map_join(values, ", ", &quote_string/1)
+    "[#{formatted}]"
+  end
 
   defp provider_to_string(:openai), do: "openai"
   defp provider_to_string(:anthropic), do: "anthropic"

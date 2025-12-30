@@ -48,6 +48,10 @@ defmodule WeaviateEx.Collections do
 
   import WeaviateEx, only: [request: 4]
 
+  alias WeaviateEx.Config.AutoTenant
+  alias WeaviateEx.Config.ObjectTTL
+  alias WeaviateEx.Schema.MultiTenancyConfig
+
   @type collection_name :: String.t()
   @type collection_config :: map()
   @type property :: map()
@@ -103,6 +107,9 @@ defmodule WeaviateEx.Collections do
   - `:invertedIndexConfig` - Inverted index configuration
   - `:replicationConfig` - Replication settings
   - `:multiTenancyConfig` - Multi-tenancy settings
+  - `:multi_tenancy_config` - Typed multi-tenancy config (`WeaviateEx.Schema.MultiTenancyConfig`)
+  - `:object_ttl` - Object TTL config (`WeaviateEx.Config.ObjectTTL`)
+  - `:auto_tenant` - Auto-tenant config (`WeaviateEx.Config.AutoTenant`)
 
   ## Examples
 
@@ -418,23 +425,30 @@ defmodule WeaviateEx.Collections do
   defp deep_merge(_map, override), do: override
 
   defp normalize_map(map) when is_map(map) do
-    Map.new(map, fn
-      {key, value} when is_map(value) ->
-        {normalize_key(key), normalize_map(value)}
-
-      {key, value} when is_list(value) ->
-        {normalize_key(key), Enum.map(value, &normalize_collection_value/1)}
-
-      {key, value} ->
-        {normalize_key(key), value}
+    Map.new(map, fn {key, value} ->
+      {normalize_key(key), normalize_value(value)}
     end)
   end
 
   defp normalize_map(value), do: value
 
-  defp normalize_collection_value(value) when is_map(value), do: normalize_map(value)
-  defp normalize_collection_value(value), do: value
+  defp normalize_value(%ObjectTTL{} = ttl), do: ObjectTTL.to_map(ttl)
+  defp normalize_value(%AutoTenant{} = auto_tenant), do: AutoTenant.to_map(auto_tenant)
+  defp normalize_value(%MultiTenancyConfig{} = config), do: MultiTenancyConfig.to_map(config)
+  defp normalize_value(value) when is_map(value), do: normalize_map(value)
+  defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
+  defp normalize_value(value), do: value
 
+  defp normalize_key(:object_ttl), do: "objectTTLConfig"
+  defp normalize_key("object_ttl"), do: "objectTTLConfig"
+  defp normalize_key(:object_ttl_config), do: "objectTTLConfig"
+  defp normalize_key("object_ttl_config"), do: "objectTTLConfig"
+  defp normalize_key(:multi_tenancy), do: "multiTenancyConfig"
+  defp normalize_key("multi_tenancy"), do: "multiTenancyConfig"
+  defp normalize_key(:multi_tenancy_config), do: "multiTenancyConfig"
+  defp normalize_key("multi_tenancy_config"), do: "multiTenancyConfig"
+  defp normalize_key(:auto_tenant), do: "autoTenantCreation"
+  defp normalize_key("auto_tenant"), do: "autoTenantCreation"
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
   defp normalize_key(key), do: key
 

@@ -402,7 +402,10 @@ defmodule WeaviateEx.API.Data do
       |> maybe_add_fields(return_properties)
       |> maybe_add_tenant(tenant)
 
-    Query.execute(query, client)
+    case Query.execute(query, client) do
+      {:ok, objects} -> {:ok, reorder_objects_by_ids(objects, ids)}
+      error -> error
+    end
   end
 
   defp maybe_add_fields(query, []), do: query
@@ -410,6 +413,22 @@ defmodule WeaviateEx.API.Data do
 
   defp maybe_add_tenant(query, nil), do: query
   defp maybe_add_tenant(query, tenant), do: Query.tenant(query, tenant)
+
+  defp reorder_objects_by_ids(objects, ids) do
+    indexed =
+      Map.new(objects, fn object ->
+        {get_in(object, ["_additional", "id"]) || object["id"] || object[:id], object}
+      end)
+
+    ids
+    |> Enum.reduce([], fn id, acc ->
+      case Map.get(indexed, id) do
+        nil -> acc
+        object -> [object | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
 
   ## Private Helpers
 

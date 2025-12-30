@@ -441,5 +441,29 @@ defmodule WeaviateEx.Objects.DataOpsTest do
       assert {:error, %WeaviateEx.Error{type: :not_found}} =
                WeaviateEx.Objects.exists?(@test_collection, "nonexistent-id")
     end
+
+    test "Objects.fetch_objects_by_ids/3 preserves ID order" do
+      ids = ["550e8400-e29b-41d4-a716-446655440001", "550e8400-e29b-41d4-a716-446655440002"]
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", body, _opts ->
+        assert body["query"] =~ "ContainsAny"
+        assert body["query"] =~ @test_collection
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               @test_collection => [
+                 %{"title" => "Second", "_additional" => %{"id" => Enum.at(ids, 1)}},
+                 %{"title" => "First", "_additional" => %{"id" => Enum.at(ids, 0)}}
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, objects} = WeaviateEx.Objects.fetch_objects_by_ids(@test_collection, ids)
+      assert Enum.map(objects, &get_in(&1, ["_additional", "id"])) == ids
+    end
   end
 end

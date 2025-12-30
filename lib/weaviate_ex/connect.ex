@@ -64,7 +64,10 @@ defmodule WeaviateEx.Connect do
       |> normalize_cluster_url()
 
     # Extract hostname for gRPC
-    grpc_host = "grpc-" <> extract_hostname(cluster_url)
+    grpc_host =
+      cluster_url
+      |> extract_hostname()
+      |> derive_wcs_grpc_host()
 
     %{
       base_url: cluster_url,
@@ -202,9 +205,27 @@ defmodule WeaviateEx.Connect do
   end
 
   defp extract_hostname(url) do
-    url
-    |> String.replace(~r{^https?://}, "")
-    |> String.split("/")
-    |> List.first()
+    uri =
+      case URI.parse(url) do
+        %URI{host: nil} -> URI.parse("https://#{url}")
+        parsed -> parsed
+      end
+
+    uri.host ||
+      url
+      |> String.replace(~r{^https?://}, "")
+      |> String.split("/")
+      |> List.first()
+  end
+
+  defp derive_wcs_grpc_host(host) do
+    if String.ends_with?(host, ".weaviate.network") do
+      case String.split(host, ".", parts: 2) do
+        [ident, domain] -> "#{ident}.grpc.#{domain}"
+        _ -> "grpc-#{host}"
+      end
+    else
+      "grpc-#{host}"
+    end
   end
 end

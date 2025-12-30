@@ -14,6 +14,14 @@ query = WeaviateEx.Query.get("Article")
 {:ok, results} = WeaviateEx.Query.execute(query)
 ```
 
+## Execution Modes (gRPC vs GraphQL)
+
+When you pass a `WeaviateEx.Client`, `Query.execute/2` uses gRPC for supported
+features (filters, group_by, target vectors, near_image/near_media, references,
+and vector metadata). If you use options not yet supported in gRPC (for example
+`rerank`, sorting, cursor pagination, or hybrid vectors), it automatically falls
+back to GraphQL. Calling `Query.execute/1` without a client always uses GraphQL.
+
 ## Basic Queries
 
 ### Fetch Objects
@@ -30,6 +38,24 @@ query = WeaviateEx.Query.get("Article")
 Enum.each(articles, fn article ->
   IO.puts("#{article["title"]} by #{article["author"]}")
 end)
+```
+
+### Fetch Objects by IDs
+
+Fetch multiple objects by UUIDs (results preserve input order):
+
+```elixir
+alias WeaviateEx.API.Data
+
+ids = [
+  "550e8400-e29b-41d4-a716-446655440001",
+  "550e8400-e29b-41d4-a716-446655440002"
+]
+
+{:ok, objects} =
+  Data.fetch_objects_by_ids(client, "Article", ids,
+    return_properties: ["title", "content"]
+  )
 ```
 
 ### Pagination

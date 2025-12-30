@@ -59,7 +59,10 @@ defmodule WeaviateEx.API.Tenants do
 
       channel ->
         grpc_opts = [
-          api_key: client.config.api_key
+          api_key: client.config.api_key,
+          auth: client.config.auth,
+          token_manager: client.config.token_manager,
+          additional_headers: client.config.additional_headers
         ]
 
         case GRPCTenants.list(channel, collection_name, grpc_opts) do
@@ -126,7 +129,13 @@ defmodule WeaviateEx.API.Tenants do
         {:error, Error.exception(type: :connection_error, message: "gRPC channel not available")}
 
       channel ->
-        grpc_opts = [api_key: client.config.api_key]
+        grpc_opts = [
+          api_key: client.config.api_key,
+          auth: client.config.auth,
+          token_manager: client.config.token_manager,
+          additional_headers: client.config.additional_headers
+        ]
+
         fetch_tenant_via_grpc(channel, collection_name, tenant_name, grpc_opts)
     end
   end

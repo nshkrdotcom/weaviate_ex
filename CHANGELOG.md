@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Transport & Auth
+- **WCS gRPC Host Parsing**: `.weaviate.network` clusters now use `ident.grpc.<domain>` (matches Python client)
+- **Proxy + Pool Wiring**: client `connection`/`proxy` options are applied to Finch pools and gRPC channels
+- **OIDC Client Auth**: `Client.connect/1` accepts `WeaviateEx.Auth` configs and auto-refreshes tokens
+- **Skip Init Checks**: new `:skip_init_checks` option to bypass meta/version/gRPC health checks
+- **gRPC Header Forwarding**: `additional_headers` are included in gRPC metadata by default
+
 #### Batch Operations
 - **Wait for Vector Indexing** (`WeaviateEx.Batch.VectorIndexing`):
   - `wait_for_indexing/3` - Wait for all vectors to be indexed after batch operations
@@ -21,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `all_indexed?/2` - Check if all vectors are indexed
   - Options: `:timeout`, `:poll_interval`, `:how_many_failures`, `:tenant`
   - Exposed via `WeaviateEx.API.Batch.wait_for_vector_indexing/3`
+- **All-Fail Batch Errors** (`WeaviateEx.API.Batch`, `WeaviateEx.Batch`):
+  - Returns `:batch_all_failed` error when every object in a batch fails
+- **gRPC Stream Backoff Handling** (`WeaviateEx.Batch.Stream`):
+  - Applies server backoff by updating the stream buffer size
 
 #### RBAC Enhancements
 - **User Assignments with Type** (`WeaviateEx.API.RBAC`):
@@ -45,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `multi_tenancy/1` - Build multi-tenancy update config
   - `description/1` - Build description update
   - `merge/1` - Combine multiple update configs
+- **Property Range Filters** (`WeaviateEx.Property`):
+  - `index_range_filters` option maps to `indexRangeFilters` on schema properties
+- **Config Struct Serialization** (`WeaviateEx.Collections`, `WeaviateEx.API.Collections`):
+  - Auto-serializes `ObjectTTL`, `AutoTenant`, and `MultiTenancyConfig` in create/update payloads
+- **Collection Handle Defaults** (`WeaviateEx.Collection`):
+  - `new/3`, `with_tenant/2`, `with_consistency/2` and data ops apply default tenant/consistency
 
 #### Query Enhancements
 - **Multi-Vector Queries** (`WeaviateEx.Query.NearVector`):
@@ -53,6 +70,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `per_target/2` - Query with different vectors per named vector space
   - `weighted_targets/2` - Weighted multi-target vector query
   - `to_api/1` - Convert to API format
+- **gRPC Search Parity** (`WeaviateEx.GRPC.Services.Search`):
+  - gRPC search now includes filters, group_by, target vectors, near_image/near_media, references, and vector metadata
+  - gRPC parsing now returns reference properties and vector metadata when requested
+
+#### Data Operations
+- **Fetch Objects by IDs** (`WeaviateEx.API.Data`):
+  - `fetch_objects_by_ids/4` helper with input order preserved
+- **Fetch Objects by IDs** (`WeaviateEx.Objects`):
+  - `fetch_objects_by_ids/3` convenience wrapper using global config
+- **Payload Validation** (`WeaviateEx.Objects.Payload`):
+  - Client-side checks for required `properties` and reserved names (`id`, `vector`)
+
+#### Generative AI
+- **Provider Parameter Parity** (`WeaviateEx.Generative.Config`, `WeaviateEx.API.Generative`):
+  - Added Databricks options (`frequency_penalty`, `presence_penalty`, `log_probs`, `top_log_probs`, `n`, `stop`)
+  - Added FriendliAI `n` parameter support
 
 #### Aggregation
 - **Near Image Aggregation** (`WeaviateEx.API.Aggregate`):
@@ -173,9 +206,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supported types: `:oidc_client_credentials`, `:oidc_password`
   - Clear error messages for invalid or missing auth configuration
 
+### Fixed
+
+#### Debug
+- **REST Debug Options** (`WeaviateEx.Debug`): add `node_name` and `consistency_level` query params for object fetches
+- **gRPC Debug Filters** (`WeaviateEx.Debug`, `WeaviateEx.GRPC.Services.Search`): accept filter path aliases so ID filters apply correctly
+
 ### Changed
 - Updated `@valid_statuses` in `Tenant` to include transitional statuses
 - Improved alias ordering in multiple modules for consistency
+- `Query.execute/3` now falls back to GraphQL when a query uses options not supported by gRPC (rerank, sorting, cursor pagination, hybrid vectors)
 
 ### Stats
 - 2612 tests passing (138 new tests added)

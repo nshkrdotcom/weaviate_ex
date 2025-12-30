@@ -103,7 +103,8 @@ Weaviate supports various data types for properties:
     %{
       name: "price",
       dataType: ["number"],
-      indexFilterable: true
+      indexFilterable: true,
+      indexRangeFilters: true
     },
     # Date property
     %{
@@ -201,6 +202,28 @@ Configure text search and filtering:
 })
 ```
 
+## Object TTL Configuration
+
+Automatically expire objects using the object TTL config:
+
+```elixir
+alias WeaviateEx.Config.ObjectTTL
+
+ttl = ObjectTTL.delete_by_update_time(86_400, true)
+
+{:ok, _} = WeaviateEx.Collections.create("Session", %{
+  properties: [
+    %{name: "token", dataType: ["text"]}
+  ],
+  object_ttl: ttl
+})
+
+# Disable TTL later if needed
+{:ok, _} = WeaviateEx.Collections.update("Session", %{
+  object_ttl: ObjectTTL.disable()
+})
+```
+
 ## Multi-tenancy Configuration
 
 Enable multi-tenancy for data isolation:
@@ -215,6 +238,21 @@ Enable multi-tenancy for data isolation:
     autoTenantCreation: false,   # Auto-create tenants on insert
     autoTenantActivation: true   # Auto-activate inactive tenants
   }
+})
+```
+
+### Typed Multi-tenancy Helpers
+
+```elixir
+alias WeaviateEx.Config.AutoTenant
+alias WeaviateEx.Schema.MultiTenancyConfig
+
+{:ok, _} = WeaviateEx.Collections.create("TenantData", %{
+  properties: [
+    %{name: "data", dataType: ["text"]}
+  ],
+  multi_tenancy_config: MultiTenancyConfig.new(enabled: true, auto_tenant_creation: true),
+  auto_tenant: AutoTenant.enable(auto_delete_timeout: 3_600)
 })
 ```
 

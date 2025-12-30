@@ -823,7 +823,11 @@ defmodule WeaviateEx.Query do
       # Fall back to HTTP if no gRPC channel
       execute_http(query, opts)
     else
-      execute_grpc(query, channel, client, opts)
+      if grpc_supported?(query) do
+        execute_grpc(query, channel, client, opts)
+      else
+        execute_http(query, opts)
+      end
     end
   end
 
@@ -833,7 +837,7 @@ defmodule WeaviateEx.Query do
 
     graphql_query = build_graphql(query)
 
-    case request(:post, "/v1/graphql", %{query: graphql_query}, opts) do
+    case request(:post, "/v1/graphql", %{"query" => graphql_query}, opts) do
       {:ok, response} -> parse_http_response(response, query.collection)
       error -> error
     end
@@ -882,6 +886,14 @@ defmodule WeaviateEx.Query do
     GRPCSearch.near_object(channel, query.collection, id, opts)
   end
 
+  defp dispatch_grpc_search(%{near_image: %NearImage{} = near_image} = query, channel, opts) do
+    GRPCSearch.near_image(channel, query.collection, near_image, opts)
+  end
+
+  defp dispatch_grpc_search(%{near_media: %NearMedia{} = near_media} = query, channel, opts) do
+    GRPCSearch.near_media(channel, query.collection, near_media, opts)
+  end
+
   defp dispatch_grpc_search(%{hybrid: %{query: hybrid_query}} = query, channel, opts)
        when not is_nil(hybrid_query) do
     GRPCSearch.hybrid(channel, query.collection, hybrid_query, opts)
@@ -906,6 +918,27 @@ defmodule WeaviateEx.Query do
     GRPCSearch.bm25(channel, query.collection, "", opts)
   end
 
+  defp grpc_supported?(%__MODULE__{} = query) do
+    unsupported =
+      [
+        not is_nil(query.rerank),
+        not is_nil(query.sort),
+        not is_nil(query.after),
+        hybrid_has_vector?(query.hybrid)
+      ]
+
+    Enum.all?(unsupported, &(!&1))
+  end
+
+  defp hybrid_has_vector?(nil), do: false
+
+  defp hybrid_has_vector?(params) when is_map(params) do
+    case Map.get(params, :vector) do
+      nil -> false
+      _ -> true
+    end
+  end
+
   defp build_grpc_opts(%__MODULE__{} = query, client, opts) do
     [
       limit: query.limit || 10,
@@ -913,9 +946,15 @@ defmodule WeaviateEx.Query do
       autocut: query.auto_limit || 0,
       return_properties: query.fields,
       return_metadata: build_metadata_list(query.additional),
-      api_key: client.config.api_key
+      api_key: client.config.api_key,
+      auth: client.config.auth,
+      token_manager: client.config.token_manager,
+      additional_headers: client.config.additional_headers
     ]
     |> maybe_add_grpc_opt(:tenant, query.tenant)
+    |> maybe_add_grpc_opt(:filters, query.where)
+    |> maybe_add_grpc_opt(:group_by, query.group_by)
+    |> maybe_add_grpc_opt(:return_references, query.return_references)
     |> add_search_opts(query)
     |> Keyword.merge(Keyword.take(opts, [:timeout]))
   end
@@ -925,22 +964,33 @@ defmodule WeaviateEx.Query do
     opts
     |> maybe_add_grpc_opt(:certainty, params[:certainty])
     |> maybe_add_grpc_opt(:distance, params[:distance])
+    |> maybe_add_grpc_opt(:move_to, params[:move_to])
+    |> maybe_add_grpc_opt(:move_away, params[:move_away])
+    |> maybe_add_grpc_opt(:target_vectors, params[:target_vectors])
   end
 
   defp add_search_opts(opts, %{near_vector: params}) when is_map(params) do
     opts
     |> maybe_add_grpc_opt(:certainty, params[:certainty])
     |> maybe_add_grpc_opt(:distance, params[:distance])
+    |> maybe_add_grpc_opt(:target_vectors, params[:target_vectors])
   end
 
   defp add_search_opts(opts, %{near_object: params}) when is_map(params) do
     opts
     |> maybe_add_grpc_opt(:certainty, params[:certainty])
     |> maybe_add_grpc_opt(:distance, params[:distance])
+    |> maybe_add_grpc_opt(:target_vectors, params[:target_vectors])
   end
 
   defp add_search_opts(opts, %{hybrid: params}) when is_map(params) do
-    maybe_add_grpc_opt(opts, :alpha, params[:alpha])
+    opts
+    |> maybe_add_grpc_opt(:alpha, params[:alpha])
+    |> maybe_add_grpc_opt(:properties, params[:properties])
+    |> maybe_add_grpc_opt(:fusion_type, params[:fusion_type] || params[:fusionType])
+    |> maybe_add_grpc_opt(:target_vectors, params[:target_vectors])
+    |> maybe_add_grpc_opt(:bm25_search_operator, params[:bm25SearchOperator])
+    |> maybe_add_grpc_opt(:max_vector_distance, params[:maxVectorDistance])
   end
 
   defp add_search_opts(opts, %{bm25: params}) when is_map(params) do
@@ -964,6 +1014,7 @@ defmodule WeaviateEx.Query do
       "lastUpdateTimeUnix" -> :update_time
       "score" -> :score
       "explainScore" -> :explain_score
+      "isConsistent" -> :is_consistent
       other when is_atom(other) -> other
       _ -> nil
     end)
@@ -973,28 +1024,76 @@ defmodule WeaviateEx.Query do
   defp build_metadata_list(_), do: [:uuid, :distance, :certainty]
 
   # Parse gRPC SearchReply to match expected format
-  defp parse_grpc_reply(%Weaviate.V1.SearchReply{results: results}, fields, additional) do
-    Enum.map(results, fn result ->
-      object = parse_result_object(result, fields)
+  defp parse_grpc_reply(
+         %Weaviate.V1.SearchReply{results: results, group_by_results: group_by_results},
+         fields,
+         additional
+       ) do
+    if group_by_results != [] do
+      parse_group_by_results(group_by_results, fields, additional)
+    else
+      Enum.map(results, &parse_single_result(&1, fields, additional))
+    end
+  end
 
-      # Add _additional fields if requested
-      if additional && length(additional) > 0 do
-        additional_data = parse_additional_metadata(result.metadata)
-        Map.put(object, "_additional", additional_data)
-      else
-        object
-      end
-    end)
+  defp parse_single_result(result, fields, additional) do
+    object = parse_result_object(result, fields)
+    maybe_add_additional_data(object, result.metadata, additional)
+  end
+
+  defp maybe_add_additional_data(object, _metadata, nil), do: object
+  defp maybe_add_additional_data(object, _metadata, []), do: object
+
+  defp maybe_add_additional_data(object, metadata, _additional) do
+    additional_data = parse_additional_metadata(metadata)
+    Map.put(object, "_additional", additional_data)
   end
 
   defp parse_result_object(result, _fields) do
-    # Extract properties from the result
     case result.properties do
-      %Weaviate.V1.PropertiesResult{non_ref_props: props} when not is_nil(props) ->
-        parse_properties_to_map(props)
+      %Weaviate.V1.PropertiesResult{} = props ->
+        parse_properties_result(props)
 
       _ ->
         %{}
+    end
+  end
+
+  defp parse_properties_result(%Weaviate.V1.PropertiesResult{} = props) do
+    base =
+      case props.non_ref_props do
+        %Weaviate.V1.Properties{} = non_ref -> parse_properties_to_map(non_ref)
+        _ -> %{}
+      end
+
+    refs = parse_ref_properties(props.ref_props)
+    Map.merge(base, refs)
+  end
+
+  defp parse_ref_properties([]), do: %{}
+
+  defp parse_ref_properties(ref_props) when is_list(ref_props) do
+    Enum.reduce(ref_props, %{}, fn %Weaviate.V1.RefPropertiesResult{} = ref_prop, acc ->
+      objects = Enum.map(ref_prop.properties, &parse_reference_properties_result/1)
+      Map.put(acc, ref_prop.prop_name, objects)
+    end)
+  end
+
+  defp parse_reference_properties_result(%Weaviate.V1.PropertiesResult{} = props) do
+    base = parse_properties_result(props)
+    additional = parse_additional_metadata(props.metadata)
+
+    additional =
+      if props.target_collection && props.target_collection != "" do
+        Map.put(additional, "targetCollection", props.target_collection)
+      else
+        additional
+      end
+
+    if additional == %{} do
+      base
+    else
+      Map.put(base, "_additional", additional)
     end
   end
 
@@ -1082,38 +1181,124 @@ defmodule WeaviateEx.Query do
   defp parse_additional_metadata(nil), do: %{}
 
   defp parse_additional_metadata(metadata) do
-    result = %{}
+    %{}
+    |> maybe_add_id(metadata)
+    |> maybe_add_distance(metadata)
+    |> maybe_add_certainty(metadata)
+    |> maybe_add_score(metadata)
+    |> maybe_add_creation_time(metadata)
+    |> maybe_add_last_update_time(metadata)
+    |> maybe_add_explain_score(metadata)
+    |> maybe_add_is_consistent(metadata)
+    |> maybe_add_vector_metadata(metadata)
+    |> maybe_add_named_vectors(metadata)
+  end
 
-    result =
-      if metadata.id && metadata.id != "", do: Map.put(result, "id", metadata.id), else: result
+  defp maybe_add_id(result, %{id: id}) when is_binary(id) and id != "" do
+    Map.put(result, "id", id)
+  end
 
-    result =
-      if metadata.distance_present,
-        do: Map.put(result, "distance", metadata.distance),
-        else: result
+  defp maybe_add_id(result, _metadata), do: result
 
-    result =
-      if metadata.certainty_present,
-        do: Map.put(result, "certainty", metadata.certainty),
-        else: result
+  defp maybe_add_distance(result, %{distance_present: true, distance: distance}) do
+    Map.put(result, "distance", distance)
+  end
 
-    result = if metadata.score_present, do: Map.put(result, "score", metadata.score), else: result
+  defp maybe_add_distance(result, _metadata), do: result
 
-    result =
-      if metadata.creation_time_unix_present do
-        Map.put(result, "creationTimeUnix", metadata.creation_time_unix)
-      else
+  defp maybe_add_certainty(result, %{certainty_present: true, certainty: certainty}) do
+    Map.put(result, "certainty", certainty)
+  end
+
+  defp maybe_add_certainty(result, _metadata), do: result
+
+  defp maybe_add_score(result, %{score_present: true, score: score}) do
+    Map.put(result, "score", score)
+  end
+
+  defp maybe_add_score(result, _metadata), do: result
+
+  defp maybe_add_creation_time(result, %{
+         creation_time_unix_present: true,
+         creation_time_unix: time
+       }) do
+    Map.put(result, "creationTimeUnix", time)
+  end
+
+  defp maybe_add_creation_time(result, _metadata), do: result
+
+  defp maybe_add_last_update_time(result, %{
+         last_update_time_unix_present: true,
+         last_update_time_unix: time
+       }) do
+    Map.put(result, "lastUpdateTimeUnix", time)
+  end
+
+  defp maybe_add_last_update_time(result, _metadata), do: result
+
+  defp maybe_add_explain_score(result, %{explain_score_present: true, explain_score: score}) do
+    Map.put(result, "explainScore", score)
+  end
+
+  defp maybe_add_explain_score(result, _metadata), do: result
+
+  defp maybe_add_is_consistent(result, %{is_consistent_present: true, is_consistent: consistent}) do
+    Map.put(result, "isConsistent", consistent)
+  end
+
+  defp maybe_add_is_consistent(result, _metadata), do: result
+
+  defp maybe_add_named_vectors(result, %{vectors: vectors}) when vectors != [] do
+    Map.put(result, "vectors", parse_named_vectors(vectors))
+  end
+
+  defp maybe_add_named_vectors(result, _metadata), do: result
+
+  defp maybe_add_vector_metadata(result, metadata) do
+    cond do
+      metadata.vector != [] ->
+        Map.put(result, "vector", metadata.vector)
+
+      metadata.vector_bytes != "" ->
+        Map.put(result, "vector", parse_vector_bytes(metadata.vector_bytes))
+
+      true ->
         result
-      end
+    end
+  end
 
-    result =
-      if metadata.last_update_time_unix_present do
-        Map.put(result, "lastUpdateTimeUnix", metadata.last_update_time_unix)
-      else
-        result
-      end
+  defp parse_named_vectors(vectors) do
+    Enum.reduce(vectors, %{}, fn %Weaviate.V1.Vectors{} = vec, acc ->
+      Map.put(acc, vec.name, parse_vector_bytes(vec.vector_bytes))
+    end)
+  end
 
-    result
+  defp parse_vector_bytes(bytes) when is_binary(bytes) do
+    for <<value::float-little-32 <- bytes>>, do: value
+  end
+
+  defp parse_vector_bytes(_), do: []
+
+  defp parse_group_by_results(group_by_results, fields, additional) do
+    Enum.map(group_by_results, fn %Weaviate.V1.GroupByResult{} = group ->
+      %{
+        "name" => group.name,
+        "minDistance" => group.min_distance,
+        "maxDistance" => group.max_distance,
+        "numberOfObjects" => group.number_of_objects,
+        "objects" =>
+          Enum.map(group.objects, fn result ->
+            object = parse_result_object(result, fields)
+
+            if additional && length(additional) > 0 do
+              additional_data = parse_additional_metadata(result.metadata)
+              Map.put(object, "_additional", additional_data)
+            else
+              object
+            end
+          end)
+      }
+    end)
   end
 
   # ============================================================================

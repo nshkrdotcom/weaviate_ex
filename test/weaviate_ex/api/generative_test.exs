@@ -659,6 +659,82 @@ defmodule WeaviateEx.API.GenerativeTest do
     end
   end
 
+  describe "Databricks provider" do
+    test "supports databricks-specific parameters", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "databricks"
+        assert body["query"] =~ "logProbs"
+        assert body["query"] =~ "topLogProbs"
+        assert body["query"] =~ "n:"
+        assert body["query"] =~ "frequencyPenalty"
+        assert body["query"] =~ "presencePenalty"
+        assert body["query"] =~ "stop"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "Databricks result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :databricks,
+                 model: "dbrx",
+                 log_probs: true,
+                 top_log_probs: 5,
+                 n: 2,
+                 frequency_penalty: 0.2,
+                 presence_penalty: 0.1,
+                 stop: ["END"]
+               )
+    end
+  end
+
+  describe "FriendliAI provider" do
+    test "supports n parameter", %{client: client} do
+      Mox.expect(Mock, :request, fn _client, :post, _path, body, _opts ->
+        assert body["query"] =~ "friendliai"
+        assert body["query"] =~ "n:"
+
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{
+                   "_additional" => %{
+                     "generate" => %{
+                       "singleResult" => "FriendliAI result"
+                     }
+                   }
+                 }
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, _result} =
+               Generative.single_prompt(client, "Article", "Test",
+                 provider: :friendliai,
+                 model: "llama",
+                 n: 3
+               )
+    end
+  end
+
   describe "error handling" do
     test "handles invalid provider", %{client: client} do
       assert {:error, %WeaviateEx.Error{type: :validation_error}} =

@@ -314,7 +314,13 @@ defmodule WeaviateEx.Generative.Config do
       :temperature,
       :max_tokens,
       :top_p,
-      :endpoint
+      :endpoint,
+      :frequency_penalty,
+      :presence_penalty,
+      :log_probs,
+      :top_log_probs,
+      :n,
+      :stop
     ]
 
     @type t :: %__MODULE__{
@@ -322,7 +328,13 @@ defmodule WeaviateEx.Generative.Config do
             temperature: float() | nil,
             max_tokens: integer() | nil,
             top_p: float() | nil,
-            endpoint: String.t() | nil
+            endpoint: String.t() | nil,
+            frequency_penalty: float() | nil,
+            presence_penalty: float() | nil,
+            log_probs: boolean() | nil,
+            top_log_probs: integer() | nil,
+            n: integer() | nil,
+            stop: [String.t()] | nil
           }
   end
 
@@ -335,7 +347,8 @@ defmodule WeaviateEx.Generative.Config do
       :temperature,
       :max_tokens,
       :top_p,
-      :base_url
+      :base_url,
+      :n
     ]
 
     @type t :: %__MODULE__{
@@ -343,7 +356,8 @@ defmodule WeaviateEx.Generative.Config do
             temperature: float() | nil,
             max_tokens: integer() | nil,
             top_p: float() | nil,
-            base_url: String.t() | nil
+            base_url: String.t() | nil,
+            n: integer() | nil
           }
   end
 
@@ -553,6 +567,27 @@ defmodule WeaviateEx.Generative.Config do
     |> maybe_add(:avoidCommentary, config.avoid_commentary)
     |> maybe_add(:maxNewTokens, config.max_new_tokens)
     |> maybe_add(:knowledge, config.knowledge)
+  end
+
+  def to_graphql_params(%Databricks{} = config) do
+    config
+    |> Map.from_struct()
+    |> convert_common_params()
+    |> maybe_add(:endpoint, config.endpoint)
+    |> maybe_add(:frequencyPenalty, config.frequency_penalty)
+    |> maybe_add(:presencePenalty, config.presence_penalty)
+    |> maybe_add(:logProbs, config.log_probs)
+    |> maybe_add(:topLogProbs, config.top_log_probs)
+    |> maybe_add(:n, config.n)
+    |> maybe_add(:stop, config.stop)
+  end
+
+  def to_graphql_params(%FriendliAI{} = config) do
+    config
+    |> Map.from_struct()
+    |> convert_common_params()
+    |> maybe_add(:n, config.n)
+    |> maybe_add(:baseUrl, config.base_url)
   end
 
   def to_graphql_params(config) do

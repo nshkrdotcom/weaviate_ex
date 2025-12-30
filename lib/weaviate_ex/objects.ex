@@ -48,6 +48,7 @@ defmodule WeaviateEx.Objects do
   """
 
   import WeaviateEx, only: [request: 4]
+  alias WeaviateEx.API.Data
   alias WeaviateEx.Objects.Payload
 
   @type collection_name :: String.t()
@@ -112,6 +113,28 @@ defmodule WeaviateEx.Objects do
   def get(collection_name, id, opts \\ []) do
     query_string = build_query_string(opts, [:consistency_level, :tenant, :include])
     request(:get, "/v1/objects/#{collection_name}/#{id}#{query_string}", nil, opts)
+  end
+
+  @doc """
+  Fetch multiple objects by their UUIDs.
+
+  Uses a GraphQL query with a ContainsAny filter and preserves input ordering.
+
+  ## Options
+
+  - `:return_properties` - List of property names to return (default: all)
+  - `:tenant` - Tenant name for multi-tenant collections
+  """
+  @spec fetch_objects_by_ids(collection_name(), [object_id()], Keyword.t()) ::
+          WeaviateEx.api_response()
+  def fetch_objects_by_ids(collection_name, ids, opts \\ []) do
+    {:ok, client} =
+      WeaviateEx.Client.new(
+        base_url: WeaviateEx.base_url(),
+        api_key: WeaviateEx.api_key()
+      )
+
+    Data.fetch_objects_by_ids(client, collection_name, ids, opts)
   end
 
   @doc """

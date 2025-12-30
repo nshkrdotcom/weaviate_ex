@@ -29,6 +29,27 @@ Enable multi-tenancy when creating a collection:
 })
 ```
 
+### Typed Config Helpers
+
+```elixir
+alias WeaviateEx.Config.AutoTenant
+alias WeaviateEx.Schema.MultiTenancyConfig
+
+{:ok, _} = WeaviateEx.Collections.create("Document", %{
+  properties: [
+    %{name: "title", dataType: ["text"]},
+    %{name: "content", dataType: ["text"]}
+  ],
+  vectorizer: "none",
+  multi_tenancy_config: MultiTenancyConfig.new(
+    enabled: true,
+    auto_tenant_creation: true,
+    auto_tenant_activation: true
+  ),
+  auto_tenant: AutoTenant.enable(auto_delete_timeout: 86_400)
+})
+```
+
 ### Enable on Existing Collection
 
 ```elixir

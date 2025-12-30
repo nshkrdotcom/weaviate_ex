@@ -51,20 +51,9 @@ defmodule WeaviateEx.ObjectsTest do
     end
 
     test "returns error on invalid data", %{client: client} do
-      data = %{}
-
-      Mox.expect(Mock, :request, fn _client, :post, "/v1/objects", _body, _opts ->
-        {:error,
-         %WeaviateEx.Error{
-           type: :validation_error,
-           message: "Invalid property",
-           details: %{},
-           status_code: 422
-         }}
-      end)
-
-      assert {:error, %WeaviateEx.Error{type: :validation_error}} =
-               Data.insert(client, "Article", data)
+      assert_raise ArgumentError, ~r/properties.*required/i, fn ->
+        Data.insert(client, "Article", %{})
+      end
     end
   end
 

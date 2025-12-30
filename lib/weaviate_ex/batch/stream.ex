@@ -51,6 +51,7 @@ defmodule WeaviateEx.Batch.Stream do
       {:ok, results} = Stream.close(stream)
   """
 
+  alias WeaviateEx.Client
   alias WeaviateEx.GRPC.Services.BatchStream, as: BatchStreamService
   alias WeaviateEx.Types.UUID
 
@@ -156,8 +157,9 @@ defmodule WeaviateEx.Batch.Stream do
   @spec connect(t()) :: {:ok, t()} | {:error, term()}
   def connect(%__MODULE__{state: :initialized} = stream) do
     channel = stream.client[:grpc_channel]
+    metadata = Client.grpc_metadata(stream.client)
 
-    case BatchStreamService.open(channel) do
+    case BatchStreamService.open(channel, metadata: metadata) do
       {:ok, handle} ->
         # Send start message (returns the stream handle)
         _stream =
@@ -272,7 +274,7 @@ defmodule WeaviateEx.Batch.Stream do
     objects = Enum.reverse(stream.buffer)
 
     case send_batch(stream, objects) do
-      {:ok, results} ->
+      {:ok, results, backoff_size} ->
         new_stream = %{
           stream
           | buffer: [],
@@ -281,7 +283,7 @@ defmodule WeaviateEx.Batch.Stream do
             last_flush_at: DateTime.utc_now()
         }
 
-        {:ok, new_stream}
+        {:ok, apply_backoff(new_stream, backoff_size)}
 
       {:error, reason} ->
         # Try to reconnect
@@ -445,6 +447,15 @@ defmodule WeaviateEx.Batch.Stream do
     |> maybe_add_tenant(stream.tenant)
   end
 
+  @doc false
+  @spec apply_backoff(t(), integer() | nil) :: t()
+  def apply_backoff(%__MODULE__{} = stream, backoff_size)
+      when is_integer(backoff_size) and backoff_size > 0 do
+    %{stream | buffer_size: backoff_size}
+  end
+
+  def apply_backoff(%__MODULE__{} = stream, _backoff_size), do: stream
+
   # Private helpers
 
   defp ensure_uuid(object) do
@@ -494,17 +505,17 @@ defmodule WeaviateEx.Batch.Stream do
         case BatchStreamService.parse_reply(reply) do
           {:results, %{successes: successes, errors: errors}} ->
             results = successes ++ errors
-            {:ok, results}
+            {:ok, results, nil}
 
           {:acks, %{uuids: uuids}} ->
             results = Enum.map(uuids, &%{uuid: &1, status: :success})
-            {:ok, results}
+            {:ok, results, nil}
 
-          {:backoff, %{batch_size: _size}} ->
+          {:backoff, %{batch_size: size}} ->
             # Server is asking us to slow down, but we can still consider this a success
             # The objects have been received
             results = Enum.map(objects, &%{uuid: &1[:uuid], status: :success})
-            {:ok, results}
+            {:ok, results, size}
 
           {:shutting_down, _} ->
             {:error, :stream_shutting_down}

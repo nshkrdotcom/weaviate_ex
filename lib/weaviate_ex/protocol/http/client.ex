@@ -8,6 +8,7 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
 
   @behaviour WeaviateEx.Protocol
 
+  alias WeaviateEx.Auth.TokenManager
   alias WeaviateEx.Client
   alias WeaviateEx.Config.Timeout
   alias WeaviateEx.Error
@@ -20,34 +21,33 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
     # Build full URL
     url = build_url(config.base_url, path)
 
-    # Build headers
-    headers = build_headers(config, body)
+    with {:ok, headers} <- build_headers(config, body) do
+      # Encode body if present
+      encoded_body = encode_body(body)
 
-    # Encode body if present
-    encoded_body = encode_body(body)
+      # Build Finch request
+      finch_request = Finch.build(method, url, headers, encoded_body)
 
-    # Build Finch request
-    finch_request = Finch.build(method, url, headers, encoded_body)
+      # Get timeout using Timeout module for per-operation timeouts
+      timeout = get_operation_timeout(config, method, path, opts)
 
-    # Get timeout using Timeout module for per-operation timeouts
-    timeout = get_operation_timeout(config, method, path, opts)
+      # Build Finch options with pool_timeout
+      finch_opts = [
+        receive_timeout: timeout,
+        pool_timeout: pool_timeout(config)
+      ]
 
-    # Build Finch options with pool_timeout
-    finch_opts = [
-      receive_timeout: timeout,
-      pool_timeout: @default_pool_timeout
-    ]
-
-    # Execute request with retry wrapper for transport errors
-    execute_with_retry(finch_request, finch_opts, opts)
+      # Execute request with retry wrapper for transport errors
+      execute_with_retry(finch_request, finch_opts, config.finch_name, opts)
+    end
   end
 
   # Execute request with automatic retry on transport errors
-  defp execute_with_retry(finch_request, finch_opts, opts) do
+  defp execute_with_retry(finch_request, finch_opts, finch_name, opts) do
     retry_opts = Keyword.take(opts, [:max_retries, :base_delay_ms])
 
     Retry.with_retry(
-      fn -> Finch.request(finch_request, WeaviateEx.Finch, finch_opts) end,
+      fn -> Finch.request(finch_request, finch_name, finch_opts) end,
       retry_opts
     )
     |> handle_response()
@@ -110,24 +110,21 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
   defp build_headers(config, body) do
     headers = [{"content-type", "application/json"}]
 
-    headers =
-      if config.api_key do
-        [{"authorization", "Bearer #{config.api_key}"} | headers]
-      else
-        headers
-      end
+    with {:ok, auth_headers} <- auth_headers(config) do
+      headers = auth_headers ++ headers
 
-    headers =
-      if body do
-        [{"accept", "application/json"} | headers]
-      else
-        headers
-      end
+      headers =
+        if body do
+          [{"accept", "application/json"} | headers]
+        else
+          headers
+        end
 
-    # Add additional_headers from config
-    headers = add_additional_headers(headers, config)
+      # Add additional_headers from config
+      headers = add_additional_headers(headers, config)
 
-    headers
+      {:ok, headers}
+    end
   end
 
   defp add_additional_headers(headers, config) do
@@ -162,4 +159,40 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
     error = Error.from_status_code(status, parsed_body)
     {:error, error}
   end
+
+  defp pool_timeout(%{connection: %{pool_timeout: pool_timeout}})
+       when is_integer(pool_timeout) and pool_timeout > 0 do
+    pool_timeout
+  end
+
+  defp pool_timeout(_config), do: @default_pool_timeout
+
+  defp auth_headers(%{token_manager: token_manager}) when not is_nil(token_manager) do
+    case TokenManager.get_access_token(token_manager) do
+      {:ok, access_token} ->
+        {:ok, [{"authorization", "Bearer #{access_token}"}]}
+
+      {:error, :no_token} ->
+        {:error,
+         Error.exception(
+           type: :authentication_failed,
+           message: "OIDC access token not available"
+         )}
+    end
+  end
+
+  defp auth_headers(%{auth: %{type: :api_key, api_key: api_key}}) when is_binary(api_key) do
+    {:ok, [{"authorization", "Bearer #{api_key}"}]}
+  end
+
+  defp auth_headers(%{auth: %{type: :bearer_token, access_token: token}})
+       when is_binary(token) do
+    {:ok, [{"authorization", "Bearer #{token}"}]}
+  end
+
+  defp auth_headers(%{api_key: api_key}) when is_binary(api_key) and api_key != "" do
+    {:ok, [{"authorization", "Bearer #{api_key}"}]}
+  end
+
+  defp auth_headers(_config), do: {:ok, []}
 end

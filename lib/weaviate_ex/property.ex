@@ -44,6 +44,7 @@ defmodule WeaviateEx.Property do
     - `:index_filterable` - Enable filtering on this property
     - `:index_searchable` - Enable full-text search
     - `:index_inverted` - Include in inverted index
+    - `:index_range_filters` - Enable range filter indexing
     - `:tokenization` - Tokenization strategy (:word, :whitespace, :field, etc.)
     - `:skip_vectorization` - Don't include in vectorization
     - `:vectorize_property_name` - Include property name in vector
@@ -64,6 +65,7 @@ defmodule WeaviateEx.Property do
     |> maybe_put("indexFilterable", Keyword.get(opts, :index_filterable))
     |> maybe_put("indexSearchable", Keyword.get(opts, :index_searchable))
     |> maybe_put("indexInverted", Keyword.get(opts, :index_inverted))
+    |> maybe_put("indexRangeFilters", Keyword.get(opts, :index_range_filters))
     |> maybe_put("tokenization", normalize_tokenization(Keyword.get(opts, :tokenization)))
     |> maybe_add_nested_properties(Keyword.get(opts, :nested_properties))
     |> maybe_add_module_config(opts)

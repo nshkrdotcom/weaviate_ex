@@ -374,4 +374,21 @@ defmodule WeaviateEx.Batch.StreamTest do
       assert prepared.uuid == "my-custom-uuid"
     end
   end
+
+  describe "apply_backoff/2" do
+    test "updates buffer size when backoff size is provided" do
+      stream = %Stream{buffer_size: 100}
+
+      updated = Stream.apply_backoff(stream, 25)
+
+      assert updated.buffer_size == 25
+    end
+
+    test "keeps buffer size when backoff size is invalid" do
+      stream = %Stream{buffer_size: 100}
+
+      assert Stream.apply_backoff(stream, 0).buffer_size == 100
+      assert Stream.apply_backoff(stream, -5).buffer_size == 100
+    end
+  end
 end

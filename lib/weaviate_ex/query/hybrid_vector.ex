@@ -262,7 +262,7 @@ defmodule WeaviateEx.Query.HybridVector do
   defp add_target_vectors(map, nil), do: map
 
   defp add_target_vectors(map, tv) do
-    Map.put(map, :target_vectors, TargetVectors.to_grpc(tv))
+    Map.put(map, :targets, TargetVectors.to_grpc(tv))
   end
 
   defp format_target_vectors_graphql(nil), do: nil

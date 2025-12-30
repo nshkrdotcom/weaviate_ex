@@ -48,6 +48,57 @@ defmodule WeaviateEx.BatchTest do
       assert Enum.at(result["results"], 1)["status"] == "FAILED"
     end
 
+    test "returns error when all objects fail", %{client: _client} do
+      objects = Fixtures.batch_objects_fixture("Article", 2)
+
+      response = [
+        %{
+          "id" => Enum.at(objects, 0)["id"],
+          "status" => "FAILED",
+          "result" => %{"errors" => [%{"message" => "Invalid property"}]}
+        },
+        %{
+          "id" => Enum.at(objects, 1)["id"],
+          "status" => "FAILED",
+          "result" => %{"errors" => [%{"message" => "Invalid property"}]}
+        }
+      ]
+
+      Mox.expect(Mock, :request, fn _client, :post, path, _body, _opts ->
+        assert path =~ "/v1/batch/objects"
+        {:ok, response}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :batch_all_failed, message: message}} =
+               Batch.create_objects(objects)
+
+      assert message =~ "All batch objects failed"
+    end
+
+    test "returns error when all objects fail with summary option", %{client: _client} do
+      objects = Fixtures.batch_objects_fixture("Article", 1)
+
+      response = %{
+        "results" => %{
+          "objects" => [
+            %{
+              "id" => Enum.at(objects, 0)["id"],
+              "status" => "FAILED",
+              "class" => "Article",
+              "result" => %{"errors" => [%{"message" => "Invalid property"}]}
+            }
+          ]
+        }
+      }
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/batch/objects", _body, _opts ->
+        {:ok, response}
+      end)
+
+      assert {:error, %WeaviateEx.Error{type: :batch_all_failed}} =
+               Batch.create_objects(objects, return_summary: true)
+    end
+
     test "handles consistency level option", %{client: _client} do
       objects = [Fixtures.object_fixture()]
 

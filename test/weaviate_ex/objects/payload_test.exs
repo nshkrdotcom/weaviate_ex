@@ -31,6 +31,20 @@ defmodule WeaviateEx.Objects.PayloadTest do
       assert result["vector"] == [0.1, 0.2, 0.3]
       refute Map.has_key?(result, "vectors")
     end
+
+    test "raises when properties are missing" do
+      assert_raise ArgumentError, ~r/properties.*required/i, fn ->
+        Payload.prepare_for_insert(%{}, "Article", [])
+      end
+    end
+
+    test "raises when properties include reserved names" do
+      data = %{properties: %{"id" => "bad"}}
+
+      assert_raise ArgumentError, ~r/reserved property name/i, fn ->
+        Payload.prepare_for_insert(data, "Article", [])
+      end
+    end
   end
 
   describe "prepare_for_insert/3 with named vectors" do
@@ -105,6 +119,33 @@ defmodule WeaviateEx.Objects.PayloadTest do
 
       assert_raise ArgumentError, ~r/cannot specify both 'vector' and 'vectors'/, fn ->
         Payload.prepare_for_update(data, "Article", uuid, [])
+      end
+    end
+
+    test "raises when properties are missing" do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      assert_raise ArgumentError, ~r/properties.*required/i, fn ->
+        Payload.prepare_for_update(%{}, "Article", uuid, [])
+      end
+    end
+
+    test "raises when properties include reserved names" do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+      data = %{properties: %{"vector" => [0.1, 0.2]}}
+
+      assert_raise ArgumentError, ~r/reserved property name/i, fn ->
+        Payload.prepare_for_update(data, "Article", uuid, [])
+      end
+    end
+  end
+
+  describe "prepare_for_patch/1 validation" do
+    test "raises when properties include reserved names" do
+      data = %{properties: %{"id" => "bad"}}
+
+      assert_raise ArgumentError, ~r/reserved property name/i, fn ->
+        Payload.prepare_for_patch(data)
       end
     end
   end

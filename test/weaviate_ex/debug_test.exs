@@ -97,6 +97,38 @@ defmodule WeaviateEx.DebugTest do
       assert path =~ "include="
     end
 
+    test "retrieves object with node_name option" do
+      response = %{
+        "id" => "test-uuid-123",
+        "class" => "Article",
+        "properties" => %{"title" => "Test Article"}
+      }
+
+      client = mock_client([{:ok, response}])
+
+      {:ok, _object} =
+        Debug.get_object_rest(client, "Article", "test-uuid-123", node_name: "node-1")
+
+      [{:get, path, _}] = get_requests()
+      assert path =~ "node_name=node-1"
+    end
+
+    test "retrieves object with consistency_level option" do
+      response = %{
+        "id" => "test-uuid-123",
+        "class" => "Article",
+        "properties" => %{"title" => "Test Article"}
+      }
+
+      client = mock_client([{:ok, response}])
+
+      {:ok, _object} =
+        Debug.get_object_rest(client, "Article", "test-uuid-123", consistency_level: "ALL")
+
+      [{:get, path, _}] = get_requests()
+      assert path =~ "consistency_level=ALL"
+    end
+
     test "returns error for non-existent object" do
       error = %WeaviateEx.Error{type: :not_found, message: "Object not found"}
       client = mock_client([{:error, error}])

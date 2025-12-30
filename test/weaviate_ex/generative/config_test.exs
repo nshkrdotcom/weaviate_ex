@@ -272,12 +272,49 @@ defmodule WeaviateEx.Generative.ConfigTest do
         Config.databricks(
           model: "databricks-dbrx-instruct",
           endpoint: "https://my-workspace.cloud.databricks.com",
-          temperature: 0.7
+          temperature: 0.7,
+          log_probs: true,
+          top_log_probs: 5,
+          n: 2,
+          frequency_penalty: 0.2,
+          presence_penalty: 0.1,
+          stop: ["END"]
         )
 
       assert %Config.Databricks{} = config
       assert config.model == "databricks-dbrx-instruct"
       assert config.endpoint == "https://my-workspace.cloud.databricks.com"
+      assert config.log_probs == true
+      assert config.top_log_probs == 5
+      assert config.n == 2
+      assert config.frequency_penalty == 0.2
+      assert config.presence_penalty == 0.1
+      assert config.stop == ["END"]
+    end
+
+    test "converts databricks config to graphql params" do
+      config =
+        Config.databricks(
+          model: "databricks-dbrx-instruct",
+          endpoint: "https://my-workspace.cloud.databricks.com",
+          log_probs: true,
+          top_log_probs: 5,
+          n: 2,
+          frequency_penalty: 0.2,
+          presence_penalty: 0.1,
+          stop: ["END"]
+        )
+
+      params = Config.to_graphql_params(config)
+
+      assert params[:model] == "databricks-dbrx-instruct"
+      assert params[:endpoint] == "https://my-workspace.cloud.databricks.com"
+      assert params[:logProbs] == true
+      assert params[:topLogProbs] == 5
+      assert params[:n] == 2
+      assert params[:frequencyPenalty] == 0.2
+      assert params[:presencePenalty] == 0.1
+      assert params[:stop] == ["END"]
     end
 
     test "creates FriendliAI config" do
@@ -285,11 +322,23 @@ defmodule WeaviateEx.Generative.ConfigTest do
         Config.friendliai(
           model: "meta-llama-3.1-70b-instruct",
           base_url: "https://inference.friendli.ai",
-          temperature: 0.7
+          temperature: 0.7,
+          n: 2
         )
 
       assert %Config.FriendliAI{} = config
       assert config.model == "meta-llama-3.1-70b-instruct"
+      assert config.n == 2
+    end
+
+    test "converts friendliai config to graphql params" do
+      config = Config.friendliai(model: "llama", n: 3, base_url: "https://example.com")
+
+      params = Config.to_graphql_params(config)
+
+      assert params[:model] == "llama"
+      assert params[:n] == 3
+      assert params[:baseUrl] == "https://example.com"
     end
   end
 

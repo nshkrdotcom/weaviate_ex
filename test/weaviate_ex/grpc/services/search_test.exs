@@ -2,6 +2,8 @@ defmodule WeaviateEx.GRPC.Services.SearchTest do
   use ExUnit.Case, async: true
 
   alias Weaviate.V1.{BM25, Hybrid, NearObject, NearTextSearch, NearVector, SearchRequest}
+  alias WeaviateEx.GRPC.Services.Search
+  alias WeaviateEx.Query.{GroupBy, NearImage, NearMedia, QueryReference, TargetVectors}
 
   @moduletag :grpc
 
@@ -159,6 +161,104 @@ defmodule WeaviateEx.GRPC.Services.SearchTest do
     test "default alpha is 0.0" do
       hybrid = %Hybrid{query: "test"}
       assert hybrid.alpha == 0.0
+    end
+  end
+
+  describe "request building" do
+    test "builds filters and group_by in search requests" do
+      filter = %{path: ["status"], operator: "Equal", valueText: "published"}
+      group_by = GroupBy.new("category", objects_per_group: 2, number_of_groups: 3)
+
+      request =
+        Search.build_near_text_request("Article", "ai",
+          filters: filter,
+          group_by: group_by
+        )
+
+      assert request.filters.operator == :OPERATOR_EQUAL
+      assert request.filters.target.target == {:property, "status"}
+      assert request.filters.test_value == {:value_text, "published"}
+      assert request.group_by.path == ["category"]
+      assert request.group_by.objects_per_group == 2
+      assert request.group_by.number_of_groups == 3
+    end
+
+    test "maps ContainsAny value arrays into gRPC filters" do
+      filter = %{path: ["id"], operator: "ContainsAny", valueText: ["id-1", "id-2"]}
+
+      request = Search.build_near_text_request("Article", "ai", filters: filter)
+
+      assert request.filters.operator == :OPERATOR_CONTAINS_ANY
+
+      assert request.filters.test_value ==
+               {:value_text_array, %Weaviate.V1.TextArray{values: ["id-1", "id-2"]}}
+    end
+
+    test "accepts on alias for filter path" do
+      filter = %{on: ["id"], operator: "Equal", valueText: "id-1"}
+
+      request = Search.build_near_text_request("Article", "ai", filters: filter)
+
+      assert request.filters.operator == :OPERATOR_EQUAL
+      assert request.filters.target.target == {:property, "id"}
+      assert request.filters.test_value == {:value_text, "id-1"}
+    end
+
+    test "builds target vectors into near_vector requests" do
+      targets = TargetVectors.weighted(%{"title" => 0.7, "content" => 0.3})
+
+      request = Search.build_near_vector_request("Article", [0.1, 0.2], target_vectors: targets)
+
+      assert Enum.sort(request.near_vector.targets.target_vectors) ==
+               Enum.sort(["title", "content"])
+
+      assert request.near_vector.targets.combination == :COMBINATION_METHOD_TYPE_MANUAL
+
+      weights =
+        Enum.map(request.near_vector.targets.weights_for_targets, fn weight ->
+          {weight.target, weight.weight}
+        end)
+
+      assert Enum.sort_by(weights, &elem(&1, 0)) == [{"content", 0.3}, {"title", 0.7}]
+    end
+
+    test "builds near_image requests with target vectors" do
+      near_image = NearImage.new(image: "base64data", target_vectors: ["image_vec"])
+
+      request = Search.build_near_image_request("Images", near_image)
+
+      assert request.near_image.image == "base64data"
+      assert request.near_image.targets.target_vectors == ["image_vec"]
+    end
+
+    test "builds near_media requests with correct media type" do
+      near_media = NearMedia.new(:audio, media: "audiodata")
+
+      request = Search.build_near_media_request("Media", near_media)
+
+      assert request.near_audio.audio == "audiodata"
+      assert request.near_video == nil
+      assert request.near_imu == nil
+    end
+
+    test "builds return references and vector metadata" do
+      ref = QueryReference.new("hasAuthor", return_properties: ["name"], include_vector: true)
+
+      request =
+        Search.build_near_text_request("Article", "ai",
+          return_properties: ["title"],
+          return_references: [ref],
+          return_metadata: [:vector]
+        )
+
+      assert request.properties.non_ref_properties == ["title"]
+      assert length(request.properties.ref_properties) == 1
+
+      ref_request = hd(request.properties.ref_properties)
+      assert ref_request.reference_property == "hasAuthor"
+      assert ref_request.properties.non_ref_properties == ["name"]
+      assert ref_request.metadata.vector == true
+      assert request.metadata.vector == true
     end
   end
 end

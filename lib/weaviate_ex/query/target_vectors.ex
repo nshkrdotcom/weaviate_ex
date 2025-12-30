@@ -30,6 +30,8 @@ defmodule WeaviateEx.Query.TargetVectors do
       Query.near_text(query, "search term", target_vectors: target)
   """
 
+  alias Weaviate.V1.{Targets, WeightsForTarget}
+
   defmodule Config do
     @moduledoc """
     Configuration struct for target vector settings.
@@ -217,50 +219,58 @@ defmodule WeaviateEx.Query.TargetVectors do
 
       target = TargetVectors.combine(["vec1", "vec2"], method: :average)
       TargetVectors.to_grpc(target)
-      # => %{target_vectors: ["vec1", "vec2"], combination_method: :COMBINATION_METHOD_TYPE_AVERAGE}
+      # => %Weaviate.V1.Targets{target_vectors: ["vec1", "vec2"], combination: :COMBINATION_METHOD_TYPE_AVERAGE}
   """
-  @spec to_grpc(String.t() | [String.t()] | Config.t() | nil) :: map() | nil
+  @spec to_grpc(String.t() | [String.t()] | Config.t() | nil) :: struct() | nil
   def to_grpc(nil), do: nil
 
   def to_grpc(target) when is_binary(target) do
-    %{target_vectors: [target]}
+    %Targets{
+      target_vectors: [target],
+      combination: :COMBINATION_METHOD_TYPE_SUM
+    }
   end
 
   def to_grpc(targets) when is_list(targets) do
-    %{
+    %Targets{
       target_vectors: targets,
-      combination_method: :COMBINATION_METHOD_TYPE_SUM
+      combination: :COMBINATION_METHOD_TYPE_SUM
     }
   end
 
   def to_grpc(%Config{} = target) do
-    base = %{
+    %Targets{
       target_vectors: target.vectors,
-      combination_method: Map.fetch!(@grpc_method_map, target.method)
+      combination: Map.fetch!(@grpc_method_map, target.method),
+      weights_for_targets: build_weights(target.weights)
     }
-
-    if target.weights do
-      Map.put(base, :weights, target.weights)
-    else
-      base
-    end
   end
 
   # Also handle legacy tuple format
   def to_grpc({method, vectors}) when method in @valid_methods and is_list(vectors) do
-    %{
+    %Targets{
       target_vectors: vectors,
-      combination_method: Map.fetch!(@grpc_method_map, method)
+      combination: Map.fetch!(@grpc_method_map, method)
     }
   end
 
   def to_grpc({method, weights})
       when method in [:manual_weights, :relative_score] and is_map(weights) do
-    %{
+    %Targets{
       target_vectors: Map.keys(weights),
-      combination_method: Map.fetch!(@grpc_method_map, method),
-      weights: weights
+      combination: Map.fetch!(@grpc_method_map, method),
+      weights_for_targets: build_weights(weights)
     }
+  end
+
+  defp build_weights(nil), do: []
+
+  defp build_weights(weights) when is_map(weights) do
+    weights
+    |> Enum.sort_by(fn {name, _weight} -> name end)
+    |> Enum.map(fn {name, weight} ->
+      %WeightsForTarget{target: name, weight: weight}
+    end)
   end
 
   @doc """

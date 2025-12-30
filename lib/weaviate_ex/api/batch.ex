@@ -73,9 +73,20 @@ defmodule WeaviateEx.API.Batch do
       end
 
     case result do
-      {:ok, response} when summary? -> {:ok, build_summary(response)}
-      {:ok, response} -> {:ok, normalize_batch_response(response)}
-      error -> error
+      {:ok, response} ->
+        case ensure_not_all_failed(response) do
+          {:error, error} ->
+            {:error, error}
+
+          {:ok, response} when summary? ->
+            {:ok, build_summary(response)}
+
+          {:ok, response} ->
+            {:ok, normalize_batch_response(response)}
+        end
+
+      error ->
+        error
     end
   end
 
@@ -123,6 +134,9 @@ defmodule WeaviateEx.API.Batch do
     [
       consistency_level: map_consistency_level(Keyword.get(opts, :consistency_level)),
       api_key: client.config.api_key,
+      auth: client.config.auth,
+      token_manager: client.config.token_manager,
+      additional_headers: client.config.additional_headers,
       timeout: Keyword.get(opts, :timeout, 90_000)
     ]
   end
@@ -211,6 +225,9 @@ defmodule WeaviateEx.API.Batch do
           verbose: Keyword.get(opts, :verbose, false),
           dry_run: Keyword.get(opts, :dry_run, false),
           api_key: client.config.api_key,
+          auth: client.config.auth,
+          token_manager: client.config.token_manager,
+          additional_headers: client.config.additional_headers,
           timeout: Keyword.get(opts, :timeout, 90_000)
         ]
 
@@ -356,6 +373,40 @@ defmodule WeaviateEx.API.Batch do
   end
 
   defp normalize_batch_response(response), do: response
+
+  defp ensure_not_all_failed(response) do
+    objects = extract_objects(response)
+
+    if all_failed_objects?(objects) do
+      {:error, build_all_failed_error(objects)}
+    else
+      {:ok, response}
+    end
+  end
+
+  defp all_failed_objects?([]), do: false
+
+  defp all_failed_objects?(objects) do
+    Enum.all?(objects, fn item ->
+      status = item["status"] || item[:status]
+
+      case status do
+        nil -> false
+        :failed -> true
+        other -> String.upcase(to_string(other)) == "FAILED"
+      end
+    end)
+  end
+
+  defp build_all_failed_error(objects) do
+    errors = Enum.map(objects, &build_error/1)
+
+    Error.exception(
+      type: :batch_all_failed,
+      message: "All batch objects failed",
+      details: %{failed: length(objects), errors: errors}
+    )
+  end
 
   defp build_query(opts, allowed_keys) do
     params =

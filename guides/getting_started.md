@@ -14,7 +14,7 @@ Add WeaviateEx to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.7.2"}
+    {:weaviate_ex, "~> 0.7.3"}
   ]
 end
 ```
@@ -124,6 +124,28 @@ config :weaviate_ex,
   api_key: "your-wcs-api-key"
 ```
 
+You can also configure auth per client, including OIDC:
+
+```elixir
+alias WeaviateEx.Auth
+
+# API key
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-instance.weaviate.network",
+    auth: Auth.api_key("your-wcs-api-key")
+  )
+
+# OIDC client credentials (auto-refresh)
+auth = Auth.client_credentials("client-id", "client-secret", scopes: ["openid", "profile"])
+
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-instance.weaviate.network",
+    auth: auth
+  )
+```
+
 ### With AI Provider API Keys
 
 When using vectorizers or generative modules, you need to provide API keys for the AI providers. Use the `WeaviateEx.Integrations` module:
@@ -143,6 +165,18 @@ headers = WeaviateEx.Integrations.merge([
   base_url: "http://localhost:8080",
   headers: headers
 )
+```
+
+### Skip Init Checks (Optional)
+
+If you want to skip the meta/version/gRPC checks during connect:
+
+```elixir
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "http://localhost:8080",
+    skip_init_checks: true
+  )
 ```
 
 ## Quick Start Example

@@ -8,7 +8,15 @@ defmodule WeaviateEx.ConnectTest do
       config = Connect.to_weaviate_cloud(cluster_url: "my-cluster.weaviate.network")
 
       assert config.base_url == "https://my-cluster.weaviate.network"
-      assert config.grpc_host == "grpc-my-cluster.weaviate.network"
+      assert config.grpc_host == "my-cluster.grpc.weaviate.network"
+      assert config.grpc_port == 443
+    end
+
+    test "uses grpc- prefix for non-.weaviate.network hosts" do
+      config = Connect.to_weaviate_cloud(cluster_url: "my-cluster.weaviate.cloud")
+
+      assert config.base_url == "https://my-cluster.weaviate.cloud"
+      assert config.grpc_host == "grpc-my-cluster.weaviate.cloud"
       assert config.grpc_port == 443
     end
 

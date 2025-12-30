@@ -10,6 +10,7 @@ Weaviate's generative search:
 3. Returns the generated response along with the source objects
 
 WeaviateEx supports 20+ AI providers through the `WeaviateEx.API.Generative` module.
+Generative queries execute via GraphQL even when a gRPC channel is available.
 
 ## Supported Providers
 
@@ -257,6 +258,37 @@ headers = WeaviateEx.Integrations.google(api_key: System.get_env("GOOGLE_API_KEY
   "Analyze: {content}",
   provider: :google_gemini,
   model: "gemini-1.5-pro"
+)
+```
+
+### Databricks
+
+```elixir
+{:ok, result} = Generative.single_prompt(
+  client,
+  "Document",
+  "Summarize: {content}",
+  provider: :databricks,
+  model: "dbrx",
+  log_probs: true,
+  top_log_probs: 5,
+  n: 2,
+  frequency_penalty: 0.2,
+  presence_penalty: 0.1,
+  stop: ["END"]
+)
+```
+
+### FriendliAI
+
+```elixir
+{:ok, result} = Generative.single_prompt(
+  client,
+  "Document",
+  "Summarize: {content}",
+  provider: :friendliai,
+  model: "llama-3.1-70b-instruct",
+  n: 2
 )
 ```
 

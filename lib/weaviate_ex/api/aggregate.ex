@@ -348,6 +348,9 @@ defmodule WeaviateEx.API.Aggregate do
 
     grpc_opts = [
       api_key: client.config.api_key,
+      auth: client.config.auth,
+      token_manager: client.config.token_manager,
+      additional_headers: client.config.additional_headers,
       timeout: Keyword.get(opts, :timeout, 30_000)
     ]
 

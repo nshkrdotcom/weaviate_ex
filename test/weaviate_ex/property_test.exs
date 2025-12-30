@@ -30,6 +30,12 @@ defmodule WeaviateEx.PropertyTest do
       assert prop["indexInverted"] == true
     end
 
+    test "accepts index_range_filters option" do
+      prop = Property.new("price", :number, index_range_filters: true)
+
+      assert prop["indexRangeFilters"] == true
+    end
+
     test "accepts tokenization option" do
       prop = Property.new("title", :text, tokenization: :word)
 

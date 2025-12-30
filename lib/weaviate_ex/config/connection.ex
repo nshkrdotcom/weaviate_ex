@@ -94,7 +94,8 @@ defmodule WeaviateEx.Config.Connection do
     [
       size: config.pool_size,
       count: div(config.max_connections, config.pool_size),
-      pool_timeout: config.pool_timeout
+      pool_timeout: config.pool_timeout,
+      conn_max_idle_time: config.max_idle_time
     ]
   end
 

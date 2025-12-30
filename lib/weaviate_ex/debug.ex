@@ -59,6 +59,8 @@ defmodule WeaviateEx.Debug do
     * `opts` - Options:
       * `:tenant` - Tenant name for multi-tenant collections
       * `:include` - List of additional fields to include (e.g., ["vector"])
+      * `:node_name` - Target node for debug reads in clustered setups
+      * `:consistency_level` - Read consistency level (e.g., "ONE", "QUORUM", "ALL")
 
   ## Example
 
@@ -205,11 +207,22 @@ defmodule WeaviateEx.Debug do
 
     query_params =
       opts
-      |> Keyword.take([:tenant, :include])
+      |> Keyword.take([:tenant, :include, :node_name, :consistency_level])
       |> Enum.map(fn
-        {:tenant, tenant} -> "tenant=#{tenant}"
-        {:include, include} when is_list(include) -> "include=#{Enum.join(include, ",")}"
-        {:include, include} -> "include=#{include}"
+        {:tenant, tenant} ->
+          "tenant=#{tenant}"
+
+        {:include, include} when is_list(include) ->
+          "include=#{Enum.join(include, ",")}"
+
+        {:include, include} ->
+          "include=#{include}"
+
+        {:node_name, node_name} ->
+          "node_name=#{node_name}"
+
+        {:consistency_level, consistency_level} ->
+          "consistency_level=#{consistency_level}"
       end)
 
     if query_params == [] do
@@ -227,8 +240,8 @@ defmodule WeaviateEx.Debug do
     request = %{
       collection: collection,
       filters: %{
-        operator: :OPERATOR_EQUAL,
-        on: ["id"],
+        operator: :equal,
+        path: ["id"],
         value_text: uuid
       },
       limit: 1,

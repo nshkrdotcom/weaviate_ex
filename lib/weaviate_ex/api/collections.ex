@@ -4,7 +4,10 @@ defmodule WeaviateEx.API.Collections do
   """
 
   alias WeaviateEx.Client
+  alias WeaviateEx.Config.AutoTenant
+  alias WeaviateEx.Config.ObjectTTL
   alias WeaviateEx.Error
+  alias WeaviateEx.Schema.MultiTenancyConfig
 
   @type opts :: keyword()
 
@@ -243,21 +246,29 @@ defmodule WeaviateEx.API.Collections do
     |> URI.encode_www_form()
   end
 
+  defp normalize_value(%ObjectTTL{} = ttl), do: ObjectTTL.to_map(ttl)
+  defp normalize_value(%AutoTenant{} = auto_tenant), do: AutoTenant.to_map(auto_tenant)
+  defp normalize_value(%MultiTenancyConfig{} = config), do: MultiTenancyConfig.to_map(config)
+
   defp normalize_value(map) when is_map(map) do
-    Map.new(map, fn
-      {key, value} when is_map(value) ->
-        {normalize_key(key), normalize_value(value)}
-
-      {key, value} when is_list(value) ->
-        {normalize_key(key), Enum.map(value, &normalize_value/1)}
-
-      {key, value} ->
-        {normalize_key(key), value}
+    Map.new(map, fn {key, value} ->
+      {normalize_key(key), normalize_value(value)}
     end)
   end
 
+  defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
 
+  defp normalize_key(:object_ttl), do: "objectTTLConfig"
+  defp normalize_key("object_ttl"), do: "objectTTLConfig"
+  defp normalize_key(:object_ttl_config), do: "objectTTLConfig"
+  defp normalize_key("object_ttl_config"), do: "objectTTLConfig"
+  defp normalize_key(:multi_tenancy), do: "multiTenancyConfig"
+  defp normalize_key("multi_tenancy"), do: "multiTenancyConfig"
+  defp normalize_key(:multi_tenancy_config), do: "multiTenancyConfig"
+  defp normalize_key("multi_tenancy_config"), do: "multiTenancyConfig"
+  defp normalize_key(:auto_tenant), do: "autoTenantCreation"
+  defp normalize_key("auto_tenant"), do: "autoTenantCreation"
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
   defp normalize_key(key), do: key
 end

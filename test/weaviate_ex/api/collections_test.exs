@@ -4,7 +4,10 @@ defmodule WeaviateEx.API.CollectionsTest do
   import WeaviateEx.Test.Mocks
 
   alias WeaviateEx.API.Collections
+  alias WeaviateEx.Config.AutoTenant
+  alias WeaviateEx.Config.ObjectTTL
   alias WeaviateEx.Protocol.Mock
+  alias WeaviateEx.Schema.MultiTenancyConfig
 
   setup :verify_on_exit!
   setup :setup_test_client
@@ -90,6 +93,41 @@ defmodule WeaviateEx.API.CollectionsTest do
       assert created["class"] == "Article"
     end
 
+    test "serializes ttl and tenant configs", %{client: client} do
+      ttl = ObjectTTL.delete_by_update_time(3600, true)
+      auto_tenant = AutoTenant.enable(auto_delete_timeout: 600)
+
+      multi_tenancy =
+        MultiTenancyConfig.new(
+          enabled: true,
+          auto_tenant_creation: true,
+          auto_tenant_activation: false
+        )
+
+      config = %{
+        class: "Article",
+        properties: [%{name: "title", dataType: ["text"]}],
+        object_ttl: ttl,
+        auto_tenant: auto_tenant,
+        multi_tenancy_config: multi_tenancy
+      }
+
+      expected_payload = %{
+        "class" => "Article",
+        "properties" => [%{"name" => "title", "dataType" => ["text"]}],
+        "objectTTLConfig" => ObjectTTL.to_map(ttl),
+        "autoTenantCreation" => AutoTenant.to_map(auto_tenant),
+        "multiTenancyConfig" => MultiTenancyConfig.to_map(multi_tenancy)
+      }
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/schema", body, _opts ->
+        assert body == expected_payload
+        {:ok, body}
+      end)
+
+      assert {:ok, _} = Collections.create(client, config)
+    end
+
     test "merges raw config overrides before creating", %{client: client} do
       base_config = %{
         "class" => "Article",
@@ -157,6 +195,37 @@ defmodule WeaviateEx.API.CollectionsTest do
 
       assert {:ok, updated} = Collections.update(client, "Article", updates)
       assert updated["vectorIndexConfig"]["ef"] == 200
+    end
+
+    test "serializes ttl and tenant configs on update", %{client: client} do
+      ttl = ObjectTTL.disable()
+      auto_tenant = AutoTenant.disable()
+
+      multi_tenancy =
+        MultiTenancyConfig.new(
+          enabled: true,
+          auto_tenant_creation: false,
+          auto_tenant_activation: true
+        )
+
+      updates = %{
+        object_ttl_config: ttl,
+        auto_tenant: auto_tenant,
+        multi_tenancy_config: multi_tenancy
+      }
+
+      expected_body = %{
+        "objectTTLConfig" => ObjectTTL.to_map(ttl),
+        "autoTenantCreation" => AutoTenant.to_map(auto_tenant),
+        "multiTenancyConfig" => MultiTenancyConfig.to_map(multi_tenancy)
+      }
+
+      Mox.expect(Mock, :request, fn _client, :put, "/v1/schema/Article", body, _opts ->
+        assert body == expected_body
+        {:ok, Map.put(body, "class", "Article")}
+      end)
+
+      assert {:ok, _} = Collections.update(client, "Article", updates)
     end
 
     test "merges raw config overrides on update", %{client: client} do

@@ -60,6 +60,14 @@ defmodule WeaviateEx.Config.ConnectionTest do
 
       assert opts[:count] == 5
     end
+
+    test "includes max idle time for Finch connections" do
+      config = Connection.new(max_idle_time: 45_000)
+
+      opts = Connection.to_finch_opts(config)
+
+      assert opts[:conn_max_idle_time] == 45_000
+    end
   end
 
   describe "to_grpc_opts/1" do

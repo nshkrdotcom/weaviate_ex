@@ -143,15 +143,21 @@ defmodule WeaviateEx.Query.TargetVectorsIntegrationTest do
       grpc = TargetVectors.to_grpc(target)
 
       assert grpc.target_vectors == ["vec1", "vec2"]
-      assert grpc.combination_method == :COMBINATION_METHOD_TYPE_AVERAGE
+      assert grpc.combination == :COMBINATION_METHOD_TYPE_AVERAGE
     end
 
     test "converts manual weights to gRPC format" do
       target = TargetVectors.weighted(%{"vec1" => 0.7, "vec2" => 0.3})
       grpc = TargetVectors.to_grpc(target)
 
-      assert grpc.combination_method == :COMBINATION_METHOD_TYPE_MANUAL
-      assert grpc.weights == %{"vec1" => 0.7, "vec2" => 0.3}
+      assert grpc.combination == :COMBINATION_METHOD_TYPE_MANUAL
+
+      weights =
+        Enum.map(grpc.weights_for_targets, fn weight ->
+          {weight.target, weight.weight}
+        end)
+
+      assert Enum.sort_by(weights, &elem(&1, 0)) == [{"vec1", 0.7}, {"vec2", 0.3}]
     end
   end
 

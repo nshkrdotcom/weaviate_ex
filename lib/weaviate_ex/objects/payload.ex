@@ -116,9 +116,11 @@ defmodule WeaviateEx.Objects.Payload do
   def prepare_for_insert(data, class_name, opts \\ []) do
     data
     |> normalize_keys()
+    |> validate_required_properties!("insert")
     |> validate_vectors!()
     |> handle_vectors()
     |> merge_references()
+    |> validate_reserved_property_names!()
     |> serialize_properties()
     |> ensure_id(opts)
     |> ensure_class(class_name)
@@ -141,8 +143,10 @@ defmodule WeaviateEx.Objects.Payload do
   def prepare_for_update(data, class_name, id, opts \\ []) do
     data
     |> normalize_keys()
+    |> validate_required_properties!("update")
     |> validate_vectors!()
     |> handle_vectors()
+    |> validate_reserved_property_names!()
     |> ensure_id_value(id)
     |> ensure_class(class_name)
     |> maybe_preserve_vector(opts)
@@ -155,6 +159,7 @@ defmodule WeaviateEx.Objects.Payload do
   def prepare_for_patch(data) do
     data
     |> normalize_keys()
+    |> validate_reserved_property_names!()
     |> Map.delete("class")
     |> Map.delete("id")
   end
@@ -334,4 +339,40 @@ defmodule WeaviateEx.Objects.Payload do
 
   # Pass through primitives and other values unchanged
   defp serialize_value(other), do: other
+
+  defp validate_required_properties!(data, action) when is_map(data) do
+    properties = Map.get(data, "properties")
+
+    cond do
+      is_map(properties) ->
+        data
+
+      is_nil(properties) ->
+        raise ArgumentError, "properties are required for #{action} operations"
+
+      true ->
+        raise ArgumentError, "properties must be a map for #{action} operations"
+    end
+  end
+
+  @reserved_property_names ["id", "vector"]
+
+  defp validate_reserved_property_names!(data) when is_map(data) do
+    case Map.get(data, "properties") do
+      nil ->
+        data
+
+      properties when is_map(properties) ->
+        case Enum.find(@reserved_property_names, &Map.has_key?(properties, &1)) do
+          nil ->
+            data
+
+          reserved ->
+            raise ArgumentError, "reserved property name '#{reserved}' is not allowed"
+        end
+
+      _ ->
+        raise ArgumentError, "properties must be a map"
+    end
+  end
 end

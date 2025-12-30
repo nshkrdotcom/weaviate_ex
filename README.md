@@ -526,6 +526,25 @@ Collections define the structure of your data:
 {:ok, _} = WeaviateEx.Collections.delete("Article")
 ```
 
+Schema helpers for range filters, TTL, and auto-tenant configuration:
+
+```elixir
+alias WeaviateEx.Config.{AutoTenant, ObjectTTL}
+alias WeaviateEx.Schema.MultiTenancyConfig
+alias WeaviateEx.Property
+
+ttl = ObjectTTL.delete_by_update_time(86_400, true)
+
+{:ok, _} = WeaviateEx.Collections.create("Session", %{
+  properties: [
+    Property.number("expires_in", index_range_filters: true)
+  ],
+  object_ttl: ttl,
+  multi_tenancy_config: MultiTenancyConfig.new(enabled: true, auto_tenant_creation: true),
+  auto_tenant: AutoTenant.enable(auto_delete_timeout: 3_600)
+})
+```
+
 ### Nested Properties
 
 Define complex object structures with nested properties:
@@ -650,6 +669,18 @@ uuid = object["id"]
 {:ok, _} = Data.delete_by_id(client, "Article", uuid)
 ```
 
+Collection handles with default tenant/consistency:
+
+```elixir
+collection =
+  WeaviateEx.Collection.new(client, "Article",
+    tenant: "tenant-a",
+    consistency_level: "QUORUM"
+  )
+
+{:ok, _} = WeaviateEx.Collection.insert(collection, %{properties: %{title: "Tenant scoped"}})
+```
+
 #### Inline References During Insert (v0.7.1+)
 
 Create objects with references in a single operation:
@@ -748,6 +779,9 @@ Full CRUD operations with explicit UUID control:
 {:ok, true} = WeaviateEx.Objects.exists?("Article", uuid)
 ```
 
+Payload validation happens client-side: `properties` is required for inserts/updates, and
+property names `id` and `vector` are reserved (raises `ArgumentError`).
+
 ### Batch Operations
 
 Efficient bulk operations for importing large datasets:
@@ -769,6 +803,9 @@ summary.statistics
 Enum.each(summary.errors, fn error ->
   Logger.warn("[Batch error] #{error.id} => #{Enum.join(error.messages, "; ")}")
 end)
+
+If every object in the batch fails, `Batch.create_objects/2` returns
+`{:error, %WeaviateEx.Error{type: :batch_all_failed}}`.
 
 # Batch delete with criteria (WHERE filter)
 {:ok, result} = WeaviateEx.Batch.delete_objects(%{
@@ -907,6 +944,9 @@ Enum.each(results, fn result ->
 end)
 ```
 
+When the server sends backoff messages, the stream automatically updates its
+buffer size to the server-provided batch size for subsequent flushes.
+
 #### Low-Level gRPC Streaming
 
 For advanced use cases, access the underlying gRPC stream directly:
@@ -1042,6 +1082,38 @@ query = Query.get("Article")
 
 {:ok, results} = Query.execute(query)
 ```
+
+#### Fetch Objects by IDs
+
+```elixir
+alias WeaviateEx.API.Data
+
+ids = [
+  "550e8400-e29b-41d4-a716-446655440001",
+  "550e8400-e29b-41d4-a716-446655440002"
+]
+
+{:ok, objects} = Data.fetch_objects_by_ids(client, "Article", ids,
+  return_properties: ["title", "content"]
+)
+
+# Results preserve the input ID order.
+```
+
+```elixir
+# Using the Objects module (no client needed)
+{:ok, objects} = WeaviateEx.Objects.fetch_objects_by_ids("Article", ids,
+  return_properties: ["title", "content"]
+)
+```
+
+#### gRPC vs GraphQL
+
+When you pass a `WeaviateEx.Client`, `Query.execute/2` uses gRPC and now supports
+filters, group_by, target vectors, near_image/near_media, references, and vector metadata.
+If a query includes options not yet supported in gRPC (for example `rerank`, sorting,
+or cursor pagination), it automatically falls back to GraphQL.
+Generative queries (`WeaviateEx.Query.Generate` and `WeaviateEx.API.Generative`) run over GraphQL for now.
 
 ### Multi-Vector Collections (v0.7.0+)
 
@@ -2366,6 +2438,40 @@ config :weaviate_ex,
   api_key: nil  # No auth for local development
 ```
 
+### Client Auth Helpers (API Key / OIDC)
+
+Configure auth directly in the client for per-connection credentials and automatic OIDC refresh:
+
+```elixir
+alias WeaviateEx.Auth
+
+# API key
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-cluster.weaviate.network",
+    auth: Auth.api_key("your-secret-api-key")
+  )
+
+# OIDC client credentials (auto-refresh)
+auth = Auth.client_credentials("client-id", "client-secret", scopes: ["openid", "profile"])
+
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-cluster.weaviate.network",
+    auth: auth
+  )
+
+# Skip init checks if needed
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-cluster.weaviate.network",
+    auth: auth,
+    skip_init_checks: true
+  )
+```
+
+OIDC access tokens are refreshed automatically and applied to HTTP headers and gRPC metadata.
+
 **Security Best Practices:**
 - ✅ Never commit API keys to version control
 - ✅ Use environment variables for production
@@ -2428,6 +2534,31 @@ config = Connection.new(
   base_url: "http://localhost:8080",
   connection: [pool_size: 20, max_connections: 200]
 )
+```
+
+### Proxy Configuration (v0.7.3+)
+
+Use proxy settings for HTTP, HTTPS, and gRPC connections:
+
+```elixir
+alias WeaviateEx.Config.Proxy
+
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-cluster.weaviate.network",
+    proxy: Proxy.new(
+      http: "http://proxy.example.com:8080",
+      https: "https://proxy.example.com:8443",
+      grpc: "http://grpc-proxy.example.com:8080"
+    )
+  )
+
+# Or read from HTTP_PROXY / HTTPS_PROXY / GRPC_PROXY
+{:ok, client} =
+  WeaviateEx.Client.connect(
+    base_url: "https://your-cluster.weaviate.network",
+    proxy: :env
+  )
 ```
 
 ### Client Lifecycle Management (v0.6.0+)
@@ -2502,6 +2633,11 @@ alias WeaviateEx.Debug
 
 # Get an object via REST (HTTP)
 {:ok, rest_obj} = Debug.get_object_rest(client, "Article", uuid)
+{:ok, rest_obj} =
+  Debug.get_object_rest(client, "Article", uuid,
+    node_name: "node-1",
+    consistency_level: "ALL"
+  )
 
 # Get the same object via gRPC
 {:ok, grpc_obj} = Debug.get_object_grpc(client, "Article", uuid)

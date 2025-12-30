@@ -12,6 +12,8 @@ Weaviate supports two types of references:
 
 First, define reference properties in your collection schema:
 
+Note: property names cannot be `id` or `vector` (reserved by Weaviate).
+
 ### Single-Target Reference
 
 ```elixir

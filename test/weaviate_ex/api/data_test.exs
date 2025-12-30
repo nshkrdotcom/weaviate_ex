@@ -381,6 +381,27 @@ defmodule WeaviateEx.API.DataTest do
       assert length(objects) == 2
     end
 
+    test "preserves requested ID order", %{client: client} do
+      ids = ["550e8400-e29b-41d4-a716-446655440001", "550e8400-e29b-41d4-a716-446655440002"]
+
+      Mox.expect(Mock, :request, fn _client, :post, "/v1/graphql", _body, _opts ->
+        {:ok,
+         %{
+           "data" => %{
+             "Get" => %{
+               "Article" => [
+                 %{"title" => "Second", "_additional" => %{"id" => Enum.at(ids, 1)}},
+                 %{"title" => "First", "_additional" => %{"id" => Enum.at(ids, 0)}}
+               ]
+             }
+           }
+         }}
+      end)
+
+      assert {:ok, objects} = Data.fetch_objects_by_ids(client, "Article", ids)
+      assert Enum.map(objects, &get_in(&1, ["_additional", "id"])) == ids
+    end
+
     test "fetches objects with specific return properties", %{client: client} do
       ids = ["550e8400-e29b-41d4-a716-446655440001"]
 

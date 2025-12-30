@@ -2,6 +2,7 @@ defmodule WeaviateEx.Client.ConfigTest do
   use ExUnit.Case, async: true
 
   alias WeaviateEx.Client.Config
+  alias WeaviateEx.Config.Connection
 
   describe "new/1" do
     test "creates config with default values" do
@@ -20,7 +21,7 @@ defmodule WeaviateEx.Client.ConfigTest do
 
     test "derives grpc_host from base_url" do
       config = Config.new(base_url: "https://my-cluster.weaviate.network")
-      assert config.grpc_host == "my-cluster.weaviate.network"
+      assert config.grpc_host == "my-cluster.grpc.weaviate.network"
       assert config.grpc_port == 443
     end
 
@@ -32,6 +33,34 @@ defmodule WeaviateEx.Client.ConfigTest do
         )
 
       assert config.grpc_host == "grpc-my-cluster.weaviate.network"
+    end
+
+    test "accepts connection config struct" do
+      connection = Connection.new(pool_size: 25)
+      config = Config.new(connection: connection)
+
+      assert config.connection == connection
+    end
+
+    test "accepts connection config keyword list" do
+      config = Config.new(connection: [pool_size: 12, max_connections: 60])
+
+      assert %WeaviateEx.Config.Connection{} = config.connection
+      assert config.connection.pool_size == 12
+      assert config.connection.max_connections == 60
+    end
+
+    test "accepts proxy config keyword list" do
+      config = Config.new(proxy: [http: "http://proxy.example.com:8080"])
+
+      assert %WeaviateEx.Config.Proxy{} = config.proxy
+      assert config.proxy.http == "http://proxy.example.com:8080"
+    end
+
+    test "defaults to the shared Finch instance" do
+      config = Config.new()
+
+      assert config.finch_name == WeaviateEx.Finch
     end
   end
 
