@@ -69,7 +69,18 @@ defmodule WeaviateEx.Protocol.HTTP.Client do
         headers
       end
 
+    # Add additional_headers from config
+    headers = add_additional_headers(headers, config)
+
     headers
+  end
+
+  defp add_additional_headers(headers, config) do
+    additional = Map.get(config, :additional_headers, %{})
+
+    Enum.reduce(additional, headers, fn {key, value}, acc ->
+      [{key, value} | acc]
+    end)
   end
 
   defp encode_body(nil), do: nil

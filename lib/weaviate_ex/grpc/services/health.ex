@@ -15,6 +15,7 @@ defmodule WeaviateEx.GRPC.Services.Health do
   """
 
   alias WeaviateEx.Error
+  alias WeaviateEx.GRPC.Retry
 
   alias Weaviate.V1.{
     WeaviateHealthCheckRequest,
@@ -150,18 +151,27 @@ defmodule WeaviateEx.GRPC.Services.Health do
 
   defp execute_health_check(channel, request, timeout) do
     # Use the generated WeaviateHealth stub for proper gRPC calls
-    opts = [timeout: timeout]
+    call_opts = [timeout: timeout]
 
-    case WeaviateHealthStub.check(channel, request, opts) do
-      {:ok, response} ->
-        {:ok, response}
+    # Health checks generally shouldn't retry aggressively - use fewer retries
+    retry_opts = [max_retries: 2, base_delay_ms: 500]
 
-      {:error, %GRPC.RPCError{} = error} ->
-        {:error, Error.from_grpc_error(error)}
+    Retry.with_retry(
+      fn ->
+        case WeaviateHealthStub.check(channel, request, call_opts) do
+          {:ok, response} ->
+            {:ok, response}
 
-      {:error, reason} ->
-        {:error, Error.exception(type: :connection_error, message: inspect(reason))}
-    end
+          {:error, %GRPC.RPCError{} = error} ->
+            {:error, error}
+
+          {:error, reason} ->
+            {:error, Error.exception(type: :connection_error, message: inspect(reason))}
+        end
+      end,
+      retry_opts
+    )
+    |> wrap_grpc_error()
   rescue
     # If the health check service is not available
     e in [FunctionClauseError, UndefinedFunctionError] ->
@@ -171,6 +181,12 @@ defmodule WeaviateEx.GRPC.Services.Health do
          message: "Health check not available: #{inspect(e)}"
        )}
   end
+
+  defp wrap_grpc_error({:error, %GRPC.RPCError{} = error}) do
+    {:error, Error.from_grpc_error(error)}
+  end
+
+  defp wrap_grpc_error(result), do: result
 
   defp do_wait_for_ready(channel, deadline, interval, opts) do
     now = System.monotonic_time(:millisecond)

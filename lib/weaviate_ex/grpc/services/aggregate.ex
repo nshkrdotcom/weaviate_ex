@@ -17,6 +17,7 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
 
   alias WeaviateEx.Error
   alias WeaviateEx.GRPC.Channel
+  alias WeaviateEx.GRPC.Retry
 
   alias Weaviate.V1.AggregateRequest
 
@@ -329,16 +330,29 @@ defmodule WeaviateEx.GRPC.Services.Aggregate do
   defp execute_aggregate(channel, request, opts) do
     timeout = Keyword.get(opts, :timeout, 30_000)
     metadata = Channel.build_metadata(opts)
+    retry_opts = Keyword.get(opts, :retry, [])
 
-    case WeaviateStub.aggregate(channel, request, timeout: timeout, metadata: metadata) do
-      {:ok, reply} ->
-        {:ok, reply}
+    Retry.with_retry(
+      fn ->
+        case WeaviateStub.aggregate(channel, request, timeout: timeout, metadata: metadata) do
+          {:ok, reply} ->
+            {:ok, reply}
 
-      {:error, %GRPC.RPCError{} = error} ->
-        {:error, Error.from_grpc_error(error)}
+          {:error, %GRPC.RPCError{} = error} ->
+            {:error, error}
 
-      {:error, reason} ->
-        {:error, Error.exception(type: :connection_error, message: inspect(reason))}
-    end
+          {:error, reason} ->
+            {:error, Error.exception(type: :connection_error, message: inspect(reason))}
+        end
+      end,
+      retry_opts
+    )
+    |> wrap_grpc_error()
   end
+
+  defp wrap_grpc_error({:error, %GRPC.RPCError{} = error}) do
+    {:error, Error.from_grpc_error(error)}
+  end
+
+  defp wrap_grpc_error(result), do: result
 end

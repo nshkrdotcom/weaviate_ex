@@ -8,7 +8,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/weaviate_ex.svg)](https://hex.pm/packages/weaviate_ex)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/weaviate_ex)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2303%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
+[![Tests](https://img.shields.io/badge/tests-2362%20passing-brightgreen.svg)](https://github.com/nshkrdotcom/weaviate_ex)
 
 A modern, idiomatic Elixir client for [Weaviate](https://weaviate.io) vector database (v1.28+) with **full Python client feature parity**.
 
@@ -117,7 +117,7 @@ Add `weaviate_ex` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:weaviate_ex, "~> 0.7.0"}
+    {:weaviate_ex, "~> 0.7.1"}
   ]
 end
 ```
@@ -280,6 +280,68 @@ The gRPC connection is automatically established when you create a client:
 client.grpc_channel  # => gRPC channel for data operations
 client.config        # => Configuration for HTTP operations
 ```
+
+### Custom Headers (v0.7.1+)
+
+Add custom headers to all HTTP and gRPC requests for authentication, tracing, or other purposes:
+
+```elixir
+# Configure additional headers in client config
+{:ok, client} = WeaviateEx.Client.connect(
+  url: "http://localhost:8080",
+  additional_headers: %{
+    "X-Custom-Header" => "custom-value",
+    "X-Request-ID" => "trace-123",
+    "Authorization" => "Bearer custom-token"
+  }
+)
+
+# Headers are automatically included in:
+# - All HTTP requests (schema operations, health checks)
+# - All gRPC requests as metadata (lowercased keys)
+```
+
+Headers are validated on client creation - nil values will raise an `ArgumentError`.
+
+### gRPC Retry with Exponential Backoff (v0.7.1+)
+
+All gRPC operations automatically retry on transient errors with exponential backoff:
+
+```elixir
+# Retryable gRPC status codes:
+# - UNAVAILABLE (14)     - Service temporarily unavailable
+# - RESOURCE_EXHAUSTED (8) - Rate limiting
+# - ABORTED (10)         - Transaction aborted
+# - DEADLINE_EXCEEDED (4) - Timeout
+
+# Default: 4 retries with exponential backoff
+# Attempt 0: 1 second delay
+# Attempt 1: 2 seconds
+# Attempt 2: 4 seconds
+# Attempt 3: 8 seconds
+# Maximum delay capped at 32 seconds
+
+# Configure retry behavior (optional)
+alias WeaviateEx.GRPC.Retry
+
+# Custom retry with options
+result = Retry.with_retry(
+  fn -> some_grpc_operation() end,
+  max_retries: 3,
+  base_delay_ms: 500
+)
+
+# Check if error is retryable
+Retry.retryable?(%GRPC.RPCError{status: 14})  # => true (UNAVAILABLE)
+Retry.retryable?(%GRPC.RPCError{status: 3})   # => false (INVALID_ARGUMENT)
+
+# Calculate backoff delay
+Retry.calculate_backoff(0)  # => 1000ms
+Retry.calculate_backoff(2)  # => 4000ms
+Retry.calculate_backoff(5)  # => 32000ms (capped)
+```
+
+All gRPC services (Search, Batch, Aggregate, Tenants, Health) automatically use retry logic.
 
 ### Proxy Configuration (v0.5.0+)
 
@@ -557,6 +619,17 @@ data = %{
 }
 
 {:ok, object} = Data.insert(client, "Article", data)
+
+# Named vectors (v0.7.1+) - for collections with multiple vector spaces
+data_with_named_vectors = %{
+  properties: %{"title" => "Multi-vector article"},
+  vectors: %{
+    "title_vector" => [0.1, 0.2, 0.3],
+    "content_vector" => [0.4, 0.5, 0.6, 0.7]
+  }
+}
+
+{:ok, object} = Data.insert(client, "MultiVectorCollection", data_with_named_vectors)
 uuid = object["id"]
 
 # Read - get object by ID
@@ -574,6 +647,56 @@ uuid = object["id"]
 # Delete
 {:ok, _} = Data.delete_by_id(client, "Article", uuid)
 ```
+
+#### Inline References During Insert (v0.7.1+)
+
+Create objects with references in a single operation:
+
+```elixir
+# Insert object with inline references
+{:ok, article} = WeaviateEx.Objects.create("Article", %{
+  properties: %{
+    title: "My Article",
+    content: "Article content..."
+  },
+  # Single reference
+  references: %{
+    "hasAuthor" => "author-uuid-here"
+  }
+})
+
+# Multiple references to same property
+{:ok, article} = WeaviateEx.Objects.create("Article", %{
+  properties: %{title: "Collaborative Article"},
+  references: %{
+    "hasAuthors" => ["author-uuid-1", "author-uuid-2", "author-uuid-3"]
+  }
+})
+
+# Multi-target references (pointing to specific collection)
+{:ok, article} = WeaviateEx.Objects.create("Article", %{
+  properties: %{title: "Related Content"},
+  references: %{
+    "relatedTo" => %{
+      target_collection: "Category",
+      uuids: "category-uuid"
+    }
+  }
+})
+
+# Multiple multi-target references
+{:ok, article} = WeaviateEx.Objects.create("Article", %{
+  properties: %{title: "Multi-related"},
+  references: %{
+    "mentions" => %{
+      target_collection: "Person",
+      uuids: ["person-1", "person-2"]
+    }
+  }
+})
+```
+
+References are automatically converted to Weaviate beacon format.
 
 ### Objects API
 
@@ -2064,7 +2187,7 @@ Current test coverage by module:
 - ✅ **Rate Limit Detection**: 20+ tests - Provider patterns, backoff calculation
 - ✅ **Custom Providers**: 20+ tests - Custom generative configs, reranker configurations
 
-**Total: 2303 tests passing**
+**Total: 2362 tests passing**
 
 ## Mix Tasks
 

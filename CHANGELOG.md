@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2025-12-29
+
+### Added
+
+#### Custom Headers Support
+- **Additional Headers Configuration** (`WeaviateEx.Client.Config`):
+  - `additional_headers` option for custom HTTP headers (e.g., `X-OpenAI-Api-Key`, `X-Cohere-Api-Key`)
+  - Applied to all HTTP requests via Finch
+  - Applied as gRPC metadata with lowercased keys
+  - Validation prevents nil header values
+
+#### Named Vectors in Data Operations
+- **Named Vectors Support** (`WeaviateEx.Objects.Payload`):
+  - `vectors` parameter for multiple named vectors (e.g., `%{"title_vector" => [0.1, 0.2]}`)
+  - Mutual exclusivity validation between `vector` (single) and `vectors` (named)
+  - Supported in `insert/4`, `update/4`, and `replace/4` operations
+
+#### References During Insert
+- **Inline References** (`WeaviateEx.Objects.Payload`):
+  - `references` parameter in Data.insert/4 for inline reference creation
+  - Single UUID: `%{"hasAuthor" => "uuid-123"}`
+  - Multiple UUIDs: `%{"hasAuthors" => ["uuid-1", "uuid-2"]}`
+  - Multi-target: `%{"relatedTo" => %{target_collection: "Category", uuids: "cat-uuid"}}`
+  - Automatic beacon format conversion and properties merge
+
+#### gRPC Exponential Backoff Retry
+- **Retry Module** (`WeaviateEx.GRPC.Retry`):
+  - `with_retry/2` - Execute function with automatic retry on transient errors
+  - `calculate_backoff/1` - Calculate exponential backoff (capped at 32 seconds)
+  - `retryable?/1` - Check if error is retryable
+  - `retryable_status?/1` - Check if gRPC status code is retryable
+  - Retryable status codes: UNAVAILABLE (14), RESOURCE_EXHAUSTED (8), ABORTED (10), DEADLINE_EXCEEDED (4)
+  - Configurable `max_retries` (default: 4) and `base_delay_ms` (default: 1000)
+
+### Changed
+- gRPC services now automatically retry on transient failures:
+  - `WeaviateEx.GRPC.Services.Search` - All search operations
+  - `WeaviateEx.GRPC.Services.Batch` - Batch insert, references, delete
+  - `WeaviateEx.GRPC.Services.Aggregate` - Aggregation queries
+  - `WeaviateEx.GRPC.Services.Tenants` - Tenant operations
+  - `WeaviateEx.GRPC.Services.Health` - Health checks (with reduced retry count)
+
 ## [0.7.0] - 2025-12-29
 
 ### Added

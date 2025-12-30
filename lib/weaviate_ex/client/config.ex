@@ -10,6 +10,8 @@ defmodule WeaviateEx.Client.Config do
     * `:api_key` - API key for authentication (optional)
     * `:timeout` - Default timeout in milliseconds (default: 60000)
     * `:grpc_max_message_size` - Max gRPC message size in bytes (default: 100MB)
+    * `:additional_headers` - Extra headers to include in HTTP/gRPC requests (default: %{})
+      Common use cases: X-OpenAI-Api-Key, X-Cohere-Api-Key for vectorizer/generative modules
 
   ## Examples
 
@@ -36,7 +38,8 @@ defmodule WeaviateEx.Client.Config do
           grpc_port: integer(),
           api_key: String.t() | nil,
           timeout: integer(),
-          grpc_max_message_size: integer()
+          grpc_max_message_size: integer(),
+          additional_headers: %{optional(String.t()) => String.t()}
         }
 
   defstruct base_url: "http://localhost:8080",
@@ -44,7 +47,8 @@ defmodule WeaviateEx.Client.Config do
             grpc_port: @default_grpc_port,
             api_key: nil,
             timeout: @default_timeout,
-            grpc_max_message_size: @default_grpc_max_message_size
+            grpc_max_message_size: @default_grpc_max_message_size,
+            additional_headers: %{}
 
   @doc """
   Create config from keyword list.
@@ -67,6 +71,9 @@ defmodule WeaviateEx.Client.Config do
     grpc_host = Keyword.get(opts, :grpc_host) || derive_grpc_host(base_url)
     grpc_port = Keyword.get(opts, :grpc_port) || derive_grpc_port(base_url)
 
+    additional_headers = Keyword.get(opts, :additional_headers, %{})
+    validate_additional_headers!(additional_headers)
+
     %__MODULE__{
       base_url: base_url,
       grpc_host: grpc_host,
@@ -74,7 +81,8 @@ defmodule WeaviateEx.Client.Config do
       api_key: Keyword.get(opts, :api_key),
       timeout: Keyword.get(opts, :timeout, @default_timeout),
       grpc_max_message_size:
-        Keyword.get(opts, :grpc_max_message_size, @default_grpc_max_message_size)
+        Keyword.get(opts, :grpc_max_message_size, @default_grpc_max_message_size),
+      additional_headers: additional_headers
     }
   end
 
@@ -101,5 +109,26 @@ defmodule WeaviateEx.Client.Config do
     else
       @default_grpc_port
     end
+  end
+
+  # Validate additional_headers - all values must be non-nil strings
+  defp validate_additional_headers!(headers) when is_map(headers) do
+    Enum.each(headers, fn
+      {key, nil} ->
+        raise ArgumentError,
+              "Header values cannot be nil. Found nil value for header: #{key}"
+
+      {_key, value} when is_binary(value) ->
+        :ok
+
+      {key, value} ->
+        raise ArgumentError,
+              "Header values must be strings. Found #{inspect(value)} for header: #{key}"
+    end)
+  end
+
+  defp validate_additional_headers!(other) do
+    raise ArgumentError,
+          "additional_headers must be a map, got: #{inspect(other)}"
   end
 end

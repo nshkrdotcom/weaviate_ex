@@ -115,4 +115,62 @@ defmodule WeaviateEx.GRPC.ChannelTest do
       refute Map.has_key?(metadata, "authorization")
     end
   end
+
+  describe "build_metadata/1 with additional_headers" do
+    test "includes additional_headers in metadata" do
+      config = %{
+        api_key: "key",
+        additional_headers: %{"X-Custom" => "value"}
+      }
+
+      metadata = Channel.build_metadata(config)
+      assert metadata["authorization"] == "Bearer key"
+      # Headers are lowercased for gRPC
+      assert metadata["x-custom"] == "value"
+    end
+
+    test "lowercases all additional header keys" do
+      config = %{
+        api_key: nil,
+        additional_headers: %{
+          "X-OpenAI-Api-Key" => "sk-123",
+          "X-UPPERCASE" => "value"
+        }
+      }
+
+      metadata = Channel.build_metadata(config)
+      assert metadata["x-openai-api-key"] == "sk-123"
+      assert metadata["x-uppercase"] == "value"
+      refute Map.has_key?(metadata, "X-OpenAI-Api-Key")
+    end
+
+    test "works without additional_headers key" do
+      config = %{api_key: "key"}
+
+      metadata = Channel.build_metadata(config)
+      assert metadata["authorization"] == "Bearer key"
+    end
+
+    test "handles empty additional_headers map" do
+      config = %{api_key: nil, additional_headers: %{}}
+
+      metadata = Channel.build_metadata(config)
+      assert metadata == %{}
+    end
+
+    test "merges api_key and additional_headers" do
+      config = %{
+        api_key: "my-key",
+        additional_headers: %{
+          "X-OpenAI-Api-Key" => "openai-key",
+          "X-Cohere-Api-Key" => "cohere-key"
+        }
+      }
+
+      metadata = Channel.build_metadata(config)
+      assert metadata["authorization"] == "Bearer my-key"
+      assert metadata["x-openai-api-key"] == "openai-key"
+      assert metadata["x-cohere-api-key"] == "cohere-key"
+    end
+  end
 end

@@ -68,24 +68,57 @@ defmodule WeaviateEx.Objects.Payload do
 
   @doc """
   Prepares a payload for insertion by normalizing keys, generating an id when
-  necessary, and applying the collection class.
+  necessary, applying the collection class, handling vectors, and merging references.
+
+  ## Vector Support
+
+  Supports both single vector and named vectors (mutually exclusive):
+
+    * `:vector` - Single vector for the default vector
+    * `:vectors` - Map of named vectors (e.g., `%{"title_vector" => [0.1, 0.2]}`)
+
+  Raises `ArgumentError` if both `:vector` and `:vectors` are provided.
+
+  ## Reference Support
+
+  Supports inline references via the `:references` key:
+
+    * Single UUID: `%{"hasAuthor" => "uuid-123"}`
+    * Multiple UUIDs: `%{"hasAuthors" => ["uuid-1", "uuid-2"]}`
+    * Multi-target: `%{"relatedTo" => %{target_collection: "Category", uuids: "cat-uuid"}}`
+
+  References are converted to beacon format and merged into properties.
   """
   @spec prepare_for_insert(data(), String.t(), opts()) :: data()
   def prepare_for_insert(data, class_name, opts \\ []) do
     data
     |> normalize_keys()
+    |> validate_vectors!()
+    |> handle_vectors()
+    |> merge_references()
     |> ensure_id(opts)
     |> ensure_class(class_name)
   end
 
   @doc """
-  Prepares a payload for update requests by normalizing keys, forcing the id, and
-  applying the collection class.
+  Prepares a payload for update requests by normalizing keys, forcing the id,
+  applying the collection class, and handling vectors.
+
+  ## Vector Support
+
+  Supports both single vector and named vectors (mutually exclusive):
+
+    * `:vector` - Single vector for the default vector
+    * `:vectors` - Map of named vectors (e.g., `%{"title_vector" => [0.1, 0.2]}`)
+
+  Raises `ArgumentError` if both `:vector` and `:vectors` are provided.
   """
   @spec prepare_for_update(data(), String.t(), String.t(), opts()) :: data()
   def prepare_for_update(data, class_name, id, opts \\ []) do
     data
     |> normalize_keys()
+    |> validate_vectors!()
+    |> handle_vectors()
     |> ensure_id_value(id)
     |> ensure_class(class_name)
     |> maybe_preserve_vector(opts)
@@ -113,5 +146,115 @@ defmodule WeaviateEx.Objects.Payload do
       true -> data
       false -> Map.delete(data, "vector")
     end
+  end
+
+  # Validate that both vector and vectors are not provided at the same time
+  defp validate_vectors!(data) do
+    has_vector = Map.has_key?(data, "vector") and data["vector"] != nil
+
+    has_vectors =
+      Map.has_key?(data, "vectors") and data["vectors"] != nil and data["vectors"] != %{}
+
+    if has_vector and has_vectors do
+      raise ArgumentError,
+            "cannot specify both 'vector' and 'vectors' - use 'vector' for single vector " <>
+              "or 'vectors' for named vectors"
+    end
+
+    data
+  end
+
+  # Handle vector/vectors in payload - ensure proper format
+  defp handle_vectors(data) do
+    cond do
+      # Named vectors provided - keep vectors, remove vector key
+      has_non_empty_vectors?(data) ->
+        data
+        |> Map.delete("vector")
+
+      # Single vector provided - keep as is
+      Map.has_key?(data, "vector") ->
+        data
+        |> Map.delete("vectors")
+
+      # No vectors - clean up empty keys
+      true ->
+        data
+        |> Map.delete("vector")
+        |> Map.delete("vectors")
+    end
+  end
+
+  defp has_non_empty_vectors?(data) do
+    case Map.get(data, "vectors") do
+      nil -> false
+      %{} = m when map_size(m) == 0 -> false
+      %{} -> true
+      _ -> false
+    end
+  end
+
+  # Merge references into properties as beacon format
+  defp merge_references(data) do
+    case Map.get(data, "references") do
+      nil ->
+        data
+
+      %{} = refs when map_size(refs) == 0 ->
+        Map.delete(data, "references")
+
+      %{} = refs ->
+        properties = Map.get(data, "properties", %{})
+        updated_properties = convert_references_to_beacons(refs, properties)
+
+        data
+        |> Map.put("properties", updated_properties)
+        |> Map.delete("references")
+    end
+  end
+
+  # Convert reference definitions to beacon format and merge with properties
+  defp convert_references_to_beacons(refs, properties) do
+    Enum.reduce(refs, properties, fn {ref_property, ref_value}, props ->
+      beacons = build_beacons(ref_value)
+      Map.put(props, ref_property, beacons)
+    end)
+  end
+
+  # Build beacon list from reference value
+  defp build_beacons(uuid) when is_binary(uuid) do
+    [%{"beacon" => "weaviate://localhost/#{uuid}"}]
+  end
+
+  defp build_beacons(uuids) when is_list(uuids) do
+    Enum.map(uuids, fn uuid ->
+      %{"beacon" => "weaviate://localhost/#{uuid}"}
+    end)
+  end
+
+  # Multi-target reference with target_collection
+  defp build_beacons(%{target_collection: collection, uuids: uuids})
+       when is_binary(uuids) do
+    [%{"beacon" => "weaviate://localhost/#{collection}/#{uuids}"}]
+  end
+
+  defp build_beacons(%{target_collection: collection, uuids: uuids})
+       when is_list(uuids) do
+    Enum.map(uuids, fn uuid ->
+      %{"beacon" => "weaviate://localhost/#{collection}/#{uuid}"}
+    end)
+  end
+
+  # Handle string keys for multi-target reference
+  defp build_beacons(%{"target_collection" => collection, "uuids" => uuids})
+       when is_binary(uuids) do
+    [%{"beacon" => "weaviate://localhost/#{collection}/#{uuids}"}]
+  end
+
+  defp build_beacons(%{"target_collection" => collection, "uuids" => uuids})
+       when is_list(uuids) do
+    Enum.map(uuids, fn uuid ->
+      %{"beacon" => "weaviate://localhost/#{collection}/#{uuid}"}
+    end)
   end
 end

@@ -112,6 +112,7 @@ defmodule WeaviateEx.GRPC.Channel do
   Builds gRPC metadata from config.
 
   Adds authorization header if API key is present.
+  Includes additional_headers with lowercased keys.
   Accepts either a map or keyword list.
 
   ## Examples
@@ -119,22 +120,38 @@ defmodule WeaviateEx.GRPC.Channel do
       %{"authorization" => "Bearer key"} = Channel.build_metadata(%{api_key: "key"})
       %{"authorization" => "Bearer key"} = Channel.build_metadata(api_key: "key")
       %{} = Channel.build_metadata(%{api_key: nil})
+
+      # With additional headers (keys are lowercased for gRPC)
+      config = %{api_key: "key", additional_headers: %{"X-OpenAI-Api-Key" => "sk-123"}}
+      metadata = Channel.build_metadata(config)
+      # => %{"authorization" => "Bearer key", "x-openai-api-key" => "sk-123"}
   """
   @spec build_metadata(config() | map() | keyword()) :: map()
   def build_metadata(config) when is_list(config) do
-    case Keyword.get(config, :api_key) do
-      nil -> %{}
-      "" -> %{}
-      api_key -> %{"authorization" => "Bearer #{api_key}"}
-    end
+    build_metadata(Map.new(config))
   end
 
   def build_metadata(config) when is_map(config) do
-    case Map.get(config, :api_key) do
-      nil -> %{}
-      "" -> %{}
-      api_key -> %{"authorization" => "Bearer #{api_key}"}
-    end
+    auth_metadata =
+      case Map.get(config, :api_key) do
+        nil -> %{}
+        "" -> %{}
+        api_key -> %{"authorization" => "Bearer #{api_key}"}
+      end
+
+    additional_metadata =
+      config
+      |> Map.get(:additional_headers, %{})
+      |> lowercase_header_keys()
+
+    Map.merge(auth_metadata, additional_metadata)
+  end
+
+  # Lowercase header keys for gRPC metadata
+  defp lowercase_header_keys(headers) when is_map(headers) do
+    Map.new(headers, fn {key, value} ->
+      {String.downcase(to_string(key)), value}
+    end)
   end
 
   # Private functions
