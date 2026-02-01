@@ -68,7 +68,7 @@ defmodule WeaviateEx.MixProject do
       {:excoveralls, "~> 0.18", only: :test},
       {:mox, "~> 1.1", only: :test},
       {:bypass, "~> 2.1", only: :test},
-      {:supertester, "~> 0.4.0", only: :test},
+      {:supertester, "~> 0.5.1", only: :test},
 
       # Benchmarking
       {:benchee, "~> 1.3", only: :dev},
