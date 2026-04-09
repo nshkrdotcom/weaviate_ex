@@ -94,7 +94,7 @@ defmodule WeaviateEx.MixProject do
     [
       name: "weaviate_ex",
       description: description(),
-      files: ~w(lib mix.exs README.md INSTALL.md CHANGELOG.md LICENSE assets),
+      files: ~w(lib mix.exs README.md INSTALL.md CHANGELOG.md LICENSE assets guides),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
