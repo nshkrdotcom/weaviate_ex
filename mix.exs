@@ -62,13 +62,13 @@ defmodule WeaviateEx.MixProject do
       {:protobuf, "~> 0.13"},
 
       # Development and testing
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mox, "~> 1.1", only: :test},
       {:bypass, "~> 2.1", only: :test},
-      {:supertester, "~> 0.4.0", only: :test},
+      {:supertester, "~> 0.5.1", only: :test},
 
       # Benchmarking
       {:benchee, "~> 1.3", only: :dev},
