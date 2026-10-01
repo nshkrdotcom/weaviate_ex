@@ -37,7 +37,7 @@ jobs:
           otp-version: ${{ env.OTP_VERSION }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -67,21 +67,21 @@ jobs:
           otp-version: ${{ env.OTP_VERSION }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Restore PLT cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: plt-cache
         with:
           path: priv/plts
@@ -150,14 +150,14 @@ jobs:
           otp-version: ${{ env.OTP_VERSION }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
@@ -238,14 +238,14 @@ jobs:
           otp-version: ${{ env.OTP_VERSION }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
